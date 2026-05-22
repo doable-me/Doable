@@ -1,0 +1,99 @@
+# ==============================================================================
+# Doable — Caddy TLS terminator + reverse proxy (in-stack, cross-platform)
+# ==============================================================================
+# Replaces the host-side nginx setup that used to live in setup.sh's apt-get
+# install path. Caddy runs as a docker service, so the same image + config
+# works on Linux / macOS / Windows (WSL2 OR Docker Desktop) — no apt-get,
+# brew, or systemctl needed.
+#
+# Three TLS modes are supported via env vars set by setup.sh:
+#
+#   DOABLE_SITE        — Caddy site address (e.g. "localhost", "192.168.1.50",
+#                        "app.example.com", or ":443" for behind-proxy)
+#   DOABLE_TLS         — TLS source: "internal" for Caddy's own self-signed
+#                        (no browser trust), "/certs/cert.pem /certs/key.pem"
+#                        for mkcert-issued (browser-trusted via local CA),
+#                        or an email address for automatic Let's Encrypt
+#                        (production / public domain).
+#   DOABLE_CADDY_EXTRA — Optional extra Caddy directives (rarely used).
+#
+# The browser opens https://${DOABLE_SITE} and the cert is trusted either:
+#   - localhost mode: trusted because mkcert installed its CA into the host
+#     OS + browser trust stores (Mac keychain / Linux ca-certs /
+#     Windows root via WSL interop).
+#   - DOMAIN mode: trusted because Let's Encrypt is a publicly trusted CA.
+# ==============================================================================
+
+{
+        admin off
+        persist_config off
+        # auto_https is left at its default. Caddy infers from DOABLE_SITE:
+        #   - "localhost" or an IP literal → auto_https disabled (no ACME)
+        #   - a public hostname → auto_https enabled + ACME via Let's Encrypt
+        # The `tls` directive on the site block then says HOW to get the cert.
+}
+
+{$DOABLE_SITE:localhost} {
+        tls {$DOABLE_TLS:internal}
+
+        # ─── OTLP browser tracing exporter → Next.js proxy (web container) ──
+        # apps/web/src/app/api/otlp/[...path]/route.ts forwards to the api
+        # container's /internal/otlp/* receiver. MUST come before the
+        # generic /api/* matcher so longest-prefix wins.
+        handle /api/otlp/* {
+                reverse_proxy web:3000
+        }
+
+        # ─── API server (Hono) → strip /api/ prefix ─────────────────────────
+        # Mirrors nginx's `location /api/ { proxy_pass http://api:4000/; }`
+        # behavior: incoming /api/projects → forwarded as /projects.
+        handle_path /api/* {
+                reverse_proxy api:4000
+        }
+
+        # ─── Auth routes (preserve path) ────────────────────────────────────
+        # api server handles /auth/* directly, no prefix strip needed.
+        handle /auth/* {
+                reverse_proxy api:4000
+        }
+
+        # ─── Consolidated GitHub OAuth callbacks ────────────────────────────
+        # api server registers /oauth/github/{login,copilot,repo}/callback so
+        # a single GitHub OAuth App with parent callback URL
+        # https://${DOABLE_SITE}/oauth/github/ covers every flow. Without
+        # this route the catch-all below would forward to web (404).
+        handle /oauth/* {
+                reverse_proxy api:4000
+        }
+
+        # ─── Preview iframes for AI-built apps ──────────────────────────────
+        # api spawns per-project vite dev servers and proxies /preview/<id>/
+        # to them, preserving paths so vite's relative URLs resolve.
+        # Long timeouts for SSE / HMR.
+        handle /preview/* {
+                reverse_proxy api:4000 {
+                        transport http {
+                                read_timeout 24h
+                                write_timeout 24h
+                        }
+                }
+        }
+
+        # ─── WebSocket (Yjs CRDT collab + AI trace stream) ──────────────────
+        @ws path /ws /ws/* /socket /socket/*
+        handle @ws {
+                reverse_proxy ws:4001
+        }
+
+        # ─── Frontend (Next.js) catch-all ────────────────────────────────────
+        handle {
+                reverse_proxy web:3000
+        }
+
+        # ─── Defense-in-depth header (app emits the rest) ────────────────────
+        # Most security headers (CSP, HSTS, X-Frame-Options, Permissions-Policy)
+        # come from apps/web/src/middleware.ts + the Hono api. We layer just
+        # one defense-in-depth header here — the one Caddy can reliably set
+        # on static-asset 404s served before reaching the app.
+        header X-Content-Type-Options nosniff
+}

@@ -1,0 +1,22 @@
+{
+  "name": "spreadsheet-builder-mcp",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Built-in Doable MCP App: AI-narrated spreadsheet builder with live preview + .xlsx + .csv download.",
+  "type": "module",
+  "bin": {
+    "spreadsheet-builder-mcp": "./index.mjs"
+  },
+  "main": "./index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@mcp-ui/server": "^6.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "exceljs": "^4.4.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

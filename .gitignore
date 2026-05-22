@@ -1,0 +1,146 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+package-lock.json
+
+# Build
+dist/
+.next/
+out/
+build/
+.turbo/
+# Source dir whose name happens to be "build" — exclude from the rule above.
+!apps/web/src/modules/editor/build/
+!apps/web/src/modules/editor/build/**
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.docker
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# QA artifacts (round-specific evidence: screenshots, harnesses with creds, results).
+# These can carry live test JWTs / secrets read from running servers — never commit.
+r*-*-evidence/
+r*-*-report.md
+r*-*-results.json
+r*-bulk-harness.js
+r*-test-xtenant.js
+r*-jwts.json
+r*-longprompt-samples.json
+r*-setup-wizard-notes.md
+r*-longprompt-fix-notes.md
+r*-ui-*.png
+r*-admin-*.png
+e2e-*.png
+
+# Internal QA cycle scripts and infrastructure provisioning
+scripts/r[0-9]*
+scripts/hetzner*
+baremetal-audit-r*.md
+baremetal-fix-r*.md
+docker-audit-r*.md
+docker-fix-r*.md
+.omc/
+CLAUDE.md
+
+# Internal dev utility scripts (contain local paths / credentials)
+services/api/_setup_supabase.cjs
+services/api/_create_table_pg.cjs
+services/api/_create_table.mjs
+packages/db/_users.mjs
+
+# Data (user-created projects, published sites, thumbnails, AI session state)
+/data/
+/sites/
+.doable-data/
+services/api/projects/
+services/api/thumbnails/
+services/api/services/
+services/ws/projects/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Rust build artifacts (doable-cli)
+**/target/
+Cargo.lock
+
+# Orchestrator status logs (ephemeral teammate timing + ping logs)
+.spec/
+**/.spec/
+
+# Playwright MCP console captures (may contain real session data)
+.playwright-mcp/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Testing
+coverage/
+tools/integration-test-report.json
+
+# Internal docs (not for public distribution)
+internaldocs/
+
+# Debug / scratch files
+test-sendandwait.*
+collab-issue-research.md
+copilot-concurrency-plan.md
+
+# Reports / diagnostics
+report.*.json
+
+# Private sync script (Gitea mirror)
+sync-codehub.ps1
+services/api/data/
+
+# OMC plugin per-dir state
+.omc/
+
+# Ralph session artifacts — committed historical versions stay, but new
+# changes shouldn't churn the repo. To re-track a working PRD, use
+# git add -f prd.json progress.txt.
+prd.json
+progress.txt
+
+# Test cases (moved to doablechore)
+testcases/
+
+# Secrets / tokens / internal state
+.token*.txt
+.hist.json
+.md.json
+.pdf.json
+.preso*.json
+.projects.json
+.ws.json
+r*-jwts.json
+r*-architect-verdict.md
+r*-bug-*.md
+r*-collab-*.md
+r*-collab-*.png
+r*-followup-*.md
+r*-formats-*.md
+r*-bulk-tc-report.md

@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: doable
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      initContainers:
+        # Runs database migrations before the api container starts.
+        # Idempotent — safe to run on every pod start / rolling update.
+        - name: migrate
+          image: ghcr.io/doable-me/doable-migrate:latest
+          envFrom:
+            - secretRef:
+                name: doable-secrets
+      containers:
+        - name: api
+          image: ghcr.io/doable-me/doable-api:latest
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: doable-config
+            - secretRef:
+                name: doable-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: api-projects
+              mountPath: /app/projects
+            - name: api-thumbnails
+              mountPath: /app/thumbnails
+      volumes:
+        - name: api-projects
+          persistentVolumeClaim:
+            claimName: api-projects
+        - name: api-thumbnails
+          persistentVolumeClaim:
+            claimName: api-thumbnails

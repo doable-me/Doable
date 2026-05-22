@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "../..",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@doable/shared": ["../../packages/shared/src"],
+      "@doable/shared/*": ["../../packages/shared/src/*"],
+      "@doable/db": ["../../packages/db/src"],
+      "@doable/db/*": ["../../packages/db/src/*"]
+    },
+    "lib": ["ES2023"]
+  },
+  "include": ["src/**/*.ts", "../../packages/db/src/**/*.ts", "../../packages/shared/src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

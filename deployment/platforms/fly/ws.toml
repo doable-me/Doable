@@ -1,0 +1,29 @@
+app = "doable-ws"
+primary_region = "iad"
+
+[build]
+  image = "ghcr.io/doable-me/doable-ws:latest"
+
+[experimental]
+  auto_rollback = true
+
+[env]
+  WS_PORT = "4001"
+  WS_HOST = "0.0.0.0"
+  API_URL = "http://doable-api.flycast:4000"
+  NODE_ENV = "production"
+
+[[services]]
+  internal_port = 4001
+  protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 4001
+
+[mounts]
+  source = "doable_ws_data"
+  destination = "/data"

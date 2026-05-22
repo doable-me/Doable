@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@doable/shared": ["./packages/shared/src"],
+      "@doable/shared/*": ["./packages/shared/src/*"],
+      "@doable/db": ["./packages/db/src"],
+      "@doable/db/*": ["./packages/db/src/*"],
+      "@doable/marketplace-bundle": ["./packages/marketplace-bundle/src"],
+      "@doable/marketplace-bundle/*": ["./packages/marketplace-bundle/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next", ".turbo"]
+}

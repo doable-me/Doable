@@ -1,0 +1,140 @@
+# DigitalOcean App Platform spec for Doable
+# Spec ref: https://docs.digitalocean.com/products/app-platform/reference/app-spec/
+#
+# Architecture: 4 containers (api / ws / web) + managed Postgres 16. The
+# migrate image runs as a PRE_DEPLOY job before api/ws/web come up.
+#
+# All app images are pulled from ghcr.io (built by .github/workflows/publish-docker-images.yml).
+# Source-build path is intentionally NOT used: the Next.js build peaks at ~2GB RAM and OOMs on
+# basic-xs. See doablechore/PlatformTemplatesPRD/02-digitalocean.md.
+#
+# Operator action items before deploying:
+# 1. Replace every REPLACE_ME with output of `openssl rand -hex 32` (or `-base64 32` for DOABLE_KEK).
+# 2. Set INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT to ISO8601 = now + 24h.
+# 3. Optional: fill in any AI provider key (any one is enough to pre-configure the wizard).
+# 4. After first deploy, run: doctl databases sql <db-id> --command "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+spec:
+  name: doable
+  region: nyc
+  features:
+    - buildpack-stack=ubuntu-22
+
+  databases:
+    - engine: PG
+      name: doable-db
+      version: "16"
+      size: db-s-1vcpu-1gb   # bump to db-s-2vcpu-4gb for >50 users
+      num_nodes: 1
+      production: true
+
+  jobs:
+    - name: migrate
+      kind: PRE_DEPLOY
+      image:
+        registry_type: GHCR
+        registry: ghcr.io
+        repository: doable-me/doable-migrate
+        tag: latest
+      instance_count: 1
+      instance_size_slug: basic-xxs
+      envs:
+        - { key: DATABASE_URL, scope: RUN_TIME, value: "${doable-db.DATABASE_URL}" }
+        - { key: NODE_ENV,     scope: RUN_TIME, value: production }
+
+  services:
+    - name: api
+      image:
+        registry_type: GHCR
+        registry: ghcr.io
+        repository: doable-me/doable-api
+        tag: latest
+      instance_count: 1
+      instance_size_slug: basic-xs   # 1GB — api OOMs on basic-xxs under load
+      http_port: 4000
+      health_check:
+        http_path: /health
+      internal_ports: [4000]
+      envs:
+        - { key: DATABASE_URL,    scope: RUN_TIME, value: "${doable-db.DATABASE_URL}" }
+        - { key: NODE_ENV,        scope: RUN_AND_BUILD_TIME, value: production }
+        - { key: API_PORT,        scope: RUN_TIME, value: "4000" }
+        - { key: API_HOST,        scope: RUN_TIME, value: "0.0.0.0" }
+        - { key: WS_PORT,         scope: RUN_TIME, value: "4001" }
+        - { key: WS_HOST,         scope: RUN_TIME, value: "0.0.0.0" }
+        - { key: WS_INTERNAL_URL, scope: RUN_TIME, value: "${ws.PRIVATE_URL}" }
+        - { key: API_URL,         scope: RUN_TIME, value: "${api.PRIVATE_URL}" }
+        - { key: NEXT_PUBLIC_API_URL, scope: RUN_TIME, value: "${web.PUBLIC_URL}/api" }
+        - { key: NEXT_PUBLIC_WS_URL,  scope: RUN_TIME, value: "${web.PUBLIC_URL}/ws" }
+        - { key: NEXT_PUBLIC_APP_URL, scope: RUN_TIME, value: "${web.PUBLIC_URL}" }
+        - { key: CORS_ORIGINS,        scope: RUN_TIME, value: "${web.PUBLIC_URL}" }
+        - { key: JWT_SECRET,      scope: RUN_TIME, type: SECRET, value: REPLACE_ME }
+        - { key: ENCRYPTION_KEY,  scope: RUN_TIME, type: SECRET, value: REPLACE_ME }
+        - { key: INTERNAL_SECRET, scope: RUN_TIME, type: SECRET, value: REPLACE_ME }
+        - { key: DOABLE_KEK,      scope: RUN_TIME, type: SECRET, value: REPLACE_ME }
+        - { key: INSTALL_BOOTSTRAP_TOKEN,            scope: RUN_TIME, type: SECRET, value: REPLACE_ME }
+        - { key: INSTALL_BOOTSTRAP_TOKEN_EXPIRES_AT, scope: RUN_TIME, value: "REPLACE_WITH_ISO8601_NOW_PLUS_24H" }
+        # 19 AI provider env-seeds — any one or more pre-configures the wizard. Leave blank to skip.
+        - { key: ANTHROPIC_API_KEY,    scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: OPENAI_API_KEY,       scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: GEMINI_API_KEY,       scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: MINIMAX_API_KEY,      scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: OPENROUTER_API_KEY,   scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: TOGETHER_API_KEY,     scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: FIREWORKS_API_KEY,    scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: OPENCODE_ZEN_API_KEY, scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: GROQ_API_KEY,         scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: CEREBRAS_API_KEY,     scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: DEEPSEEK_API_KEY,     scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: MISTRAL_API_KEY,      scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: COHERE_API_KEY,       scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: XAI_API_KEY,          scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: PERPLEXITY_API_KEY,   scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: DEEPINFRA_API_KEY,    scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: NVIDIA_API_KEY,       scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: MOONSHOT_API_KEY,     scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: ZHIPU_API_KEY,        scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: GITHUB_CLIENT_ID,      scope: RUN_TIME, value: "" }
+        - { key: GITHUB_CLIENT_SECRET,  scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: GOOGLE_CLIENT_ID,      scope: RUN_TIME, value: "" }
+        - { key: GOOGLE_CLIENT_SECRET,  scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: STRIPE_SECRET_KEY,     scope: RUN_TIME, type: SECRET, value: "" }
+        - { key: STRIPE_WEBHOOK_SECRET, scope: RUN_TIME, type: SECRET, value: "" }
+
+    - name: ws
+      image:
+        registry_type: GHCR
+        registry: ghcr.io
+        repository: doable-me/doable-ws
+        tag: latest
+      instance_count: 1
+      instance_size_slug: basic-xxs
+      http_port: 4001
+      internal_ports: [4001]
+      envs:
+        - { key: DATABASE_URL,    scope: RUN_TIME, value: "${doable-db.DATABASE_URL}" }
+        - { key: JWT_SECRET,      scope: RUN_TIME, type: SECRET, value: "${api.JWT_SECRET}" }
+        - { key: INTERNAL_SECRET, scope: RUN_TIME, type: SECRET, value: "${api.INTERNAL_SECRET}" }
+        - { key: API_URL,         scope: RUN_TIME, value: "${api.PRIVATE_URL}" }
+        - { key: WS_PORT,         scope: RUN_TIME, value: "4001" }
+        - { key: WS_HOST,         scope: RUN_TIME, value: "0.0.0.0" }
+        - { key: NODE_ENV,        scope: RUN_TIME, value: production }
+
+    - name: web
+      image:
+        registry_type: GHCR
+        registry: ghcr.io
+        repository: doable-me/doable-web
+        tag: latest
+      instance_count: 1
+      instance_size_slug: basic-xxs
+      http_port: 3000
+      routes:
+        - { path: / }
+      envs:
+        - { key: NEXT_PUBLIC_API_URL, scope: RUN_TIME, value: "${web.PUBLIC_URL}/api" }
+        - { key: NEXT_PUBLIC_WS_URL,  scope: RUN_TIME, value: "${web.PUBLIC_URL}/ws" }
+        - { key: NEXT_PUBLIC_APP_URL, scope: RUN_TIME, value: "${web.PUBLIC_URL}" }
+        - { key: HOSTNAME,            scope: RUN_TIME, value: "0.0.0.0" }
+        - { key: PORT,                scope: RUN_TIME, value: "3000" }
+        - { key: NODE_ENV,            scope: RUN_TIME, value: production }

@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: doable
+
+# Prod overlay: 2 replicas for api and web, resource limits enforced, TLS via cert-manager.
+
+bases:
+  - ../../base
+
+patches:
+  # Scale api to 2 replicas.
+  # NOTE: if api-projects / api-thumbnails PVCs are ReadWriteOnce, scaling
+  # beyond 1 will fail scheduling on multi-node clusters. Switch PVC
+  # accessMode to ReadWriteMany (NFS/EFS) before scaling api > 1.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+        namespace: doable
+      spec:
+        replicas: 2
+
+  # Scale web to 2 replicas (stateless, safe to scale freely).
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web
+        namespace: doable
+      spec:
+        replicas: 2
+
+  # Apply cert-manager TLS annotation + tls block to ingress.
+  - path: ingress-prod-patch.yaml

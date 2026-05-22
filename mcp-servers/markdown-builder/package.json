@@ -1,0 +1,22 @@
+{
+  "name": "markdown-builder-mcp",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Built-in Doable MCP App: AI-narrated markdown document builder with live preview + .md download.",
+  "type": "module",
+  "bin": {
+    "markdown-builder-mcp": "./index.mjs"
+  },
+  "main": "./index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@mcp-ui/server": "^6.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "marked": "^15.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

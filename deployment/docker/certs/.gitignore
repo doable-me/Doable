@@ -1,0 +1,6 @@
+# mkcert-issued certs are local-only — never commit
+*.pem
+*.crt
+*.key
+!.gitignore
+!.gitkeep

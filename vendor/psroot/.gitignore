@@ -1,0 +1,6 @@
+# Allow the README + this file. Block anything else by default — drop the
+# binary here with `git add -f vendor/psroot/psroot.exe` once vetted.
+*
+!README.md
+!.gitignore
+!psroot.exe

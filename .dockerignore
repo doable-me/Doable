@@ -1,0 +1,85 @@
+node_modules
+.next
+dist
+.turbo
+.git
+.claude
+.env
+.env.local
+.env.*.local
+.env.docker
+
+# Internal planning + dev journals
+bugs
+progress
+progress.txt
+prd
+prd.json
+PlatformTemplatesPRD/
+RUNLOG.md
+FINDINGS.md
+
+# Dev/QA scaffolding — not part of the runtime image
+testcases
+deployment/apparmor/                  # server-side apparmor profiles, not for the image
+deployment/platforms/                  # PaaS-specific manifests (fly/, k8s/) — not needed in image
+deployment/server-setup.sh             # VPS provisioning, not for the image
+deployment/README.md                   # operator docs
+.github/
+.devcontainer/
+
+# Dev scripts not needed at runtime
+scripts/r*-*.ts
+scripts/test-*.ts
+scripts/smoke-*.sh
+scripts/screenshots/
+scripts/phase1-*/
+scripts/mint-admin-token.ts
+scripts/seed-*.sh
+scripts/cleanup-*.mjs
+scripts/run-*.mjs
+scripts/verify-*.ts
+
+# Top-level dev utilities (also archived to ../doablechore/archive/)
+CLAUDE.md
+do-commit.cmd
+dev.ps1
+cleanup-temp.ps1
+test-publish.sh
+watchdog.sh
+sync-codehub.ps1
+clear-migrations.mjs
+reset-db.mjs
+check-migrations.mjs
+
+# Platform manifests — useful in repo, not needed in image
+.do/
+railway.json
+render.yaml
+fly/
+k8s/
+app.json
+
+# Runtime data dirs (mounted as volumes in real deploys)
+services/api/projects
+services/api/thumbnails
+services/ws/projects
+data
+sites
+
+# Build artifacts + scratch
+coverage
+*.log
+*.bak
+*.old
+*.orig
+*.tsbuildinfo
+test-sendandwait.*
+collab-issue-research.md
+copilot-concurrency-plan.md
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

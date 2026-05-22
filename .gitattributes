@@ -1,0 +1,16 @@
+# Force LF line endings for shell scripts and other Unix executables
+# regardless of the contributor's platform. Without this, Git on
+# Windows can normalize *.sh to CRLF on checkout / git archive, which
+# breaks the kernel's shebang lookup ("/bin/bash\r": No such file)
+# and prints `set: pipefail: invalid option name` when dash falls back.
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+Dockerfile  text eol=lf
+
+# Extensionless executables and apparmor profile files — same reason as
+# above: CRLF in a /bin/bash script breaks the kernel shebang lookup,
+# and apparmor_parser rejects CRLF-terminated profile lines.
+deployment/bin/*       text eol=lf
+deployment/apparmor/*  text eol=lf

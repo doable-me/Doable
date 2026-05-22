@@ -1,0 +1,134 @@
+#!/bin/bash
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  /opt/doable/bin/sandbox-spawn — privileged sandbox-drop wrapper     ║
+# ║                                                                      ║
+# ║  Installed by deployment/server-setup.sh (root:root mode 0755).      ║
+# ║  Invoked by the unprivileged `doable` API user via sudo (NOPASSWD)   ║
+# ║  to drop into a per-project UID for dev-server / build spawns.       ║
+# ║                                                                      ║
+# ║  Sole privileged operation: setpriv --reuid/--regid/--clear-groups   ║
+# ║  to a UID in 10001..65000, then exec the validated command.          ║
+# ║                                                                      ║
+# ║  SECURITY BOUNDARY: every input is validated before we give up root. ║
+# ║  Be paranoid. Reject anything weird. Errors are short and explicit.  ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# Usage:
+#   sudo /opt/doable/bin/sandbox-spawn <uid> <project_id> <command> [args...]
+#
+# Exit codes:
+#   1   - argument / validation failure (rejected before privilege drop)
+#   126 - command not executable
+#   127 - command not found
+#   *   - whatever the child returns
+
+set -u
+umask 0022
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+die() {
+  echo "sandbox-spawn: $*" 1>&2
+  exit 1
+}
+
+# ─── Hard-coded constants (server-setup.sh sed-rewrites PROJECTS_PREFIX
+#     to match INSTALL_DIR/services/api/projects at install time) ───────
+PROJECTS_PREFIX="/opt/doable/services/api/projects"
+NODE_BIN="/usr/bin/node"
+BWRAP_BIN="/usr/bin/bwrap"
+MIN_UID=10001
+MAX_UID=65000
+
+if [ $# -lt 3 ]; then
+  die "usage: sandbox-spawn <uid> <project_id> <command> [args...]"
+fi
+
+UID_ARG="$1"
+PROJECT_ID="$2"
+CMD="$3"
+shift 3
+
+# ─── Validate UID ──────────────────────────────────────────────────────
+case "${UID_ARG}" in
+  ''|*[!0-9]*) die "uid must be a positive integer (got: ${UID_ARG})" ;;
+esac
+if [ "${UID_ARG}" -lt "${MIN_UID}" ] || [ "${UID_ARG}" -gt "${MAX_UID}" ]; then
+  die "uid ${UID_ARG} outside sandbox range ${MIN_UID}-${MAX_UID}"
+fi
+
+# ─── Validate project_id (canonical UUID 8-4-4-4-12 hex) ───────────────
+case "${PROJECT_ID}" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) : ;;
+  *) die "project_id must be a lowercase UUID (got: ${PROJECT_ID})" ;;
+esac
+
+# Belt-and-braces: reject path-traversal markers (the glob already excludes
+# them but if someone widens the validator we want this to catch it).
+case "${PROJECT_ID}" in
+  *..*|*/*|*\\*) die "project_id contains illegal characters" ;;
+esac
+
+PROJECT_PATH="${PROJECTS_PREFIX}/${PROJECT_ID}"
+
+if [ ! -d "${PROJECT_PATH}" ]; then
+  die "project path does not exist: ${PROJECT_PATH}"
+fi
+
+RESOLVED="$(readlink -f -- "${PROJECT_PATH}" 2>/dev/null || true)"
+if [ -z "${RESOLVED}" ]; then
+  die "could not resolve project path: ${PROJECT_PATH}"
+fi
+case "${RESOLVED}" in
+  "${PROJECTS_PREFIX}"/*) : ;;
+  *) die "project path escapes prefix (resolved=${RESOLVED})" ;;
+esac
+
+# ─── Validate command — allowed: /usr/bin/node, /usr/bin/bwrap, OR
+#     <project_path>/node_modules/.bin/* (symlink resolution enforced) ──
+# bwrap is allow-listed because dovault's bubblewrap-v2 backend now wraps its
+# spawn chain with `sandbox-spawn <uid> <pid> bwrap ...` when the API runs
+# unprivileged (euid != 0). The setpriv reuid below drops privileges to a
+# per-project uid (10001-65000) BEFORE exec'ing bwrap, so anything bwrap
+# subsequently does is bounded by that uid — the args after `bwrap` are
+# attacker-controlled if the API itself is compromised, but the effective
+# uid has zero host privileges, matching the security model of the node
+# and node_modules/.bin/* arms below.
+CMD_RESOLVED=""
+case "${CMD}" in
+  "${NODE_BIN}")
+    CMD_RESOLVED="${NODE_BIN}"
+    ;;
+  "${BWRAP_BIN}")
+    CMD_RESOLVED="${BWRAP_BIN}"
+    ;;
+  "${PROJECT_PATH}/node_modules/.bin/"*)
+    case "${CMD}" in
+      *..*) die "command contains '..': ${CMD}" ;;
+    esac
+    if [ ! -x "${CMD}" ]; then
+      die "command not executable: ${CMD}"
+    fi
+    CMD_RESOLVED="$(readlink -f -- "${CMD}" 2>/dev/null || true)"
+    if [ -z "${CMD_RESOLVED}" ]; then
+      die "could not resolve command path: ${CMD}"
+    fi
+    case "${CMD_RESOLVED}" in
+      "${RESOLVED}"/*) : ;;
+      *) die "command resolves outside project tree (resolved=${CMD_RESOLVED})" ;;
+    esac
+    ;;
+  *)
+    die "command must be ${NODE_BIN}, ${BWRAP_BIN}, or under ${PROJECT_PATH}/node_modules/.bin/ (got: ${CMD})"
+    ;;
+esac
+
+# setpriv: no PAM, no setuid-regain. The egress jail also enforces UID
+# isolation at the kernel level (nft rules in server-setup.sh).
+exec /usr/bin/setpriv \
+  --reuid="${UID_ARG}" \
+  --regid="${UID_ARG}" \
+  --clear-groups \
+  -- "${CMD_RESOLVED}" "$@"
+
+die "exec setpriv failed (this should never print)"

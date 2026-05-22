@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ws
+  namespace: doable
+spec:
+  # v0.1.0: single replica only.
+  # Scaling beyond 1 replica requires sticky sessions (session affinity) so
+  # that each Yjs client reconnects to the same pod holding its document state.
+  # nginx-ingress supports this via:
+  #   nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+  # or use a dedicated Yjs cluster solution. NOT configured here.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ws
+  template:
+    metadata:
+      labels:
+        app: ws
+    spec:
+      initContainers:
+        # Same migrate initContainer as api — ensures ws pod waits for schema
+        # to be ready before opening WebSocket connections.
+        - name: migrate
+          image: ghcr.io/doable-me/doable-migrate:latest
+          envFrom:
+            - secretRef:
+                name: doable-secrets
+      containers:
+        - name: ws
+          image: ghcr.io/doable-me/doable-ws:latest
+          ports:
+            - containerPort: 4001
+          envFrom:
+            - configMapRef:
+                name: doable-config
+            - secretRef:
+                name: doable-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 4001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 4001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: ws-projects
+              mountPath: /app/projects
+      volumes:
+        - name: ws-projects
+          persistentVolumeClaim:
+            claimName: ws-projects

@@ -1,0 +1,48 @@
+app = "doable-web"
+primary_region = "iad"
+
+[build]
+  image = "ghcr.io/doable-me/doable-web:latest"
+
+[experimental]
+  auto_rollback = true
+
+[env]
+  HOSTNAME = "0.0.0.0"
+  PORT = "3000"
+  NODE_ENV = "production"
+  # OPERATOR: override these three via `fly secrets set --app doable-web` once
+  # you have your custom domain. The defaults below point at the default
+  # doable-web.fly.dev hostname which is fine for a quick smoke-test.
+  NEXT_PUBLIC_API_URL = "https://doable-web.fly.dev/api"   # REPLACE with your custom domain
+  NEXT_PUBLIC_WS_URL = "wss://doable-web.fly.dev/ws"       # REPLACE with your custom domain
+  NEXT_PUBLIC_APP_URL = "https://doable-web.fly.dev"        # REPLACE with your custom domain
+
+# Public-facing service
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+# Proxy /api/* and /ws/* to the internal flycast services.
+# Fly's machines proxy doesn't natively reverse-proxy, so this is handled
+# by Next.js rewrites in apps/web/next.config.ts (already configured to
+# rewrite /api → API_URL and /ws → WS_URL when those env vars point at
+# fly.internal/.flycast names).
+
+[checks]
+  [checks.web_health]
+    type = "http"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/"

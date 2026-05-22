@@ -1,0 +1,44 @@
+# AppArmor profile for bubblewrap (bwrap) — used by dovault's bubblewrap
+# backend to jail dev-server / build / publish workloads.
+#
+# Ubuntu 24.04 ships with kernel.apparmor_restrict_unprivileged_userns=1,
+# which blocks any unprivileged process from creating a user namespace
+# (CLONE_NEWUSER). bwrap's whole isolation model is built on user
+# namespaces — without one, it can't set up the uid_map / gid_map that
+# remap the calling UID to the jail's `--uid` value, and the spawn dies
+# with:
+#
+#   bwrap: setting up uid map: Permission denied
+#
+# That symptom blocks every preview / build / chat-tool spawn on a fresh
+# Ubuntu 24.04 box (and is the root cause of BUG-R11-CYCLEB-BWRAP-UIDMAP-
+# DENIED — the AI returns an error card because the BYOK Copilot SDK
+# session never gets created).
+#
+# This profile attaches to /usr/bin/bwrap (and the legacy /usr/sbin/ path)
+# in `unconfined` mode. Under Ubuntu 24.04's apparmor_restrict_unprivileged_
+# userns=1 the kernel checks whether the calling binary has an AppArmor
+# profile attached — if it does, the userns gate yields to the profile's
+# `userns` rule rather than blanket-denying. Attaching an unconfined
+# profile here is what flips that gate for bwrap specifically; the
+# explicit `userns,` rule in the body is documentary belt-and-braces
+# (the unconfined attachment is the actual enforcement boundary).
+#
+# Trade-off: bwrap runs fully unconfined under this profile, which is the
+# correct posture because bwrap is itself a privileged-by-design isolator
+# whose own internal validation is what we're relying on. Every OTHER
+# binary on the host remains restricted by the global kernel knob,
+# preserving defense-in-depth against unrelated userns LPEs.
+#
+# Companion profile to doable-puppeteer-chrome (same shape, different
+# binary). Both are installed by deployment/server-setup.sh Step 12.6.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile doable-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
+
+profile doable-bwrap-sbin /usr/sbin/bwrap flags=(unconfined) {
+  userns,
+}

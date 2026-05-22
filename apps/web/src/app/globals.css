@@ -1,0 +1,849 @@
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+@layer base {
+  /* ─── Brand color palettes ─────────────────────────── */
+  :root,
+  [data-brand="purple"] {
+    --brand-50: 250 100% 98%;
+    --brand-100: 251 91% 95%;
+    --brand-200: 251 95% 92%;
+    --brand-300: 253 95% 85%;
+    --brand-400: 255 92% 76%;
+    --brand-500: 258 90% 66%;
+    --brand-600: 262 83% 58%;
+    --brand-700: 263 70% 50%;
+    --brand-800: 263 69% 42%;
+    --brand-900: 264 67% 35%;
+    --brand-950: 261 73% 23%;
+  }
+
+  [data-brand="sunset"] {
+    --brand-50: 33 100% 96%;
+    --brand-100: 34 100% 92%;
+    --brand-200: 32 98% 83%;
+    --brand-300: 31 97% 72%;
+    --brand-400: 27 96% 61%;
+    --brand-500: 25 95% 53%;
+    --brand-600: 21 90% 48%;
+    --brand-700: 17 88% 40%;
+    --brand-800: 15 79% 34%;
+    --brand-900: 15 75% 28%;
+    --brand-950: 13 81% 15%;
+  }
+
+  [data-brand="ocean"] {
+    --brand-50: 204 100% 97%;
+    --brand-100: 204 94% 94%;
+    --brand-200: 201 94% 86%;
+    --brand-300: 199 95% 74%;
+    --brand-400: 198 93% 60%;
+    --brand-500: 199 89% 48%;
+    --brand-600: 200 98% 39%;
+    --brand-700: 201 96% 32%;
+    --brand-800: 201 90% 27%;
+    --brand-900: 202 80% 24%;
+    --brand-950: 204 80% 16%;
+  }
+
+  [data-brand="emerald"] {
+    --brand-50: 152 81% 96%;
+    --brand-100: 149 80% 90%;
+    --brand-200: 152 76% 80%;
+    --brand-300: 156 72% 67%;
+    --brand-400: 158 64% 52%;
+    --brand-500: 160 84% 39%;
+    --brand-600: 161 94% 30%;
+    --brand-700: 163 94% 24%;
+    --brand-800: 163 88% 20%;
+    --brand-900: 164 86% 16%;
+    --brand-950: 166 91% 9%;
+  }
+
+  [data-brand="rose"] {
+    --brand-50: 356 100% 97%;
+    --brand-100: 356 100% 95%;
+    --brand-200: 353 96% 90%;
+    --brand-300: 353 96% 82%;
+    --brand-400: 351 95% 71%;
+    --brand-500: 349 89% 60%;
+    --brand-600: 346 77% 50%;
+    --brand-700: 345 83% 41%;
+    --brand-800: 343 80% 35%;
+    --brand-900: 342 75% 30%;
+    --brand-950: 343 88% 16%;
+  }
+
+  /* ─── Light theme ──────────────────────────────────── */
+  :root {
+    --background: 40 33% 98%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: var(--brand-700);
+    --primary-foreground: 0 0% 100%;
+    --secondary: 260 10% 95%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 40 20% 94%;
+    --muted-foreground: 240 5% 32%;
+    --accent: 260 10% 95%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 10% 90%;
+    --input: 40 10% 88%;
+    --ring: var(--brand-700);
+    --radius: 0.75rem;
+  }
+
+  /* ─── Dark theme ───────────────────────────────────── */
+  .dark {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 95%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 95%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 95%;
+    --primary: var(--brand-500);
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 95%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: var(--brand-500);
+  }
+
+  /* ─── Light-mode neutral palette remap ──────────────────
+   * The dashboard chrome was authored for dark mode and uses
+   * `bg-zinc-900`, `text-zinc-400`, `border-zinc-800` etc. in
+   * hundreds of places. Tailwind v4 emits each shade as a CSS
+   * variable (`--color-zinc-*`), so we can flip the entire
+   * palette under `.light` without touching individual files.
+   *
+   * The same approach is applied to gray/slate/neutral/stone
+   * which are used in marketing pages, template previews and
+   * a handful of dashboard surfaces.
+   *
+   * Mapping intent (dark shade → light equivalent):
+   *   bg-*-950/900/800   → near-white surfaces (card-ish)
+   *   bg-*-700           → light border / muted bg
+   *   text-*-50/100      → strong dark text (foreground)
+   *   text-*-200/300     → emphasis dark text
+   *   text-*-400/500     → muted text
+   *   border-*-700/800   → light border
+   * --------------------------------------------------------- */
+  .light {
+    --color-zinc-50: oklch(14.1% .005 285.823);    /* was lightest -> now darkest text */
+    --color-zinc-100: oklch(21% .006 285.885);
+    --color-zinc-200: oklch(27.4% .006 286.033);
+    --color-zinc-300: oklch(37% .013 285.805);
+    --color-zinc-400: oklch(55.2% .016 285.938);   /* muted text */
+    --color-zinc-500: oklch(45% .015 285.9);
+    --color-zinc-600: oklch(55.2% .016 285.938);
+    --color-zinc-700: oklch(87.1% .006 286.286);   /* was border-ish dark -> light border */
+    --color-zinc-800: oklch(92% .004 286.3);       /* nested surface */
+    --color-zinc-900: oklch(97% .002 286.3);       /* card background (near white) */
+    --color-zinc-950: oklch(98.5% .001 286.3);     /* page background */
+
+    /* gray (mirrors zinc but with a touch more warmth) */
+    --color-gray-50: oklch(14% .006 285.823);
+    --color-gray-100: oklch(21% .006 285.885);
+    --color-gray-200: oklch(27% .006 286.033);
+    --color-gray-300: oklch(37% .013 285.805);
+    --color-gray-400: oklch(55% .016 285.938);
+    --color-gray-500: oklch(45% .015 285.9);
+    --color-gray-600: oklch(55% .016 285.938);
+    --color-gray-700: oklch(87% .006 286.286);
+    --color-gray-800: oklch(92% .004 286.3);
+    --color-gray-900: oklch(97% .002 286.3);
+    --color-gray-950: oklch(98.5% .001 286.3);
+
+    /* slate */
+    --color-slate-50: oklch(14% .013 254.6);
+    --color-slate-100: oklch(20.8% .016 254.6);
+    --color-slate-200: oklch(27.9% .025 254.6);
+    --color-slate-300: oklch(37.2% .033 256.65);
+    --color-slate-400: oklch(55.4% .041 257.42);
+    --color-slate-500: oklch(45.4% .037 257.31);
+    --color-slate-600: oklch(55.4% .041 257.42);
+    --color-slate-700: oklch(86.9% .017 256.6);
+    --color-slate-800: oklch(92.1% .013 255.5);
+    --color-slate-900: oklch(96.8% .007 247.9);
+    --color-slate-950: oklch(98.4% .003 247.9);
+
+    /* neutral */
+    --color-neutral-50: oklch(14.5% 0 0);
+    --color-neutral-100: oklch(20.5% 0 0);
+    --color-neutral-200: oklch(26.9% 0 0);
+    --color-neutral-300: oklch(37.1% 0 0);
+    --color-neutral-400: oklch(55.6% 0 0);
+    --color-neutral-500: oklch(43.9% 0 0);
+    --color-neutral-600: oklch(55.6% 0 0);
+    --color-neutral-700: oklch(87% 0 0);
+    --color-neutral-800: oklch(92.2% 0 0);
+    --color-neutral-900: oklch(97% 0 0);
+    --color-neutral-950: oklch(98.5% 0 0);
+
+    /* stone */
+    --color-stone-50: oklch(14.7% .004 49.25);
+    --color-stone-100: oklch(21.6% .006 56.04);
+    --color-stone-200: oklch(26.8% .007 34.3);
+    --color-stone-300: oklch(37.4% .01 67.56);
+    --color-stone-400: oklch(55.3% .013 58.07);
+    --color-stone-500: oklch(44.4% .011 73.64);
+    --color-stone-600: oklch(55.3% .013 58.07);
+    --color-stone-700: oklch(86.9% .005 56.37);
+    --color-stone-800: oklch(92.3% .003 48.72);
+    --color-stone-900: oklch(97% .001 106.42);
+    --color-stone-950: oklch(98.5% .001 106.42);
+
+    /* `text-white` shows up on chrome (where it should flip to dark)
+     * AND on brand/destructive buttons (where it must stay white).
+     * Override globally to foreground, then re-pin to white when the
+     * same/adjacent element has a brand/primary/destructive bg.
+     * (Actual override is in the @layer utilities block below — that
+     * layer wins over Tailwind's color utilities.) */
+  }
+}
+
+@layer utilities {
+  /* ─── `text-white` (and hover/focus variants) override ────────
+   * In light mode, `text-white` on chrome should flip to the
+   * foreground color. We re-pin to real white when the same or
+   * an ancestor element has a brand/primary/destructive bg so
+   * buttons stay readable. The same logic must apply to the
+   * hover/focus/group-hover variants Tailwind generates, which
+   * are otherwise written by hundreds of places.
+   * --------------------------------------------------------- */
+  .light .text-white,
+  .light .hover\:text-white:hover,
+  .light .focus\:text-white:focus,
+  .light .focus-visible\:text-white:focus-visible,
+  .light .group:hover .group-hover\:text-white,
+  .light .group:focus .group-focus\:text-white,
+  .light .group:focus-within .group-focus-within\:text-white,
+  .light .peer:hover ~ .peer-hover\:text-white,
+  .light .data-\[state\=open\]\:text-white[data-state="open"],
+  .light .data-\[state\=active\]\:text-white[data-state="active"] {
+    color: hsl(var(--foreground));
+  }
+  /* Re-pin to real white on brand/primary/destructive surfaces */
+  .light :is([class*="bg-brand-"], [class*="from-brand-"], [class*="to-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]) :is(
+    .text-white,
+    .hover\:text-white,
+    .focus\:text-white,
+    .group-hover\:text-white,
+    .group-focus\:text-white
+  ),
+  .light :is([class*="bg-brand-"], [class*="from-brand-"], [class*="to-brand-"], .bg-primary, .bg-destructive, [class*="bg-red-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-amber-"], [class*="bg-blue-"]):is(
+    .text-white,
+    .hover\:text-white:hover,
+    .focus\:text-white:focus,
+    .group-hover\:text-white,
+    .group-focus\:text-white
+  ) {
+    color: #fff;
+  }
+
+  /* ─── Hardcoded hex backgrounds → light equivalents ──────────
+   * Several editor-chrome surfaces and the marketing landing
+   * page use VS Code-style arbitrary hex utilities (e.g.
+   * `bg-[#1e1e1e]`, `bg-[#1C1C1C]`, `bg-[#0a0a0a]`). These do
+   * not pick up the palette remap above, so we re-target them
+   * directly here to keep light mode consistent.
+   * --------------------------------------------------------- */
+  /* Editor chrome — VS Code-style backgrounds */
+  .light .bg-\[\#1C1C1C\],
+  .light .bg-\[\#1c1c1c\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#1e1e1e\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#252526\] { background-color: hsl(var(--muted)); }
+  .light .hover\:bg-\[\#2a2a2b\]:hover,
+  .light .bg-\[\#2a2a2b\] { background-color: hsl(var(--accent)); }
+  .light .bg-\[\#1e1e2e\] { background-color: hsl(var(--muted-foreground) / 0.4); }
+  .light .hover\:bg-\[\#333\]:hover { background-color: hsl(var(--accent)); }
+  .light .border-\[\#1C1C1C\],
+  .light .border-\[\#1c1c1c\] { border-color: hsl(var(--border)); }
+
+  /* Editor chrome — off-white text colors that would otherwise vanish */
+  .light .text-\[\#FCFBF8\] { color: hsl(var(--foreground)); }
+  .light .text-\[\#F0F6FF\] { color: hsl(var(--foreground)); }
+  .light .text-\[\#9b9a97\] { color: hsl(var(--muted-foreground)); }
+  .light .text-\[\#9b9a77\]\/70 { color: hsl(var(--muted-foreground) / 0.7); }
+  .light .text-\[\#9b9a77\]\/60 { color: hsl(var(--muted-foreground) / 0.6); }
+
+  /* Re-pin to white when sitting on a known dark/brand surface */
+  .light :is([class*="bg-brand-"], .bg-primary, .bg-destructive, .bg-\[\#5337CD\], .bg-\[\#1E52F1\]) :is(
+    .text-\[\#FCFBF8\],
+    .text-\[\#F0F6FF\]
+  ) { color: #fff; }
+
+  /* Marketing/landing — dark hero & cards */
+  .light .bg-\[\#0a0a0a\] { background-color: hsl(var(--background)); }
+  .light .bg-\[\#1a1a1a\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#111\] { background-color: hsl(var(--card)); }
+  .light .bg-\[\#0f0f10\] { background-color: hsl(var(--background)); }
+
+  /* ─── Dialog / sheet scrims ───────────────────────────────────
+   * `bg-black/X` overlays look fine as dim scrims in dark mode
+   * but feel oppressive in light mode. Soften to the foreground
+   * color at lower opacity so the scrim still reads as "modal".
+   * --------------------------------------------------------- */
+  .light .bg-black\/80 { background-color: hsl(var(--foreground) / 0.45); }
+  .light .bg-black\/70 { background-color: hsl(var(--foreground) / 0.4); }
+  .light .bg-black\/60 { background-color: hsl(var(--foreground) / 0.35); }
+  .light .bg-black\/50 { background-color: hsl(var(--foreground) / 0.3); }
+  .light .bg-black\/40 { background-color: hsl(var(--foreground) / 0.06); }
+
+  /* ─── White-on-white chrome guards ────────────────────────────
+   * `border-white/10`, `bg-white/[0.02]` etc. are essentially
+   * invisible against a light background. Map them onto the
+   * foreground color so the same hairlines/tints still render.
+   * --------------------------------------------------------- */
+  .light .border-white\/5 { border-color: hsl(var(--foreground) / 0.08); }
+  .light .border-white\/8 { border-color: hsl(var(--foreground) / 0.1); }
+  .light .border-white\/10 { border-color: hsl(var(--foreground) / 0.12); }
+  .light .border-white\/20 { border-color: hsl(var(--foreground) / 0.2); }
+  .light .bg-white\/\[0\.02\] { background-color: hsl(var(--foreground) / 0.03); }
+  .light .bg-white\/5 { background-color: hsl(var(--foreground) / 0.06); }
+  .light .hover\:bg-white\/5:hover { background-color: hsl(var(--foreground) / 0.06); }
+  .light .bg-white\/10 { background-color: hsl(var(--foreground) / 0.08); }
+  .light .hover\:bg-white\/10:hover { background-color: hsl(var(--foreground) / 0.08); }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* ─── Custom scrollbars ─────────────────────────────── */
+
+  /* Webkit (Chrome, Edge, Safari) */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.35);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+  }
+}
+
+/* Animated gradient orbs */
+@keyframes float-slow {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.05);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
+  }
+}
+
+@keyframes float-medium {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-40px, 30px) scale(1.1);
+  }
+  66% {
+    transform: translate(30px, -30px) scale(0.9);
+  }
+}
+
+@keyframes float-fast {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(20px, 40px) scale(1.08);
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 20s ease-in-out infinite;
+}
+
+.animate-float-medium {
+  animation: float-medium 15s ease-in-out infinite;
+}
+
+.animate-float-fast {
+  animation: float-fast 10s ease-in-out infinite;
+}
+
+/* Animated gradient pulse drift - slowly moving gradient background */
+@keyframes pulse-drift {
+  0% {
+    transform: translateX(0%) translateY(0%) scale(1);
+    background-position: 50% 0%;
+  }
+  25% {
+    transform: translateX(5%) translateY(-3%) scale(1.03);
+    background-position: 40% 40%;
+  }
+  50% {
+    transform: translateX(-3%) translateY(4%) scale(0.97);
+    background-position: 60% 100%;
+  }
+  75% {
+    transform: translateX(-5%) translateY(-2%) scale(1.02);
+    background-position: 50% 60%;
+  }
+  100% {
+    transform: translateX(0%) translateY(0%) scale(1);
+    background-position: 50% 0%;
+  }
+}
+
+.animate-pulse-drift {
+  animation: pulse-drift 20s ease-in-out infinite;
+}
+
+/* Dashboard hero gradient — dark mode uses deep brand shades, light mode uses soft tints */
+.dashboard-hero-gradient {
+  background-image: linear-gradient(160deg,
+    hsl(var(--background)) 0%,
+    hsl(var(--background)) 10%,
+    hsl(var(--brand-950)) 18%,
+    hsl(var(--brand-700)) 32%,
+    hsl(var(--brand-500)) 44%,
+    hsl(var(--brand-400)) 54%,
+    hsl(var(--brand-300)) 64%,
+    hsl(var(--brand-500)) 76%,
+    hsl(var(--brand-400)) 88%,
+    hsl(var(--background)) 100%
+  );
+  background-size: 200% 200%;
+}
+
+.light .dashboard-hero-gradient {
+  background-image: linear-gradient(160deg,
+    hsl(var(--background)) 0%,
+    hsl(var(--background)) 10%,
+    hsl(var(--brand-100)) 18%,
+    hsl(var(--brand-200)) 32%,
+    hsl(var(--brand-300)) 44%,
+    hsl(var(--brand-200)) 54%,
+    hsl(var(--brand-100)) 64%,
+    hsl(var(--brand-200)) 76%,
+    hsl(var(--brand-100)) 88%,
+    hsl(var(--background)) 100%
+  );
+  background-size: 200% 200%;
+}
+
+/* Gradient text utility */
+.text-gradient {
+  background: linear-gradient(135deg, hsl(var(--brand-600)), hsl(var(--brand-400)), hsl(var(--brand-600)));
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shift 4s ease-in-out infinite;
+}
+
+@keyframes gradient-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* ─── Live Status Indicator Animations ─────────────────── */
+@keyframes status-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}
+
+@keyframes status-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.status-dot-1 { animation: status-dot-bounce 1.4s ease-in-out infinite; }
+.status-dot-2 { animation: status-dot-bounce 1.4s ease-in-out 0.2s infinite; }
+.status-dot-3 { animation: status-dot-bounce 1.4s ease-in-out 0.4s infinite; }
+
+.status-text-enter {
+  animation: fade-in-up 0.3s ease-out;
+}
+
+.status-shimmer-bg {
+  background: linear-gradient(90deg, transparent, hsl(var(--brand-500) / 0.06), transparent);
+  background-size: 200% 100%;
+  animation: status-shimmer 2s ease-in-out infinite;
+}
+
+/* Streaming caret glow */
+.streaming-caret .status-dot-1,
+.streaming-caret .status-dot-2,
+.streaming-caret .status-dot-3 {
+  box-shadow: 0 0 4px hsl(var(--brand-400) / 0.5);
+}
+
+/* ─── Chat markdown styles ─────────────────────────────── */
+.prose-editor { overflow-wrap: break-word; word-break: break-word; }
+.prose-editor .chat-h1 { font-size: 1.25rem; font-weight: 700; margin: 0.75rem 0 0.25rem; line-height: 1.3; }
+.prose-editor .chat-h2 { font-size: 1.1rem; font-weight: 650; margin: 0.6rem 0 0.2rem; line-height: 1.3; }
+.prose-editor .chat-h3 { font-size: 1rem; font-weight: 600; margin: 0.5rem 0 0.15rem; line-height: 1.3; }
+.prose-editor .chat-h4 { font-size: 0.9rem; font-weight: 600; margin: 0.4rem 0 0.1rem; line-height: 1.3; }
+.prose-editor .bubble-heading {
+  padding-left: 0.6rem;
+  border-left: 2px solid;
+  border-image: linear-gradient(to bottom, hsl(var(--brand-500)), hsl(var(--brand-400)/0.4)) 1;
+  animation: bubbleIn 0.3s cubic-bezier(0.22,1,0.36,1) both;
+}
+/* ─── Premium Chat Lists ─────────────────────────────── */
+.prose-editor .premium-ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.prose-editor .premium-ul-li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  background-color: hsl(var(--muted)/0.3);
+  border: 1px solid hsl(var(--border)/0.5);
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.prose-editor .premium-ul-li:hover {
+  background-color: hsl(var(--background));
+  border-color: hsl(var(--border));
+}
+.prose-editor .ul-bullet {
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: 0.25rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, hsl(var(--brand-500)), hsl(var(--brand-400)));
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prose-editor .ul-bullet::after {
+  content: "";
+  width: 0.25rem;
+  height: 0.25rem;
+  background: white;
+  border-radius: 9999px;
+}
+.prose-editor .li-content {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+  color: hsl(var(--foreground)/0.9);
+}
+
+.prose-editor .premium-ol {
+  display: flex;
+  flex-direction: column;
+  margin: 1.25rem 0;
+  padding: 0;
+  list-style: none;
+  position: relative;
+}
+.prose-editor .premium-ol::before {
+  content: "";
+  position: absolute;
+  top: 0.25rem;
+  bottom: 0.5rem;
+  left: 0.6875rem; /* center of 1.375rem */
+  width: 2px;
+  background: linear-gradient(to bottom, hsl(var(--brand-500)/0.3), transparent);
+  z-index: 0;
+}
+.prose-editor .premium-ol-li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  position: relative;
+  z-index: 1;
+  padding-bottom: 1rem;
+}
+.prose-editor .premium-ol-li:last-child {
+  padding-bottom: 0;
+}
+.prose-editor .ol-number {
+  flex-shrink: 0;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin-top: 0.125rem;
+  border-radius: 9999px;
+  background: hsl(var(--background));
+  border: 1.5px solid hsl(var(--brand-500)/0.4);
+  color: hsl(var(--brand-500));
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 3px hsl(var(--background));
+}
+.prose-editor .chat-hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 0.5rem 0; }
+.prose-editor .code-block { background: hsl(var(--muted)); border-radius: 0.375rem; padding: 0.75rem; margin: 0.5rem 0; overflow-x: auto; font-size: 0.8rem; }
+.prose-editor .inline-code { background: hsl(var(--muted)); border-radius: 0.25rem; padding: 0.1rem 0.3rem; font-size: 0.85em; }
+
+/* ─── AI Chatbox — Phase 4/5 animation tokens ───────────── */
+
+/* Plan step completion flash (green → transparent over 1.2s) */
+@keyframes step-complete {
+  0%   { background-color: transparent; }
+  25%  { background-color: hsl(142 76% 36% / 0.18); }
+  100% { background-color: transparent; }
+}
+.animate-step-complete {
+  animation: step-complete 1.2s ease-out forwards;
+}
+
+/* Activity feed running row subtle pulse */
+@keyframes pulse-subtle {
+  0%, 100% { background-color: transparent; }
+  50%       { background-color: hsl(var(--brand-500) / 0.04); }
+}
+.animate-pulse-subtle {
+  animation: pulse-subtle 3s ease-in-out infinite;
+}
+
+/* Tool call card running border glow */
+@keyframes border-pulse {
+  0%, 100% { border-color: hsl(217 91% 60% / 0.25); }
+  50%       { border-color: hsl(217 91% 60% / 0.55); }
+}
+.animate-border-pulse {
+  animation: border-pulse 2s ease-in-out infinite;
+}
+
+/* Hide scrollbar (used in compact plan pill strip) */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Bubble Chat Animations ───────────────────────────── */
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes bubbleInLeft {
+  from { opacity: 0; transform: translateX(-6px) translateY(4px); }
+  to   { opacity: 1; transform: translateX(0) translateY(0); }
+}
+
+@keyframes planStepIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes clarificationSlideIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes shimmerSwipe {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+@keyframes optionPulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--brand-500) / 0); }
+  50%       { box-shadow: 0 0 0 3px hsl(var(--brand-500) / 0.12); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
+/* Bubble list items — animated in sequentially */
+.bubble-item {
+  animation: bubbleIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.bubble-item:nth-child(1)  { animation-delay: 0ms; }
+.bubble-item:nth-child(2)  { animation-delay: 55ms; }
+.bubble-item:nth-child(3)  { animation-delay: 110ms; }
+.bubble-item:nth-child(4)  { animation-delay: 165ms; }
+.bubble-item:nth-child(5)  { animation-delay: 220ms; }
+.bubble-item:nth-child(6)  { animation-delay: 275ms; }
+.bubble-item:nth-child(7)  { animation-delay: 330ms; }
+.bubble-item:nth-child(n+8){ animation-delay: 385ms; }
+
+/* Streaming: highlight the newest bubble */
+.streaming-bubble .bubble-item:last-child {
+  box-shadow: 0 0 10px hsl(var(--brand-500) / 0.1);
+  border-color: hsl(var(--brand-500) / 0.2) !important;
+}
+
+/* Prevent rapid DOM recreation from resetting animations while actively streaming */
+.streaming-bubble .bubble-item,
+.streaming-bubble .bubble-heading {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: translateY(0) scale(1) !important;
+  filter: blur(0) !important;
+}
+
+/* Plan step bubble — glassmorphism entry */
+.plan-step-bubble {
+  animation: planStepIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Clarification card entry */
+.clarification-card {
+  animation: clarificationSlideIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Shimmer hover overlay on option buttons */
+.option-btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+.option-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--brand-500) / 0.08),
+    transparent
+  );
+  transform: translateX(-100%);
+  transition: none;
+}
+.option-btn:hover::after {
+  animation: shimmerSwipe 0.6s ease forwards;
+}
+.option-btn.selected {
+  animation: optionPulse 1.5s ease-in-out infinite;
+}
+
+/* Glow dot on clarification header */
+.clarify-glow-dot {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* Reduced motion: disable all new animations */
+@media (prefers-reduced-motion: reduce) {
+  .bubble-item,
+  .plan-step-bubble,
+  .clarification-card {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .option-btn::after { display: none; }
+}
+
+
+/* ─── Legal pages typography ─────────────────────────────── */
+.legal-article {
+  color: rgb(209, 213, 219); /* gray-300 */
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+.legal-article h1 {
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin-bottom: 0.5rem;
+}
+.legal-article h2 {
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 2.25rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+}
+.legal-article h3 {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+.legal-article p { margin: 0.85rem 0; }
+.legal-article ul, .legal-article ol {
+  margin: 0.85rem 0;
+  padding-left: 1.5rem;
+}
+.legal-article ul { list-style: disc; }
+.legal-article ol { list-style: decimal; }
+.legal-article li { margin: 0.35rem 0; }
+.legal-article li::marker { color: rgb(107, 114, 128); }
+.legal-article strong { color: #fff; font-weight: 600; }
+.legal-article a {
+  color: hsl(var(--brand-400));
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.legal-article a:hover { text-decoration: underline; }
+.legal-article code {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.85em;
+  color: rgb(229, 231, 235);
+}

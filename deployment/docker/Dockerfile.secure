@@ -1,0 +1,278 @@
+# ==============================================================================
+# Doable — Secure Dockerfile (full feature parity with bare-metal install)
+# ==============================================================================
+# This is the "secure" path: a full Ubuntu 24.04 image running systemd as PID 1
+# inside the container. It re-uses setup-server.sh in CONTAINER_MODE=1 so every
+# per-project hardening primitive (PrivateUsers, ProtectKernel*, dovault
+# sandbox, per-project UIDs via `useradd doable-{slug}`, Squid build-time proxy,
+# fail2ban, etc.) is identical to a bare-metal install.
+#
+# This file is INTENTIONALLY SEPARATE from docker/Dockerfile (the lightweight
+# demo image). DO NOT merge the two — they serve different audiences:
+#   - docker/Dockerfile        → quick demo, no systemd, no per-project sandbox
+#   - docker/Dockerfile.secure → production-grade, systemd PID 1, full hardening
+#
+# Build:
+#   docker build -f docker/Dockerfile.secure -t doable/secure .
+#
+# Run (compose teammate owns the canonical compose file; this is the manual form):
+#   docker run -d --name doable \
+#     --privileged \
+#     --tmpfs /run --tmpfs /tmp \
+#     -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+#     -v doable_data:/var/lib/doable \
+#     -p 127.0.0.1:3000:3000 \
+#     -p 127.0.0.1:4000:4000 \
+#     -p 127.0.0.1:4001:4001 \
+#     doable/secure
+#
+# Notes:
+#   - --privileged is required so systemd-in-container can manage cgroups,
+#     mount namespaces (bubblewrap/dovault sandbox), and set per-unit
+#     PrivateUsers/ProtectKernel*/etc.
+#   - Persistent state lives in /var/lib/doable (DB cluster, generated .env,
+#     projects, sites, secrets). Mount a named volume there.
+#   - /run and /tmp MUST be tmpfs for systemd to function correctly inside a
+#     container. The compose teammate handles these mounts in the canonical
+#     compose file; we only document them here.
+#   - No secrets are baked into the image. setup-server.sh generates them on
+#     first boot and persists them under /var/lib/doable.
+# ==============================================================================
+
+FROM ubuntu:24.04
+
+# Standard systemd-in-container hygiene
+ENV container=docker
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# systemd uses SIGRTMIN+3 to shut down cleanly
+STOPSIGNAL SIGRTMIN+3
+
+# ------------------------------------------------------------------------------
+# System packages — feature parity with setup-server.sh's apt list.
+# Postgres 16 + pgvector + pg_trgm, Caddy, cloudflared, tmux, squid (build-time
+# outbound proxy), bubblewrap (dovault sandbox), fail2ban, ufw (installed but
+# unused inside container — host firewall is the real boundary), build tools.
+# ------------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        lsb-release \
+        software-properties-common \
+        apt-transport-https \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- NodeSource (Node.js 22) ---
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list
+
+# --- PostgreSQL 16 (PGDG) ---
+RUN install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list
+
+# --- Caddy (binary install — bypasses cloudsmith repo URI parse issues on noble) ---
+RUN curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz" \
+        | tar -xz -C /usr/local/bin caddy \
+    && chmod +x /usr/local/bin/caddy \
+    && groupadd --system caddy \
+    && useradd --system --gid caddy --create-home --home-dir /var/lib/caddy --shell /usr/sbin/nologin --comment "Caddy web server" caddy \
+    && mkdir -p /etc/caddy \
+    && printf '%s\n' \
+        '[Unit]' \
+        'Description=Caddy' \
+        'Documentation=https://caddyserver.com/docs/' \
+        'After=network.target network-online.target' \
+        'Requires=network-online.target' \
+        '' \
+        '[Service]' \
+        'Type=notify' \
+        'User=caddy' \
+        'Group=caddy' \
+        'ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile' \
+        'ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force' \
+        'TimeoutStopSec=5s' \
+        'LimitNOFILE=1048576' \
+        'PrivateTmp=true' \
+        'ProtectSystem=full' \
+        'AmbientCapabilities=CAP_NET_BIND_SERVICE' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/caddy.service
+
+# --- Cloudflared ---
+RUN curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+        -o /usr/share/keyrings/cloudflare-main.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/cloudflared.list
+
+# --- Bulk install ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        systemd \
+        systemd-sysv \
+        dbus \
+        python3 \
+        python3-pip \
+        postgresql-16 \
+        postgresql-16-pgvector \
+        postgresql-contrib-16 \
+        cloudflared \
+        tmux \
+        squid \
+        bubblewrap \
+        fail2ban \
+        ufw \
+        nftables \
+        util-linux \
+        nodejs \
+        git \
+        openssl \
+        sudo \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# nftables: per-UID egress firewall for the dev sandbox pool. setpriv
+# (in util-linux, already pulled in by the base image but listed
+# explicitly above for clarity) drops the spawned dev/build process to
+# UID 10001+. setup-server.sh installs a drop-in /etc/nftables.d/doable-dev.nft
+# blocking egress for skuid 10001-65000 except loopback. --privileged
+# (required for systemd-in-container anyway) gives the container
+# CAP_NET_ADMIN so it can manipulate netfilter.
+
+# pnpm via corepack (ships with Node.js 22)
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# ------------------------------------------------------------------------------
+# systemd-in-container cleanup — disable units that try to touch hardware,
+# tty getties, etc. The remaining services come up cleanly.
+# ------------------------------------------------------------------------------
+RUN systemctl mask \
+        dev-hugepages.mount \
+        sys-fs-fuse-connections.mount \
+        sys-kernel-config.mount \
+        sys-kernel-debug.mount \
+        sys-kernel-tracing.mount \
+        systemd-firstboot.service \
+        systemd-modules-load.service \
+        systemd-udevd.service \
+        systemd-udev-trigger.service \
+        getty.target \
+        console-getty.service \
+        cloudflared.service \
+        ufw.service \
+    || true
+
+# Ship the repo into the image so first-boot setup-server.sh has source to
+# install. /var/lib/doable will hold persistent state separately.
+COPY . /opt/doable
+
+# Persistent state lives here — declared as VOLUME so a fresh `docker run`
+# without an explicit mount still gets an anonymous volume (data survives
+# container restart but not removal). Production must use a named volume.
+VOLUME ["/var/lib/doable"]
+
+# Entrypoint: just exec's /sbin/init. Setup runs later via systemd one-shot.
+COPY deployment/docker/entrypoint-secure.sh /usr/local/bin/doable-entrypoint
+RUN chmod +x /usr/local/bin/doable-entrypoint
+
+# First-boot setup script — runs as systemd one-shot AFTER postgres is up.
+RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        'STATE_DIR=/var/lib/doable' \
+        'MARKER="${STATE_DIR}/.initialized"' \
+        'LOG_DIR="${STATE_DIR}/logs"' \
+        'mkdir -p "${LOG_DIR}"' \
+        'if [[ -f "${MARKER}" ]]; then' \
+        '    echo "[doable-init] already initialized — skipping"' \
+        '    exit 0' \
+        'fi' \
+        'echo "[doable-init] first boot — running setup-server.sh in CONTAINER_MODE=1"' \
+        'cd /opt/doable' \
+        'export CONTAINER_MODE=1 INSTALL_DIR=/opt/doable DOABLE_STATE_DIR="${STATE_DIR}"' \
+        'bash setup-server.sh 2>&1 | tee "${LOG_DIR}/setup-server.log"' \
+        ': > "${MARKER}"' \
+        'echo "[doable-init] first-boot setup complete"' \
+        > /usr/local/bin/doable-first-boot \
+    && chmod +x /usr/local/bin/doable-first-boot
+
+# PG data persistence: copy the apt-installed initial cluster onto the
+# named volume on first boot, then point postgresql.conf data_directory
+# at the persisted path. Avoids the symlink-vs-running-pg race.
+# Runs Before=postgresql.service so PG starts with the right data_directory.
+RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        'PERSIST=/var/lib/doable/postgresql' \
+        'INITIAL=/var/lib/postgresql' \
+        'PG_CONF=/etc/postgresql/16/main/postgresql.conf' \
+        'if [ ! -d "$PERSIST/16/main" ]; then' \
+        '    echo "[doable-pg-bind] first run — copying initial PG cluster to volume"' \
+        '    mkdir -p "$PERSIST"' \
+        '    cp -a "$INITIAL/." "$PERSIST/"' \
+        '    chown -R postgres:postgres "$PERSIST"' \
+        'fi' \
+        'if ! grep -qE "^data_directory.*$PERSIST" "$PG_CONF" 2>/dev/null; then' \
+        '    echo "[doable-pg-bind] pointing data_directory at $PERSIST/16/main"' \
+        '    sed -i "s|^data_directory.*|data_directory = '"'"'$PERSIST/16/main'"'"'|" "$PG_CONF"' \
+        'fi' \
+        'echo "[doable-pg-bind] OK — data_directory: $(grep ^data_directory $PG_CONF)"' \
+        > /usr/local/bin/doable-pg-bind \
+    && chmod +x /usr/local/bin/doable-pg-bind
+
+RUN printf '%s\n' \
+        '[Unit]' \
+        'Description=Doable Postgres data persistence binding' \
+        'DefaultDependencies=no' \
+        'Before=postgresql.service' \
+        'After=local-fs.target' \
+        '' \
+        '[Service]' \
+        'Type=oneshot' \
+        'RemainAfterExit=yes' \
+        'ExecStart=/usr/local/bin/doable-pg-bind' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/doable-pg-bind.service \
+    && ln -sf /etc/systemd/system/doable-pg-bind.service \
+        /etc/systemd/system/multi-user.target.wants/doable-pg-bind.service
+
+# systemd unit that runs the first-boot script after postgres is up.
+# NOTE: NO Before=caddy.service / Before=doable.service — setup-server.sh
+# itself invokes `systemctl restart caddy` and `systemctl start doable`
+# from inside this unit, which would deadlock against a Before= ordering.
+RUN printf '%s\n' \
+        '[Unit]' \
+        'Description=Doable first-boot setup (CONTAINER_MODE=1)' \
+        'After=postgresql.service network-online.target' \
+        'Wants=postgresql.service network-online.target' \
+        '' \
+        '[Service]' \
+        'Type=oneshot' \
+        'RemainAfterExit=yes' \
+        'ExecStart=/usr/local/bin/doable-first-boot' \
+        'StandardOutput=journal+console' \
+        'StandardError=journal+console' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/doable-init.service \
+    && ln -sf /etc/systemd/system/doable-init.service \
+        /etc/systemd/system/multi-user.target.wants/doable-init.service
+
+# Ports: web (3000), api (4000), ws (4001). All bind 127.0.0.1 inside the
+# container per Doable's network policy; the docker -p flag maps them to the
+# host's loopback only.
+EXPOSE 3000 4000 4001
+
+ENTRYPOINT ["/usr/local/bin/doable-entrypoint"]
+CMD ["/sbin/init"]

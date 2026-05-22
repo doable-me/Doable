@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: doable
+  namespace: doable
+  annotations:
+    # nginx-ingress: extend timeouts for WebSocket long-lived connections
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # cert-manager: uncomment to enable automatic Let's Encrypt TLS.
+    # Requires cert-manager installed and a ClusterIssuer named letsencrypt-prod.
+    # In base this is commented out; the prod overlay enables it via a patch.
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  # TLS block: uncomment and set your domain when cert-manager is ready.
+  # The prod overlay patches this in automatically.
+  # tls:
+  #   - hosts:
+  #       - app.example.com
+  #     secretName: doable-tls
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 4000
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: ws
+                port:
+                  number: 4001
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 3000

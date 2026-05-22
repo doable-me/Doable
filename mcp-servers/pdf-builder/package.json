@@ -1,0 +1,22 @@
+{
+  "name": "pdf-builder-mcp",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Built-in Doable MCP App: AI-narrated PDF builder with live preview + .pdf + .html download. Renders print-ready HTML to PDF via puppeteer.",
+  "type": "module",
+  "bin": {
+    "pdf-builder-mcp": "./index.mjs"
+  },
+  "main": "./index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@mcp-ui/server": "^6.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "puppeteer": "^25.0.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

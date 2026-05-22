@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: doable
+
+# Operator: after copying secret.example.yaml → secret.yaml and filling values,
+# add "- secret.yaml" to the resources list below, then kubectl apply -k deploy-templates/k8s/base/
+# secret.yaml is gitignored and must NOT be committed.
+resources:
+  - namespace.yaml
+  # - secret.yaml   # uncomment after: cp secret.example.yaml secret.yaml && edit
+  - configmap.yaml
+  - postgres-pvc.yaml
+  - postgres-statefulset.yaml
+  - postgres-service.yaml
+  - migrate-job.yaml
+  - api-pvc.yaml
+  - api-deployment.yaml
+  - api-service.yaml
+  - ws-pvc.yaml
+  - ws-deployment.yaml
+  - ws-service.yaml
+  - web-deployment.yaml
+  - web-service.yaml
+  - ingress.yaml

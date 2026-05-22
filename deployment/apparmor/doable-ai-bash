@@ -1,0 +1,29 @@
+#include <tunables/global>
+profile doable-ai-bash {
+  #include <abstractions/base>
+  # Allow project work directory
+  /work/** rwk,
+  /tmp/** rwk,
+  /usr/** rmix,
+  /bin/** rmix,
+  /lib/** rmix,
+  /lib64/** rmix,
+  /etc/ssl/certs/** r,
+  # Deny everything else explicitly
+  deny /proc/cpuinfo r,
+  deny /proc/meminfo r,
+  deny /proc/version r,
+  deny /etc/passwd r,
+  deny /etc/shadow rwklx,
+  deny /opt/doable/** rwklx,
+  deny /var/lib/dpkg/** r,
+  deny /sys/firmware/** r,
+  # Deny network capabilities
+  deny capability net_admin,
+  deny capability sys_admin,
+  deny capability sys_module,
+  deny capability sys_ptrace,
+  # Outbound — orchestrator's nft-egress composer handles fine-grained policy
+  network inet stream,
+  network inet dgram,
+}

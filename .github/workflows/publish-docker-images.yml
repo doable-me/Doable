@@ -1,0 +1,87 @@
+# ==============================================================================
+# Publish Doable Docker images to GitHub Container Registry (ghcr.io)
+# ==============================================================================
+# Triggers:
+#   - push of a version tag like `v1.2.3` → publishes :v1.2.3 AND :latest
+#   - manual workflow_dispatch (for one-off rebuilds, publishes :latest only)
+#
+# Images published:
+#   - ghcr.io/doable-me/doable-api:<tag>
+#   - ghcr.io/doable-me/doable-ws:<tag>
+#   - ghcr.io/doable-me/doable-web:<tag>
+#   - ghcr.io/doable-me/doable-migrate:<tag>
+#
+# The web image is built WITHOUT NEXT_PUBLIC_* build args so its client
+# bundle keeps the __DOABLE_*_URL__ placeholders. The container's runtime
+# entrypoint (deployment/docker/web-runtime-entrypoint.sh) sed-replaces them at start
+# with the operator's actual URLs from env. One image works for any URL.
+# ==============================================================================
+
+name: Publish Docker images
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/doable
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      # Build each target serially — they share the same `deps` and `build`
+      # stages via buildx cache, so back-to-back builds are nearly free after
+      # the first. Parallel would multiply the cache-miss cost.
+      fail-fast: false
+      matrix:
+        target: [api, ws, web, migrate]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          IMAGE="${IMAGE_PREFIX}-${{ matrix.target }}"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+            echo "tags=${IMAGE}:${VERSION},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+            echo "Building ${IMAGE}:${VERSION} (+ :latest)"
+          else
+            echo "tags=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+            echo "Building ${IMAGE}:latest only (manual dispatch)"
+          fi
+
+      - name: Build and push ${{ matrix.target }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/docker/Dockerfile
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          # Cache layers between matrix runs + across workflow invocations
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          # Intentionally NOT passing NEXT_PUBLIC_* build args for the web
+          # target — we want placeholders baked into the bundle so the
+          # runtime entrypoint can rewrite them per-deployment.
+          provenance: false
