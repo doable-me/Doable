@@ -32,6 +32,8 @@ async function dataFetch<T>(
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${token}`,
+      // Required by the /__doable/data/* guard (PARAMS_INVALID without it).
+      "x-doable-data-api": "1",
       "x-doable-surface": "settings-ui",
     },
     body: JSON.stringify(body),
