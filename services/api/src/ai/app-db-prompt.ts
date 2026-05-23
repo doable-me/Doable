@@ -12,7 +12,7 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
 
 1. **Always check \`data.schema\` first** before writing app code that references a table. Never invent table or column names without verification.
 2. **Use \`data.migrate\`** (not \`data.exec\`) for every \`CREATE\`/\`ALTER\`/\`DROP\`. The migration_id should follow \`NNNN_short_name\` (e.g., \`0001_init_leads\`). Migrations are idempotent — re-running the same id is safe.
-3. **Every \`CREATE TABLE\` MUST include row-level security.** Use this template; never deviate:
+3. **Row-level security is the DEFAULT for EVERY table — enable it whenever possible.** Every \`CREATE TABLE\` MUST have a \`created_by uuid NOT NULL\` column, \`ENABLE ROW LEVEL SECURITY\`, and an owner policy. The ONLY exception is data the user *explicitly* asks to be shared/public/global; when in doubt, secure it. Use this template; never deviate:
    \`\`\`sql
    CREATE TABLE <name> (
      id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

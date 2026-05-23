@@ -26,8 +26,10 @@ import type { WorkerResponse } from "../../data-worker/types.js";
 /** Safe table-name slug (lowercase ident); excludes quotes/specials so it is
  *  safe to interpolate inside double-quotes in a DDL statement. */
 const TABLE_NAME_RE = /^[a-z_][a-z0-9_]{0,62}$/;
-/** Roles allowed to run destructive database operations (drop/reset). */
+/** Roles allowed to run privileged DDL ops (drop/reset/enable-rls). */
 const DESTRUCTIVE_ROLES = new Set(["owner", "admin"]);
+/** Per-user identity columns, in preference order, used to author an RLS owner policy. */
+const IDENTITY_COLS = ["created_by", "owner_id", "user_id"];
 
 /** Run a privileged exec op on a project's worker (superuser; bypasses the
  *  data-plane HTTP tier-gate, which is correct here — these are session-authed,
@@ -167,5 +169,56 @@ dataTokenRoutes.post("/:id/data/reset", async (c) => {
   } catch (err) {
     console.error(`[data/reset] ${id}:`, err instanceof Error ? err.message : err);
     return c.json({ error: "Failed to reset database" }, 500);
+  }
+});
+
+/** POST /projects/:id/data/enable-rls { table } — one-click: ENABLE ROW LEVEL
+ *  SECURITY + an owner policy keyed on the table's identity column. */
+dataTokenRoutes.post("/:id/data/enable-rls", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+  const access = await requireProjectAccess(userId, id);
+  if (!access) return c.json({ error: "Project not found" }, 404);
+  if (!DESTRUCTIVE_ROLES.has(access.role)) {
+    return c.json({ error: "Only an owner or admin can change row-level security" }, 403);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const table = typeof body?.table === "string" ? body.table : "";
+  if (!TABLE_NAME_RE.test(table) || table.startsWith("_doable_")) {
+    return c.json({ error: "Invalid or protected table name" }, 400);
+  }
+
+  try {
+    // Find a per-user identity column to scope the policy by. Names come from the
+    // catalog and are re-validated, so they are safe to interpolate (quoted).
+    const cols = execRows(
+      await execOnProject(
+        id,
+        `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}'`,
+      ),
+    ).map((r) => String(r.column_name));
+    const idCol = IDENTITY_COLS.find((c) => cols.includes(c));
+    if (!idCol || !TABLE_NAME_RE.test(idCol)) {
+      return c.json(
+        { error: "Table has no owner column (created_by / owner_id / user_id) to scope a policy by. Add one first." },
+        400,
+      );
+    }
+    const policy = `${table}_owner`;
+    // ENABLE RLS + replace the owner policy idempotently. created_by::text is
+    // compared to the GUC so an absent identity fails closed to zero rows.
+    const ddl =
+      `ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY;\n` +
+      `DROP POLICY IF EXISTS "${policy}" ON "${table}";\n` +
+      `CREATE POLICY "${policy}" ON "${table}" ` +
+      `USING ("${idCol}"::text = current_setting('app.user_id', true)) ` +
+      `WITH CHECK ("${idCol}"::text = current_setting('app.user_id', true))`;
+    const resp = await execOnProject(id, ddl);
+    if (!resp.ok) throw new Error(`${resp.error.code}: ${resp.error.message}`);
+    return c.json({ ok: true, table, policy, column: idCol });
+  } catch (err) {
+    console.error(`[data/enable-rls] ${id} ${table}:`, err instanceof Error ? err.message : err);
+    return c.json({ error: "Failed to enable row-level security" }, 500);
   }
 });

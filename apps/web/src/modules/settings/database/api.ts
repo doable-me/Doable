@@ -53,6 +53,17 @@ export async function resetDatabase(
   return apiFetch(`/projects/${projectId}/data/reset`, { method: "POST" });
 }
 
+/** Enable row-level security on a table + add an owner policy (owner/admin only). */
+export async function enableRls(
+  projectId: string,
+  table: string,
+): Promise<{ ok: boolean; table: string; policy: string; column: string }> {
+  return apiFetch(`/projects/${projectId}/data/enable-rls`, {
+    method: "POST",
+    body: JSON.stringify({ table }),
+  });
+}
+
 // ─── Data-plane helpers ─────────────────────────────────────
 
 async function dataFetch<T>(

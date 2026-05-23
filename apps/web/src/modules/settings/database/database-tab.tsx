@@ -75,7 +75,7 @@ export function DatabaseTab({ projectId }: DatabaseTabProps) {
         {activePane === "overview" && (
           <OverviewPane projectId={projectId} tokenState={tokenState} onNavigate={navigate} />
         )}
-        {activePane === "schema" && <SchemaPane tokenState={tokenState} />}
+        {activePane === "schema" && <SchemaPane projectId={projectId} tokenState={tokenState} />}
         {activePane === "rows" && <RowsPane tokenState={tokenState} />}
         {activePane === "queries" && <QueriesPane tokenState={tokenState} />}
         {activePane === "migrations" && <MigrationsPane projectId={projectId} />}

@@ -31,6 +31,14 @@ Use these tools during the AI build session to set up and inspect the database. 
 - Migrations are **idempotent** — re-running the same `migration_id` is a no-op.
 - Use `data.migrate` (not `data.query`) for **all** DDL. Never run `CREATE TABLE` or `ALTER TABLE` from app code.
 
+### Row-level security is mandatory by default
+
+**Enable RLS on EVERY table you create — whenever possible.** Each table gets a
+`created_by uuid NOT NULL` column + `ENABLE ROW LEVEL SECURITY` + an owner policy.
+The ONLY exception is data the user *explicitly* asks to be shared / public /
+global. When unsure, secure it. (Owners can also toggle this from the Database →
+Schema tab's "Enable RLS" button, but you should never ship a table without it.)
+
 ### Required table template (copy exactly, never deviate)
 
 ```sql
