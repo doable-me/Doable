@@ -10,7 +10,10 @@
 FROM node:22-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable pnpm && apt-get update && apt-get install -y --no-install-recommends tmux && rm -rf /var/lib/apt/lists/*
+# `curl` is shared by all final images (api/ws/web/migrate inherit from base).
+# It backs the prod compose healthchecks and is the go-to for in-container
+# debugging; node:22-slim ships without it.
+RUN corepack enable pnpm && apt-get update && apt-get install -y --no-install-recommends tmux curl && rm -rf /var/lib/apt/lists/*
 COPY deployment/docker/tmux-entrypoint.sh /usr/local/bin/tmux-entrypoint
 RUN chmod +x /usr/local/bin/tmux-entrypoint
 WORKDIR /app

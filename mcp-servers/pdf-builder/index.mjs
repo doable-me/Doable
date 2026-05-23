@@ -154,10 +154,18 @@ const TOOLS = [
 // ─────────────────────────────────────────────────────────────────────────
 let _browser = null;
 let _browserPromise = null;
+let _idleTimer = null;
 const LAUNCH_TIMEOUT_MS = 30_000;
+// Hard ceiling on a single render (setContent + page.pdf). On timeout the page
+// is force-closed so a pathological document can NEVER leave Chrome stuck.
+const RENDER_TIMEOUT_MS = 45_000;
+// Close the shared browser after this much inactivity so it never lingers.
+const BROWSER_IDLE_MS = 3 * 60_000;
 
 async function getBrowser() {
   if (_browser && _browser.connected) return _browser;
+  // A launch is already underway — join it rather than starting another, so
+  // concurrent renders share ONE Chrome instead of spawning (and leaking) many.
   if (_browserPromise) return _browserPromise;
   _browserPromise = (async () => {
     dlog("launching puppeteer…");
@@ -168,19 +176,44 @@ async function getBrowser() {
     const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("Browser launch timed out after 30s")), LAUNCH_TIMEOUT_MS),
     );
-    const b = await Promise.race([launch, timeout]);
-    _browser = b;
-    _browserPromise = null;
-    b.on("disconnected", () => { _browser = null; });
-    return b;
+    try {
+      const b = await Promise.race([launch, timeout]);
+      _browser = b;
+      b.on("disconnected", () => { if (_browser === b) _browser = null; });
+      return b;
+    } catch (err) {
+      // Launch lost the race to the timeout — reap the eventual Chrome so it
+      // can't linger as an orphan.
+      launch.then((b) => b.close()).catch(() => {});
+      throw err;
+    } finally {
+      _browserPromise = null;
+    }
   })();
   return _browserPromise;
+}
+
+/** (Re)arm the idle timer that closes the shared browser after inactivity. */
+function touchIdleTimer() {
+  if (_idleTimer) clearTimeout(_idleTimer);
+  _idleTimer = setTimeout(() => { void shutdown(); }, BROWSER_IDLE_MS);
+  if (typeof _idleTimer.unref === "function") _idleTimer.unref();
 }
 
 async function renderHtmlToPdf({ html, pageSize, margins, landscape }) {
   const browser = await getBrowser();
   const page = await browser.newPage();
-  try {
+
+  // Hard per-render deadline so a hung setContent/page.pdf can't pin Chrome.
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`PDF render timed out after ${RENDER_TIMEOUT_MS}ms`)),
+      RENDER_TIMEOUT_MS,
+    );
+  });
+
+  const work = (async () => {
     await page.setContent(html, { waitUntil: "networkidle0", timeout: 30_000 });
     const pdf = await page.pdf({
       format: pageSize || "A4",
@@ -195,13 +228,21 @@ async function renderHtmlToPdf({ html, pageSize, margins, landscape }) {
       },
     });
     return Buffer.from(pdf);
+  })();
+
+  try {
+    return await Promise.race([work, timeout]);
   } finally {
+    if (timer) clearTimeout(timer);
+    // ALWAYS close the page — success, error, OR timeout.
     try { await page.close(); } catch {}
+    touchIdleTimer();
   }
 }
 
 // Cleanup on process exit.
 async function shutdown() {
+  if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
   if (_browser) {
     try { await _browser.close(); } catch {}
     _browser = null;

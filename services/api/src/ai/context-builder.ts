@@ -50,6 +50,7 @@ export async function buildProjectContext(projectId: string): Promise<string> {
         const devDeps = Object.keys(pkg.devDependencies || {});
         context += `\n\nInstalled dependencies: ${deps.join(", ") || "(none)"}`;
         context += `\nInstalled devDependencies: ${devDeps.join(", ") || "(none)"}`;
+        context += preInstalledDepsLine();
       } catch { /* ignore parse errors */ }
     }
 
@@ -57,6 +58,20 @@ export async function buildProjectContext(projectId: string): Promise<string> {
   } catch {
     return context;
   }
+}
+
+/**
+ * Surfaces the pre-linked workspace packages so the AI does not conclude they
+ * are "not installed" and bail to localStorage. link-sdk.ts copies @doable/sdk
+ * into every project, and (when the per-app DB feature is on) @doable/data too.
+ * These are deliberately absent from package.json — they are resolvable by Vite
+ * but must NEVER be installed via npm or added to package.json. Returns "" when
+ * nothing is pre-linked so the surfaced deps list is unchanged in that case.
+ */
+function preInstalledDepsLine(): string {
+  const pre = ["@doable/sdk"];
+  if (process.env["DOABLE_APP_DB_ENABLED"] === "1") pre.push("@doable/data");
+  return `\nPre-installed (do NOT install, do NOT add to package.json): ${pre.join(", ")}`;
 }
 
 /**
@@ -218,6 +233,7 @@ export async function buildProjectContextForMode(
         const devDeps = Object.keys(pkg.devDependencies || {});
         context += `\n\nInstalled dependencies: ${deps.join(", ") || "(none)"}`;
         context += `\nInstalled devDependencies: ${devDeps.join(", ") || "(none)"}`;
+        context += preInstalledDepsLine();
       } catch { /* ignore parse errors */ }
     }
 

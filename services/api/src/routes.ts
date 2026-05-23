@@ -79,7 +79,12 @@ if (DOABLE_APP_DB_ENABLED) {
   // own prefix, NOT at "/", or the {.+} wildcard swallows every GET request
   // (/workspaces, /projects, …) and 404s the whole app.
   app.route("/__doable/mcp-apps/data", mcpAppsDataRoutes);
-  app.route("/projects", dataTokenRoutes);
+  // NOTE: dataTokenRoutes is mounted further down — AFTER chatRoutes — because
+  // it applies authMiddlewareWithRls on "/projects/*". Mounting it here (before
+  // chat) wrapped the streaming /projects/:id/chat route in the RLS
+  // single-connection transaction, which deadlocked the chat handler's
+  // concurrent Promise.all() DB queries (AI turns hung 180s, "no tools, no
+  // content"). See the mount below.
 }
 // Per-project runtime status / restart / logs (PRD 06 §4)
 app.route("/", runtimeRoutes);
@@ -94,6 +99,14 @@ app.route("/", directSaveRoutes);
 app.route("/", chatRoutes);
 app.route("/", planRoutes);
 app.route("/", editorRoutes);
+// Per-app DB data-token routes mount AFTER chat/editor: their
+// authMiddlewareWithRls "/projects/*" wildcard must NOT wrap the streaming
+// /projects/:id/chat route, or the chat handler's concurrent Promise.all() DB
+// queries deadlock inside the single-connection RLS transaction (AI turns hang
+// 180s with no output). Same ordering rationale as projectRoutes below.
+if (DOABLE_APP_DB_ENABLED) {
+  app.route("/projects", dataTokenRoutes);
+}
 app.route("/projects", projectRoutes);
 app.route("/workspaces", workspaceRoutes);
 app.route("/workspaces", aiSettingsRoutes);

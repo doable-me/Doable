@@ -9,9 +9,11 @@ Every Doable project has a built-in PGlite (PostgreSQL-compatible) database that
 
 ## Core rules
 
-1. **Never suggest an external database.** If the user wants to store or retrieve data, always use the inbuilt database via the tools and runtime import described below.
-2. **Never add `@doable/data` to `package.json`.** It is pre-installed in every project. Just import it.
-3. **Always check `data.schema` first** before writing app code that references a table. Never invent table or column names without verification.
+1. **The inbuilt DB is the ONLY persistence layer.** Whenever the user wants to store, save, persist, or retrieve data, you MUST use the inbuilt database: create the schema with `data.migrate` at build time, and read/write it from app code via `import { db } from "@doable/data"`.
+2. **🚫 localStorage / sessionStorage / IndexedDB / in-memory arrays are FORBIDDEN as the data store.** Never fall back to them to persist user records (tasks, leads, posts, notes, etc.). They are acceptable ONLY for trivial ephemeral UI state (e.g. "dark mode on", "sidebar collapsed", a draft being typed) — never as the place real data lives.
+3. **`@doable/data` is PRE-LINKED, not missing.** It is deliberately absent from `package.json` yet fully resolvable — the platform links it into `node_modules` of every project. Just `import { db } from "@doable/data"`. NEVER add it to `package.json` and NEVER run install_package for it. Its absence from the dependency list does NOT mean it is unavailable, and is NOT a reason to fall back to localStorage.
+4. **Never suggest an external database.** You do not need Supabase or any third-party DB — the inbuilt one is already there.
+5. **Always check `data.schema` first** before writing app code that references a table. Never invent table or column names without verification.
 
 ---
 
@@ -66,13 +68,29 @@ Add `workspace_id uuid NOT NULL` and a second RLS policy that joins through a wo
 
 ## Runtime: generated app code
 
-In generated TypeScript/React code, import the pre-installed `@doable/data` package:
+In generated TypeScript/React code, import the pre-linked `@doable/data` package (do NOT add it to package.json, do NOT install_package it — it is already resolvable):
 
 ```ts
 import { db } from "@doable/data";
 ```
 
-The user's identity token is injected automatically by the preview runtime — you do not need to pass it manually.
+The user's identity token is injected automatically by the preview runtime (`globalThis.__DOABLE_DATA_TOKEN`) — you do not need to pass it manually.
+
+Every call returns a `{ ok, rows, rowCount, error }` result — it does NOT throw on a SQL error. Always check `ok` before using `rows`:
+
+```ts
+import { db } from "@doable/data";
+
+const r = await db.query<{ id: string; title: string }>(
+  "SELECT id, title FROM tasks WHERE created_by = current_setting('app.user_id', true)::uuid ORDER BY created_at DESC LIMIT $1",
+  [50],
+);
+if (!r.ok) {
+  console.error(r.error?.message);
+  return;
+}
+const tasks = r.rows; // typed rows
+```
 
 ### Query pattern (always parameterised)
 
@@ -84,7 +102,7 @@ const result = await db.query<{ id: string; title: string }>(
   "SELECT id, title FROM tasks WHERE created_by = current_setting('app.user_id', true)::uuid ORDER BY created_at DESC LIMIT $1",
   [50],
 );
-const rows = result.rows;
+const rows = result.ok ? result.rows : [];
 
 // INSERT
 await db.query(

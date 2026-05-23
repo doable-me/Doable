@@ -288,10 +288,18 @@ export class CopilotEngine {
     let currentSessionId: string | undefined = sessionId;
 
     const engine = await this.pool!.createEngine({
+      // BUG-RESUME-PROVIDER: a resumed BYOK session MUST carry the same model
+      // + provider as createSession(). docore re-issues session.create on
+      // resume; without these the CLI logs "No auth info or provider
+      // available", never calls the model, and the turn hangs silently until
+      // the thinking_loop watchdog fires (no tools, no content). This made
+      // every project unbuildable once it had a persisted copilot_session_id.
+      model: config?.model ?? this.config.model,
       streaming: true,
       workingDirectory: config?.workingDirectory,
       onPermissionRequest: config?.onPermissionRequest,
       sessionConfig: {
+        ...(config?.provider ? { provider: config.provider } : {}),
         ...(config?.tools ? { tools: config.tools } : {}),
         ...(config?.skillDirectories && config.skillDirectories.length > 0
           ? { skillDirectories: config.skillDirectories }
@@ -338,6 +346,10 @@ export class CopilotEngine {
       onPermissionRequest: config?.onPermissionRequest,
       streaming: true,
       workingDirectory: config?.workingDirectory,
+      // Carry the BYOK provider/model through resume too (docore spreads
+      // these into the CLI resumeSession config). See BUG-RESUME-PROVIDER above.
+      ...(config?.provider ? { provider: config.provider } : {}),
+      ...(config?.model ? { model: config.model } : {}),
       ...(config?.tools ? { tools: config.tools } : {}),
       ...(config?.skillDirectories && config.skillDirectories.length > 0
         ? { skillDirectories: config.skillDirectories }

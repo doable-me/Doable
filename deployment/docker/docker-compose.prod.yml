@@ -79,7 +79,7 @@ services:
     # and by ws/migrate/web over docker internal DNS (`api:4000`).
     # Healthcheck uses the container's own 127.0.0.1:4000.
     healthcheck:
-      test: ["CMD", "curl", "-fs", "http://127.0.0.1:4000/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -174,7 +174,7 @@ services:
     # → ws:4001) and by api over docker internal DNS. Healthcheck uses
     # the container's own 127.0.0.1:4001.
     healthcheck:
-      test: ["CMD", "curl", "-fs", "http://127.0.0.1:4001/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6

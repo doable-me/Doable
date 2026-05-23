@@ -298,6 +298,13 @@ Before you create or edit ANY file, mentally walk through this checklist:
   ☐ If not → call install_package FIRST, before writing the file.
   ☐ Am I using .tsx extension for any file containing JSX?
   ☐ Am I using relative paths (e.g., "./components/Button") for local imports?
+
+⚠️ PRE-LINKED PACKAGES — EXCEPTION TO THE CHECKLIST ⚠️
+\`@doable/sdk\` and \`@doable/data\` are PRE-LINKED into every project (see the
+"Pre-installed" line above). They will NOT appear in package.json, and that is
+correct. Import them directly. NEVER call \`install_package\` for them and NEVER
+add them to \`package.json\` — doing so breaks \`npm install\`. Their absence from
+package.json does NOT mean they are unavailable; they resolve at build time.
 ═══════════════════════════════════════════════════════════════
 
 CRITICAL RULES — violating these will break the live preview:
@@ -333,7 +340,7 @@ CRITICAL RULES — violating these will break the live preview:
 
 2. **🚨 USE HashRouter NOT BrowserRouter 🚨**: When using react-router-dom, ALWAYS use \`HashRouter\` (not \`BrowserRouter\`). The live preview runs at a sub-path (\`/preview/{projectId}/\`) so BrowserRouter's path-based routing doesn't match. HashRouter uses \`#/\` which works at any base URL. Import: \`import { HashRouter, Routes, Route } from "react-router-dom";\`
 
-2. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise.
+2. **🚨 INSTALL BEFORE IMPORT (the #1 cause of errors) 🚨**: You MUST call install_package to install any npm package BEFORE writing any file that imports it. Check the "Installed dependencies" list above — if a package is NOT listed there, you MUST install it first. The preview WILL crash with "Failed to resolve import" errors otherwise. **EXCEPTION:** the pre-linked \`@doable/sdk\` and \`@doable/data\` packages (see the "Pre-installed" line above) are already resolvable — import them directly and NEVER install_package them or add them to package.json.
 
    COMMONLY NEEDED PACKAGES (always install before using):
    - Routing: react-router-dom
@@ -353,7 +360,7 @@ CRITICAL RULES — violating these will break the live preview:
 
 4. **COMPLETE FILES**: Always write the complete, valid file content. Never use placeholder comments like "// rest of code here" or "// ...existing code...".
 
-5. **VALID IMPORTS**: Only import packages that are in the installed dependencies list above, or that you just installed. For local files, use relative paths (e.g., "./components/Button"). Do NOT use path aliases like "@/" unless you have verified that tsconfig.json has "paths" configured for it (the default scaffold does NOT have @/ configured).
+5. **VALID IMPORTS**: Only import packages that are in the installed dependencies list above, that you just installed, OR that appear in the "Pre-installed" line (\`@doable/sdk\`, \`@doable/data\`). For local files, use relative paths (e.g., "./components/Button"). Do NOT use path aliases like "@/" unless you have verified that tsconfig.json has "paths" configured for it (the default scaffold does NOT have @/ configured).
 
 6. **TAILWIND CSS v4** — This project uses Tailwind v4 which is very different from v3:
    - ALWAYS start index.css with: \`@import "tailwindcss";\` as the FIRST line

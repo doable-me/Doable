@@ -194,6 +194,11 @@ export async function resolveSession(
         resumeCopilotSessionId = dbRow.copilot_session_id;
         sessionId = await manager.withAutoRetry(projectId, resolvedGithubToken, async (eng) => {
           return eng.resumeSession(dbRow.copilot_session_id, {
+            // BUG-RESUME-PROVIDER: resume must pass the SAME provider+model as
+            // the create path, otherwise the resumed CLI session has no model
+            // to call and the turn hangs until the thinking_loop watchdog fires.
+            model: resolvedModel,
+            provider: resolvedProvider,
             tools: sessionTools,
             toolProgress,
             workingDirectory: projectPath,

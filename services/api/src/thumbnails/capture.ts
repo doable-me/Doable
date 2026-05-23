@@ -28,11 +28,26 @@ const THUMBNAILS_DIR = path.resolve("thumbnails");
 const VIEWPORT = { width: 1280, height: 720 };
 
 const BROWSER_LAUNCH_TIMEOUT_MS = 30_000;
+// Hard ceiling on a single capture (goto + settle + health-check + screenshot).
+// On timeout we force-close the page so headless Chrome can NEVER stick around.
+const CAPTURE_TIMEOUT_MS = 30_000;
+// Close the shared browser after this much inactivity so it never lingers
+// indefinitely between bursts of captures.
+const BROWSER_IDLE_MS = 3 * 60_000;
 
 let browser: Browser | null = null;
+// Single in-flight launch promise. Concurrent callers (e.g. a retry storm of
+// preview errors) all await THIS one launch instead of each spawning their own
+// Chrome — the original bug that leaked ~20 orphaned chromium processes.
+let launchInFlight: Promise<Browser> | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function getBrowser(): Promise<Browser> {
-  if (!browser || !browser.connected) {
+  if (browser && browser.connected) return browser;
+  // A launch is already underway — join it rather than starting another.
+  if (launchInFlight) return launchInFlight;
+
+  launchInFlight = (async () => {
     // BUG-ANALYTICS-002: `--no-sandbox` / `--disable-setuid-sandbox` disable
     // Chromium's process isolation. They are only required when running as
     // root (where the SUID sandbox helper refuses to start). On non-root
@@ -61,9 +76,35 @@ async function getBrowser(): Promise<Browser> {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("Browser launch timed out after 30s")), BROWSER_LAUNCH_TIMEOUT_MS)
     );
-    browser = await Promise.race([launchPromise, timeoutPromise]);
-  }
-  return browser;
+    try {
+      const b = await Promise.race([launchPromise, timeoutPromise]);
+      browser = b;
+      // If the launch lost the race to the timeout but Chrome eventually came
+      // up, reap that orphan instead of leaking it.
+      b.on("disconnected", () => {
+        if (browser === b) browser = null;
+      });
+      return b;
+    } catch (err) {
+      // The launch timed out (or failed) — but the underlying Chrome process
+      // may still be starting. Reap it once it resolves so it can't linger.
+      launchPromise.then((b) => b.close()).catch(() => {});
+      throw err;
+    } finally {
+      launchInFlight = null;
+    }
+  })();
+  return launchInFlight;
+}
+
+/** (Re)arm the idle timer that closes the shared browser after inactivity. */
+function touchIdleTimer(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    void closeBrowser();
+  }, BROWSER_IDLE_MS);
+  // Don't keep the event loop alive just for the reaper.
+  if (typeof idleTimer.unref === "function") idleTimer.unref();
 }
 
 /**
@@ -99,6 +140,63 @@ async function isPreviewHealthy(page: import("puppeteer").Page): Promise<boolean
 }
 
 /**
+ * Perform a single capture attempt: open a page, navigate, health-check, and
+ * screenshot. The page is closed in a `finally` no matter what, and the entire
+ * sequence is bounded by a hard timeout. On timeout the page is force-closed,
+ * so a hung navigation/screenshot can never leave a Chrome page (or browser)
+ * stuck around — the user's explicit requirement.
+ *
+ * @returns `{ healthy: false }` if the preview shows errors (caller may retry),
+ *          or `{ healthy: true, filePath }` on a successful screenshot.
+ */
+async function captureOnce(
+  previewUrl: string,
+  projectId: string,
+): Promise<{ healthy: boolean; filePath?: string }> {
+  const b = await getBrowser();
+  const page = await b.newPage();
+
+  // Hard per-operation deadline. Resolves to a sentinel rather than rejecting
+  // so we can force-close the page before surfacing the timeout error.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Thumbnail capture timed out after ${CAPTURE_TIMEOUT_MS}ms`)),
+      CAPTURE_TIMEOUT_MS,
+    );
+  });
+
+  const work = (async (): Promise<{ healthy: boolean; filePath?: string }> => {
+    await page.setViewport(VIEWPORT);
+
+    // Navigate with timeout — use networkidle0 to wait for all requests to settle
+    await page.goto(previewUrl, {
+      waitUntil: "networkidle0",
+      timeout: 15000,
+    });
+
+    // Wait a bit for any animations / transitions to settle
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // Check if the preview is actually showing content (not an error overlay)
+    const healthy = await isPreviewHealthy(page);
+    if (!healthy) return { healthy: false };
+
+    const filePath = path.join(THUMBNAILS_DIR, `${projectId}.png`);
+    await page.screenshot({ path: filePath, type: "png" });
+    return { healthy: true, filePath };
+  })();
+
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    // ALWAYS close the page — even if `work` rejected or the deadline fired.
+    await page.close().catch(() => {});
+  }
+}
+
+/**
  * Capture a screenshot of the given preview URL and save it as a
  * PNG thumbnail for the project. Skips capture if the preview shows
  * an error overlay to avoid saving broken thumbnails.
@@ -125,23 +223,13 @@ export async function captureProjectThumbnail(
         await mkdir(THUMBNAILS_DIR, { recursive: true });
       }
 
-      const b = await getBrowser();
-      const page = await b.newPage();
-      await page.setViewport(VIEWPORT);
+      // Run the whole newPage→goto→screenshot under a hard timeout. The page is
+      // ALWAYS closed in `finally` (success, error, OR timeout) so a screenshot
+      // never leaves a page — and therefore headless Chrome — stuck around.
+      const result = await captureOnce(previewUrl, projectId);
+      touchIdleTimer();
 
-      // Navigate with timeout — use networkidle0 to wait for all requests to settle
-      await page.goto(previewUrl, {
-        waitUntil: "networkidle0",
-        timeout: 15000,
-      });
-
-      // Wait a bit for any animations / transitions to settle
-      await new Promise((r) => setTimeout(r, 1000));
-
-      // Check if the preview is actually showing content (not an error overlay)
-      const healthy = await isPreviewHealthy(page);
-      if (!healthy) {
-        await page.close();
+      if (result.healthy === false) {
         if (attempt < maxAttempts) {
           console.log(`[Thumbnail] Preview has errors for ${projectId}, retrying in ${retryDelay}ms (attempt ${attempt}/${maxAttempts})`);
           await new Promise((r) => setTimeout(r, retryDelay));
@@ -153,13 +241,9 @@ export async function captureProjectThumbnail(
         return null;
       }
 
-      const filePath = path.join(THUMBNAILS_DIR, `${projectId}.png`);
-      await page.screenshot({ path: filePath, type: "png" });
-      await page.close();
-
       console.log(`[Thumbnail] Captured screenshot for ${projectId}`);
       void logThumbnailAttempt({ projectId, status: "success", previewUrl, durationMs: Date.now() - startTime, triggeredBy });
-      return filePath;
+      return result.filePath!;
     } catch (err) {
       if (attempt < maxAttempts) {
         console.log(`[Thumbnail] Attempt ${attempt} failed for ${projectId}, retrying in ${retryDelay}ms`);
@@ -212,6 +296,10 @@ export async function logThumbnailAttempt(opts: {
 // ─── Cleanup on shutdown ────────────────────────────────────
 
 async function closeBrowser(): Promise<void> {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
   if (browser) {
     try {
       await browser.close();
