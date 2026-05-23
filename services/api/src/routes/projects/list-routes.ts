@@ -318,6 +318,17 @@ projectListRoutes.post("/", async (c) => {
     frameworkId,
   });
 
+  // US-011: register the per-project builtin doable.data MCP connector so the
+  // AI's data.* tools are available for this project. The chat-turn create path
+  // (send-handler.ts) does the same; this covers the dashboard POST /projects
+  // create path. Fire-and-forget; gated on the feature flag.
+  if (process.env.DOABLE_APP_DB_ENABLED === "1") {
+    const { ensureDataConnectorForProject } = await import("../../mcp/builtin/data/register.js");
+    ensureDataConnectorForProject(project.id, workspaceId, userId).catch((err) => {
+      console.error("[builtin-data] connector provision failed (project create):", err);
+    });
+  }
+
   return c.json({ data: project }, 201);
 });
 
