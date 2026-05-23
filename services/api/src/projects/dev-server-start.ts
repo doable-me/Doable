@@ -37,7 +37,36 @@ import {
   STARTUP_TIMEOUT_MS,
 } from "./dev-server-core.js";
 import { emitPreviewStartFailed } from "./preview-failure-trace.js";
-import { ensureDependencies } from "./file-manager.js";
+import { ensureDependencies, forceReinstallDependencies } from "./file-manager.js";
+
+/**
+ * Sentinel raised when the dev server crashed because its OWN dependency tree
+ * is corrupt (a package present-but-incomplete), not because of user code.
+ * startDevServer catches this and does a one-shot clean reinstall + retry.
+ */
+class CorruptDepsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CorruptDepsError";
+  }
+}
+
+/**
+ * Detect node's ESM-loader crash signature for a corrupt (interrupted/partial)
+ * install: ERR_MODULE_NOT_FOUND where the missing module path points INSIDE
+ * node_modules (one of vite's own deps is missing a file its exports map
+ * declares — e.g. tinyglobby/dist/index.mjs). This is distinct from a missing
+ * user import, which Vite surfaces as a recoverable overlay ("Failed to
+ * resolve import") under the project source tree, not a process-fatal crash.
+ */
+export function isCorruptNodeModulesCrash(output: string): boolean {
+  if (!output.includes("ERR_MODULE_NOT_FOUND")) return false;
+  return /Cannot find module '[^']*[\\/]node_modules[\\/][^']*'/.test(output);
+}
+
+// Per-project guard: at most one automatic clean-reinstall recovery per
+// process lifetime. A genuinely unfixable tree must not reinstall-loop.
+const corruptReinstallAttempts: Set<string> = new Set();
 
 // Keyed by projectId → Set<pkgName>. Deduplicates auto-install attempts so
 // duplicate `Could not resolve "<pkg>"` stderr chunks don't race-spawn npm.
@@ -122,13 +151,46 @@ export async function startDevServer(
     return inflight;
   }
 
-  const startPromise = doStartDevServer(projectId, opts);
+  const startPromise = startWithCorruptRecovery(projectId, opts);
   startingServers.set(projectId, startPromise);
 
   try {
     return await startPromise;
   } finally {
     startingServers.delete(projectId);
+  }
+}
+
+/**
+ * Wraps doStartDevServer with a one-shot corrupt-node_modules recovery: if the
+ * server crashes because its own dependency tree is incomplete (a partial
+ * install left a package missing files), nuke node_modules, reinstall, and
+ * retry once. Guarded per-project so an unfixable tree can't loop.
+ */
+async function startWithCorruptRecovery(
+  projectId: string,
+  opts?: StartDevServerOptions,
+): Promise<{ url: string; port: number }> {
+  try {
+    return await doStartDevServer(projectId, opts);
+  } catch (err) {
+    if (!(err instanceof CorruptDepsError) || corruptReinstallAttempts.has(projectId)) {
+      throw err;
+    }
+    corruptReinstallAttempts.add(projectId);
+    console.warn(
+      `[DevServer] corrupt node_modules for project ${projectId} — clean reinstall + one retry`,
+    );
+    try {
+      await forceReinstallDependencies(projectId);
+    } catch (reinstallErr) {
+      console.error(
+        `[DevServer] clean reinstall failed for project ${projectId}:`,
+        reinstallErr instanceof Error ? reinstallErr.message : reinstallErr,
+      );
+      throw err; // surface the original crash
+    }
+    return await doStartDevServer(projectId, opts);
   }
 }
 
@@ -908,11 +970,18 @@ async function doStartDevServer(
         rawOutput: outputBuffer,
         errorMessage: `exited with code ${code} before ready`,
       });
-      // Process died before becoming ready — this is a failure
+      // Process died before becoming ready — this is a failure. If the crash
+      // is the corrupt-dependency signature, raise the sentinel so the caller
+      // can do a one-shot clean reinstall + retry instead of crash-looping.
+      const summary = summarizeOutput(outputBuffer);
       markFailed(
-        new Error(
-          `Dev server exited with code ${code} before becoming ready.\nOutput: ${summarizeOutput(outputBuffer)}`,
-        ),
+        isCorruptNodeModulesCrash(outputBuffer)
+          ? new CorruptDepsError(
+              `Dev server crashed on a corrupt dependency (incomplete node_modules).\nOutput: ${summary}`,
+            )
+          : new Error(
+              `Dev server exited with code ${code} before becoming ready.\nOutput: ${summary}`,
+            ),
       );
     } else {
       // Process died after becoming ready — clean up the registry
@@ -946,10 +1015,15 @@ async function doStartDevServer(
           rawOutput: outputBuffer,
           errorMessage: `process exited (code ${child.exitCode}) without signaling ready`,
         });
+        const readySummary = summarizeOutput(outputBuffer);
         markFailed(
-          new Error(
-            `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${summarizeOutput(outputBuffer)}`,
-          ),
+          isCorruptNodeModulesCrash(outputBuffer)
+            ? new CorruptDepsError(
+                `Dev server crashed on a corrupt dependency (incomplete node_modules).\nOutput: ${readySummary}`,
+              )
+            : new Error(
+                `Dev server process exited (code ${child.exitCode}) without signaling ready.\nOutput: ${readySummary}`,
+              ),
         );
       } else {
         console.log(

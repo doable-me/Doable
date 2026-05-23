@@ -7,7 +7,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { writeFile as fsWriteFile, mkdir as fsMkdir } from "node:fs/promises";
+import { writeFile as fsWriteFile, mkdir as fsMkdir, rm as fsRm } from "node:fs/promises";
 import { spawn as nodeSpawn } from "node:child_process";
 import path from "node:path";
 import {
@@ -409,6 +409,62 @@ export async function ensureDependencies(projectId: string): Promise<void> {
   clearInstallFailures(projectId);
 
   // Ensure @doable/sdk is available after install
+  try {
+    await linkDoableSdk(projectPath);
+  } catch {
+    // Non-critical
+  }
+}
+
+/**
+ * Force a clean reinstall of a Node project's dependencies: removes
+ * node_modules entirely, then re-runs the framework adapter's install.
+ *
+ * Recovery path for a CORRUPT (not merely missing) dependency tree. When an
+ * earlier `npm install` is interrupted/killed mid-extract (the scaffold and
+ * peer-dep installers SIGTERM npm on timeout), a package can be left
+ * present-but-incomplete — e.g. tinyglobby/dist with index.cjs but no
+ * index.mjs — and vite then crashes at startup with ERR_MODULE_NOT_FOUND for
+ * a file inside node_modules. ensureDependencies() can't see this (it only
+ * probes the build tool itself, which IS present) and the reactive peer-dep
+ * installer can't fix it (the package "exists"), so the dev server
+ * crash-loops. Nuking node_modules and reinstalling from package-lock is the
+ * only reliable cure. Callers MUST guard against repeated invocation.
+ */
+export async function forceReinstallDependencies(projectId: string): Promise<void> {
+  const projectPath = getProjectPath(projectId);
+  // Node projects only — Python deps live in .venv, not node_modules.
+  if (!existsSync(path.join(projectPath, "package.json"))) return;
+
+  checkInstallBreaker(projectId);
+  await chownProjectToApiUser(projectId, projectPath);
+
+  let frameworkId = "vite-react";
+  try {
+    const { sql } = await import("../db/index.js");
+    const rows = await sql<{ framework_id: string }[]>`
+      SELECT framework_id FROM projects WHERE id = ${projectId}
+    `;
+    if (rows[0]?.framework_id) frameworkId = rows[0].framework_id;
+  } catch {
+    // DB unreachable — vite-react fallback is safe.
+  }
+  const adapter = defaultRegistry.getAdapter(frameworkId);
+
+  console.warn(
+    `[FileManager] force-reinstalling dependencies for project ${projectId} (corrupt node_modules recovery)`,
+  );
+  await fsRm(path.join(projectPath, "node_modules"), { recursive: true, force: true });
+
+  const ctx: FrameworkContext = { projectId, projectPath, basePath: "/", env: {} };
+  try {
+    await adapter.install(ctx);
+  } catch (err) {
+    recordInstallFailure(projectId);
+    throw err;
+  }
+  clearInstallFailures(projectId);
+
   try {
     await linkDoableSdk(projectPath);
   } catch {
