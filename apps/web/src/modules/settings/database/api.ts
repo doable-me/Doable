@@ -45,43 +45,54 @@ async function dataFetch<T>(
   return res.json() as Promise<T>;
 }
 
+// Raw query response from /__doable/data/query (data-worker contract).
+interface RawQueryResult {
+  ok: boolean;
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  fields: Array<{ name: string; type: string }>;
+  error?: { code: string; message: string } | string;
+}
+
 export function makeDataClient(apiBase: string, token: string) {
   return {
-    schema: () =>
-      dataFetch<SchemaResult>(apiBase, "schema", token, {}),
-    query: (sql: string, params?: unknown[]) =>
-      dataFetch<QueryResult>(apiBase, "query", token, { sql, params }),
+    schema: () => dataFetch<SchemaResult>(apiBase, "schema", token, {}),
+    query: async (sql: string, params?: unknown[]): Promise<QueryResult> => {
+      const raw = await dataFetch<RawQueryResult>(apiBase, "query", token, { sql, params });
+      // The server returns `fields: [{name,type}]`; the panes consume a flat
+      // `columns: string[]`. Derive it (fall back to the keys of the first row
+      // for SELECT * results where fields may be empty).
+      const columns =
+        raw.fields?.map((f) => f.name) ??
+        (raw.rows[0] ? Object.keys(raw.rows[0]) : []);
+      return { ok: raw.ok, rows: raw.rows ?? [], columns, rowCount: raw.rowCount ?? 0 };
+    },
   };
 }
 
-// ─── Result shapes (mirrors data-worker contract) ───────────
+// ─── Result shapes (mirror the data-worker / introspectSchema contract) ─────
 
 export interface ColumnInfo {
   name: string;
   type: string;
-  notnull: boolean;
-  pk: boolean;
-  dflt_value: string | null;
-}
-
-export interface IndexInfo {
-  name: string;
-  unique: boolean;
-  columns: string[];
+  nullable: boolean;
 }
 
 export interface PolicyInfo {
   name: string;
-  cmd: string;
-  permissive: boolean;
+  command: string;
+  using_expr: string | null;
+  with_check_expr: string | null;
 }
 
 export interface TableSchema {
   name: string;
   rowCount: number;
   columns: ColumnInfo[];
-  indexes: IndexInfo[];
+  /** Raw CREATE INDEX statements (pg_indexes.indexdef). */
+  indexes: string[];
   policies: PolicyInfo[];
+  rls_enabled: boolean;
 }
 
 export interface SchemaResult {
@@ -94,6 +105,6 @@ export interface QueryResult {
   ok: boolean;
   rows: Record<string, unknown>[];
   columns: string[];
-  rowsAffected?: number;
+  rowCount: number;
   error?: string;
 }

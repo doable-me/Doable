@@ -15,6 +15,7 @@ export interface ColumnInfo { name: string; type: string; nullable: boolean; }
 export interface PolicyInfo { name: string; command: string; using_expr: string | null; with_check_expr: string | null; }
 export interface TableSchema {
   name: string;
+  rowCount: number;
   columns: ColumnInfo[];
   indexes: string[];
   policies: PolicyInfo[];
@@ -65,7 +66,24 @@ export async function introspectSchema(exec: WorkerExec): Promise<SchemaResult> 
 
   const byTable = new Map<string, TableSchema>();
   for (const t of tableRows) {
-    byTable.set(t.tablename, { name: t.tablename, columns: [], indexes: [], policies: [], rls_enabled: !!t.rowsecurity });
+    byTable.set(t.tablename, { name: t.tablename, rowCount: 0, columns: [], indexes: [], policies: [], rls_enabled: !!t.rowsecurity });
+  }
+
+  // Per-table row counts (best-effort; runs over the superuser exec op so it
+  // sees true totals regardless of RLS). Table names come straight from the
+  // catalog above, so they're safe to quote. Generated apps have few/small
+  // tables, so N count(*) queries are cheap; a failure on any one table just
+  // leaves rowCount at 0 rather than failing the whole introspection.
+  for (const t of byTable.values()) {
+    try {
+      const countRows = rows<{ n: number | string }>(
+        await exec({ op: "exec", sql: `SELECT count(*)::int AS n FROM "${t.name}"` }),
+        `count:${t.name}`,
+      );
+      t.rowCount = Number(countRows[0]?.n ?? 0) || 0;
+    } catch {
+      t.rowCount = 0;
+    }
   }
   for (const c of columnRows) {
     const t = byTable.get(c.table_name);

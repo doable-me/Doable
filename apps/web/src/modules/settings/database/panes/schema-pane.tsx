@@ -110,8 +110,7 @@ export function SchemaPane({ tokenState }: SchemaPaneProps) {
                       <td className="py-1 font-mono">{col.name}</td>
                       <td className="py-1 text-muted-foreground">{col.type}</td>
                       <td className="py-1 space-x-1">
-                        {col.pk && <span className="rounded bg-blue-100 px-1 text-blue-700 dark:bg-blue-900 dark:text-blue-300">PK</span>}
-                        {col.notnull && <span className="rounded bg-muted px-1">NN</span>}
+                        {!col.nullable && <span className="rounded bg-muted px-1">NOT NULL</span>}
                       </td>
                     </tr>
                   ))}
@@ -126,12 +125,17 @@ export function SchemaPane({ tokenState }: SchemaPaneProps) {
                   Indexes ({selected.indexes.length})
                 </p>
                 <ul className="space-y-0.5">
-                  {selected.indexes.map((idx) => (
-                    <li key={idx.name} className="flex items-center gap-2 text-xs">
-                      <span className="font-mono">{idx.name}</span>
-                      {idx.unique && <span className="rounded bg-muted px-1 text-muted-foreground">UNIQUE</span>}
-                    </li>
-                  ))}
+                  {selected.indexes.map((indexdef) => {
+                    // indexes are raw CREATE INDEX statements (pg_indexes.indexdef)
+                    const name = indexdef.match(/INDEX (\w+)/i)?.[1] ?? indexdef;
+                    const unique = /UNIQUE INDEX/i.test(indexdef);
+                    return (
+                      <li key={indexdef} className="flex items-center gap-2 text-xs">
+                        <span className="font-mono">{name}</span>
+                        {unique && <span className="rounded bg-muted px-1 text-muted-foreground">UNIQUE</span>}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -147,7 +151,7 @@ export function SchemaPane({ tokenState }: SchemaPaneProps) {
                     <li key={pol.name} className="flex items-center gap-2 text-xs">
                       <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
                       <span className="font-mono">{pol.name}</span>
-                      <span className="text-muted-foreground">{pol.cmd}</span>
+                      <span className="text-muted-foreground">{pol.command}</span>
                     </li>
                   ))}
                 </ul>
