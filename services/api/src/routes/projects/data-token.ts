@@ -5,20 +5,27 @@
  * The JWT carries kind="connector-proxy" so it is accepted by the existing
  * /__doable/data/* auth path without any changes to the verifier.
  *
- * Auth: standard user-session middleware applied by the parent projectRoutes
- * router (authMiddlewareWithRls). Do NOT mount this router standalone.
+ * Auth: this router is mounted standalone at `/projects` (gated behind
+ * DOABLE_APP_DB_ENABLED in routes.ts), separate from the main projectRoutes
+ * router, so it must apply the session/RLS auth middleware itself —
+ * otherwise c.get("userId") is undefined and requireProjectAccess() blows up
+ * with a postgres UNDEFINED_VALUE error.
  *
- * Export: dataTokenRoutes — the integrator mounts it in projects.ts.
+ * Export: dataTokenRoutes — mounted at app.route("/projects", ...) in routes.ts.
  */
 
 import { Hono } from "hono";
 import type { AuthEnv } from "../../middleware/auth.js";
+import { authMiddlewareWithRls } from "../../middleware/rls.js";
 import { signProjectJwt } from "../../auth/project-jwt.js";
 import { PROJECT_JWT_SECRET } from "../../lib/secrets.js";
 import { requireProjectAccess, validateProjectIdParam } from "./helpers.js";
 
 export const dataTokenRoutes = new Hono<AuthEnv>({ strict: false });
 
+// Resolve the session → userId (+ RLS context) before any handler runs. This
+// router is NOT a child of projectRoutes, so it does not inherit that auth.
+dataTokenRoutes.use("*", authMiddlewareWithRls);
 dataTokenRoutes.use("/:id", validateProjectIdParam());
 dataTokenRoutes.use("/:id/*", validateProjectIdParam());
 

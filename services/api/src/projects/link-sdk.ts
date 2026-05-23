@@ -1,10 +1,13 @@
 /**
- * Links @doable/sdk into a generated project's node_modules.
+ * Links the private @doable/* workspace packages into a generated project's
+ * node_modules:
+ *   - @doable/sdk   — connector-proxy / runtime helpers
+ *   - @doable/data  — per-app PGlite database client (import { db } from "@doable/data")
  *
- * The SDK is a private workspace package (not on npm). Generated projects
- * use npm install which can't resolve workspace:* references. This module
- * copies the SDK source into the project's node_modules/@doable/sdk/ so
- * Vite can resolve it via its normal dependency pre-bundling.
+ * These are private workspace packages (not on npm). Generated projects use
+ * `npm install`, which can't resolve workspace:* references, so we copy each
+ * package's source into node_modules/<name>/ where Vite resolves it via its
+ * normal dependency pre-bundling.
  */
 
 import { existsSync } from "node:fs";
@@ -12,55 +15,99 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Resolve the SDK source directory.
- * process.cwd() = services/api/ → go up two levels to monorepo root.
+ * Resolve a workspace package's source dir, robust to where the API process
+ * was launched from. In local dev the cwd is services/api (packages live at
+ * ../../packages); in the Docker image the cwd is /app with packages at
+ * /app/packages. The old code assumed only the dev layout, so in containers
+ * it computed /packages/... and silently skipped linking — leaving
+ * @doable/sdk (and @doable/data) unresolvable in every deployed app. Probe
+ * the known layouts and return the first that exists.
  */
-function getSdkSourceDir(): string {
-  return path.resolve(process.cwd(), "../../packages/doable-sdk");
+function resolvePackageSrcDir(dirName: string): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), "../../packages", dirName), // dev: services/api → repo root
+    path.resolve(process.cwd(), "packages", dirName), //        container: cwd = /app
+    path.resolve(process.cwd(), "../packages", dirName), //      services/* one level up
+  ];
+  for (const dir of candidates) {
+    if (existsSync(path.join(dir, "package.json"))) return dir;
+  }
+  return null;
 }
 
 /**
- * Copy @doable/sdk into a project's node_modules.
- * Always re-copies source files to ensure the latest SDK version is used.
+ * Copy a private workspace package into a project's node_modules. Re-copies on
+ * every call so the linked copy tracks the current source. Returns true on
+ * success. The target path is derived from the package's own "name" field
+ * (e.g. "@doable/data" → node_modules/@doable/data).
  */
-export async function linkDoableSdk(projectPath: string): Promise<void> {
-  const targetDir = path.join(projectPath, "node_modules", "@doable", "sdk");
-  const markerFile = path.join(targetDir, "package.json");
-
-  const srcDir = getSdkSourceDir();
-  if (!existsSync(path.join(srcDir, "package.json"))) {
-    console.warn("[link-sdk] SDK source not found at", srcDir, "— skipping");
-    return;
+async function linkWorkspacePackage(
+  projectPath: string,
+  dirName: string,
+  srcFiles: string[],
+): Promise<boolean> {
+  const srcDir = resolvePackageSrcDir(dirName);
+  if (!srcDir) {
+    console.warn(
+      `[link-sdk] package source for ${dirName} not found (cwd=${process.cwd()}) — skipping`,
+    );
+    return false;
   }
 
-  // Ensure target directory structure
-  await mkdir(targetDir, { recursive: true });
+  const pkgJson = JSON.parse(
+    await readFile(path.join(srcDir, "package.json"), "utf-8"),
+  ) as { name?: string; private?: boolean; scripts?: unknown; devDependencies?: unknown };
+  const pkgName = pkgJson.name;
+  if (!pkgName) {
+    console.warn(`[link-sdk] ${dirName}/package.json has no name field — skipping`);
+    return false;
+  }
+
+  // node_modules/@doable/sdk (split so the scope dir is created too)
+  const targetDir = path.join(projectPath, "node_modules", ...pkgName.split("/"));
   await mkdir(path.join(targetDir, "src"), { recursive: true });
 
-  // Copy package.json (adjust main/exports to point to src/)
-  const pkgJson = JSON.parse(await readFile(path.join(srcDir, "package.json"), "utf-8"));
-  // Remove private flag and workspace-only fields so Vite treats it normally
+  // Strip workspace-only fields so Vite treats the linked copy as a normal dep.
   delete pkgJson.private;
   delete pkgJson.scripts;
   delete pkgJson.devDependencies;
-  await writeFile(markerFile, JSON.stringify(pkgJson, null, 2), "utf-8");
+  await writeFile(
+    path.join(targetDir, "package.json"),
+    JSON.stringify(pkgJson, null, 2),
+    "utf-8",
+  );
 
-  // Copy source files
-  const srcFiles = ["index.ts", "react.ts", "server.ts"];
   for (const file of srcFiles) {
     const srcPath = path.join(srcDir, "src", file);
     if (existsSync(srcPath)) {
-      const content = await readFile(srcPath, "utf-8");
-      await writeFile(path.join(targetDir, "src", file), content, "utf-8");
+      await writeFile(
+        path.join(targetDir, "src", file),
+        await readFile(srcPath, "utf-8"),
+        "utf-8",
+      );
     }
   }
 
-  // Copy tsconfig if present
   const tsConfigPath = path.join(srcDir, "tsconfig.json");
   if (existsSync(tsConfigPath)) {
-    const content = await readFile(tsConfigPath, "utf-8");
-    await writeFile(path.join(targetDir, "tsconfig.json"), content, "utf-8");
+    await writeFile(
+      path.join(targetDir, "tsconfig.json"),
+      await readFile(tsConfigPath, "utf-8"),
+      "utf-8",
+    );
   }
 
-  console.log(`[link-sdk] Linked @doable/sdk into ${projectPath}`);
+  console.log(`[link-sdk] Linked ${pkgName} into ${projectPath}`);
+  return true;
+}
+
+/**
+ * Link the private @doable/* workspace packages into a project's node_modules.
+ * Idempotent; safe to call on every dev-server start.
+ */
+export async function linkDoableSdk(projectPath: string): Promise<void> {
+  await linkWorkspacePackage(projectPath, "doable-sdk", ["index.ts", "react.ts", "server.ts"]);
+  // @doable/data — per-app DB client (src/index.ts only; index.test.ts is
+  // intentionally excluded so node:test never reaches the Vite bundle).
+  await linkWorkspacePackage(projectPath, "doable-data", ["index.ts"]);
 }
