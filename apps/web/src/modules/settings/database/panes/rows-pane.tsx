@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, RefreshCw, Pencil, Trash2, Check, X, Download } from "lucide-react";
+import { Loader2, RefreshCw, Pencil, Trash2, Check, X, Download, Plus } from "lucide-react";
 import { SectionCard } from "@/modules/settings/components/project-settings-shared";
 import type { DataTokenState } from "../hooks/use-data-token";
-import type { SchemaResult, QueryResult, TableSchema } from "../api";
+import type { SchemaResult, QueryResult, TableSchema, ColumnInfo } from "../api";
 
 const PAGE_SIZE = 50;
 const EXPORT_CAP = 10000;
+// Identity columns auto-filled from the signed-in user when left blank, so RLS
+// WITH CHECK (owner = current_setting('app.user_id')) lets the new row through.
+const IDENTITY_COLS = new Set(["owner_id", "created_by", "user_id"]);
 
 interface RowsPaneProps {
   tokenState: DataTokenState;
@@ -61,6 +64,9 @@ export function RowsPane({ tokenState }: RowsPaneProps) {
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   // Delete confirmation: the pk value of the row pending delete.
   const [confirmDeletePk, setConfirmDeletePk] = useState<unknown>(null);
+  // Add-row form: open flag + draft cell values.
+  const [adding, setAdding] = useState(false);
+  const [addDraft, setAddDraft] = useState<Record<string, string>>({});
 
   const loadSchema = useCallback(() => {
     if (!client) return;
@@ -170,6 +176,56 @@ export function RowsPane({ tokenState }: RowsPaneProps) {
     }
   }
 
+  function openAdd(): void {
+    setError(null);
+    setEditingPk(null);
+    setConfirmDeletePk(null);
+    setAddDraft({});
+    setAdding(true);
+  }
+
+  // Columns the user fills in the Add form: skip nothing, but mark which are
+  // optional (have a default / are identity-autofilled) so blanks are allowed.
+  function isOptionalCol(col: ColumnInfo): boolean {
+    return col.name === pk || /^(created_at|updated_at)$/.test(col.name) || IDENTITY_COLS.has(col.name) || col.nullable;
+  }
+
+  async function insertRow(): Promise<void> {
+    if (!client || !currentTable) return;
+    const cols: string[] = [];
+    const valExprs: string[] = [];
+    const params: unknown[] = [];
+    let p = 1;
+    for (const col of currentTable.columns) {
+      const raw = addDraft[col.name];
+      const filled = raw !== undefined && raw !== "";
+      if (IDENTITY_COLS.has(col.name) && !filled) {
+        // Auto-fill identity from the session; cast to the column's type.
+        const cast = /uuid/i.test(col.type) ? "::uuid" : "";
+        cols.push(`"${col.name}"`);
+        valExprs.push(`current_setting('app.user_id', true)${cast}`);
+        continue;
+      }
+      if (!filled) continue; // let the DB default / NULL apply (pk, created_at, optional)
+      cols.push(`"${col.name}"`);
+      valExprs.push(`$${p++}`);
+      params.push(raw);
+    }
+    if (cols.length === 0) { setError("Fill at least one field before adding the row."); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await client.query(`INSERT INTO "${selectedTable}" (${cols.join(", ")}) VALUES (${valExprs.join(", ")})`, params);
+      setAdding(false);
+      setAddDraft({});
+      await fetchRows(selectedTable, page);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Insert failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (tokenLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -220,6 +276,13 @@ export function RowsPane({ tokenState }: RowsPaneProps) {
           >
             <Download className="h-3.5 w-3.5" /> JSON
           </button>
+          <button
+            onClick={openAdd}
+            disabled={busy || adding || !selectedTable || columns.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add row
+          </button>
           {totalRows > 0 && (
             <span className="ml-auto text-xs text-muted-foreground">
               Page {page + 1} of {totalPages} &middot; {totalRows.toLocaleString()} rows total
@@ -233,6 +296,39 @@ export function RowsPane({ tokenState }: RowsPaneProps) {
           </p>
         )}
         {error && <p className="text-sm text-destructive whitespace-pre-wrap">{error}</p>}
+
+        {/* Add-row form */}
+        {adding && currentTable && (
+          <div className="space-y-2 rounded-md border border-primary/30 bg-muted/20 p-3">
+            <p className="text-xs font-medium text-muted-foreground">New row in <span className="font-mono text-foreground">{selectedTable}</span></p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {currentTable.columns.map((col) => (
+                <label key={col.name} className="flex flex-col gap-0.5 text-xs">
+                  <span className="font-mono text-muted-foreground">
+                    {col.name}
+                    {isOptionalCol(col) && <span className="ml-1 text-[10px] opacity-60">(optional)</span>}
+                  </span>
+                  <input
+                    value={addDraft[col.name] ?? ""}
+                    onChange={(e) => setAddDraft((d) => ({ ...d, [col.name]: e.target.value }))}
+                    placeholder={col.name === pk ? "auto" : IDENTITY_COLS.has(col.name) ? "you (auto)" : col.type}
+                    className="rounded border bg-background px-2 py-1 font-mono text-xs"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void insertRow()}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Add
+              </button>
+              <button onClick={() => { setAdding(false); setAddDraft({}); }} className="rounded-md border px-3 py-1 text-xs hover:bg-muted">Cancel</button>
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         {loadingRows ? (

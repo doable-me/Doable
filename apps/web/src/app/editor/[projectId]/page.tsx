@@ -779,7 +779,11 @@ async function streamChat(
           if (parsed.type === "error") {
             const errMsg = typeof parsed.data === "string"
               ? parsed.data
-              : "An unknown error occurred.";
+              : typeof parsed.data === "object" && parsed.data !== null
+                ? ((parsed.data as Record<string, unknown>).message as string | undefined)
+                  ?? ((parsed.data as Record<string, unknown>).error as string | undefined)
+                  ?? JSON.stringify(parsed.data)
+                : "An unknown error occurred.";
             onError(errMsg);
             // Don't return — keep reading so auto-continue events get processed
           }
@@ -1012,7 +1016,13 @@ function processOneSSEPayload(
     }
 
     if (parsed.type === "error") {
-      const errMsg = typeof parsed.data === "string" ? parsed.data : "An unknown error occurred.";
+      const errMsg = typeof parsed.data === "string"
+        ? parsed.data
+        : typeof parsed.data === "object" && parsed.data !== null
+          ? ((parsed.data as Record<string, unknown>).message as string | undefined)
+            ?? ((parsed.data as Record<string, unknown>).error as string | undefined)
+            ?? JSON.stringify(parsed.data)
+          : "An unknown error occurred.";
       cb.onError(errMsg);
       // Don't return true — keep reading the stream so auto-continue
       // events that follow the error can still be processed.

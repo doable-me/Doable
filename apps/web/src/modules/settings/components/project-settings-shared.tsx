@@ -56,6 +56,7 @@ export interface ContextStats {
 
 export const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "general", label: "General", icon: Settings },
+  { id: "database", label: "Database", icon: Database },
   { id: "integrations", label: "Integrations", icon: Plug },
   { id: "mcp", label: "MCP Servers", icon: Terminal },
   { id: "skills", label: "Skills & Rules", icon: Brain },
@@ -63,7 +64,6 @@ export const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "security", label: "Security", icon: Shield },
   { id: "domain", label: "Custom Domain", icon: Globe },
   { id: "environments", label: "Environments", icon: Server },
-  { id: "database", label: "Database", icon: Database },
   { id: "danger", label: "Danger Zone", icon: AlertTriangle },
 ];
 

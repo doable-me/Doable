@@ -414,7 +414,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             await stream.writeSSE({
               data: JSON.stringify({
                 type: "error",
-                data: { phase: "error", error: "thinking_loop", retry: true, message: "AI got stuck thinking. Please retry." },
+                data: "AI got stuck thinking. Please retry.",
               }),
             });
           } catch {}
