@@ -52,7 +52,6 @@ export function BuiltInCard({
   onConnect,
   onDisconnect,
   children,
-  comingSoon,
 }: {
   icon: React.ElementType;
   name: string;
@@ -62,7 +61,6 @@ export function BuiltInCard({
   onConnect?: () => void;
   onDisconnect?: () => void;
   children?: React.ReactNode;
-  comingSoon?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetails = connected && children;
@@ -75,14 +73,7 @@ export function BuiltInCard({
             <Icon className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">{name}</h3>
-              {comingSoon && (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Coming Soon
-                </span>
-              )}
-            </div>
+            <h3 className="text-sm font-semibold">{name}</h3>
             <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
           </div>
         </div>
@@ -108,19 +99,17 @@ export function BuiltInCard({
               )}
             </button>
           )}
-          {!comingSoon && (
-            <button
-              onClick={connected ? onDisconnect : onConnect}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                connected
-                  ? "border border-input text-muted-foreground hover:bg-accent hover:text-foreground"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
-              )}
-            >
-              {connected ? "Disconnect" : "Connect"}
-            </button>
-          )}
+          <button
+            onClick={connected ? onDisconnect : onConnect}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              connected
+                ? "border border-input text-muted-foreground hover:bg-accent hover:text-foreground"
+                : "bg-primary text-primary-foreground hover:bg-primary/90"
+            )}
+          >
+            {connected ? "Disconnect" : "Connect"}
+          </button>
         </div>
       </div>
       {expanded && children && (

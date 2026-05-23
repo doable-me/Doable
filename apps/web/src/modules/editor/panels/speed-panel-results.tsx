@@ -368,7 +368,7 @@ export function SpeedPanelResults({
       </section>
 
       <div className="text-center pb-2">
-        <p className="text-[10px] text-muted-foreground">Simulated audit results. Real Lighthouse integration coming soon.</p>
+        <p className="text-[10px] text-muted-foreground">Measured from your live preview (transfer-size based).</p>
       </div>
     </div>
   );

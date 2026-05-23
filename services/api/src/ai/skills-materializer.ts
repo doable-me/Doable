@@ -34,6 +34,7 @@ import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { skillsQueries, type SkillWithFiles } from "@doable/db";
 import { sql } from "../db/index.js";
+import { getSystemSkillDirs } from "./system-skills.js";
 
 const PROJECTS_ROOT = process.env.DOABLE_PROJECTS_DIR ?? join(process.cwd(), "projects");
 const SKILLS_ROOT =
@@ -177,10 +178,11 @@ export async function materializeSkillsForSession(opts: {
   userId: string;
 }): Promise<MaterializedSkills> {
   const { workspaceId, projectId, userId } = opts;
+  const systemDirs = getSystemSkillDirs();
   const all = await skillsDb.listSkillsForSession(workspaceId, projectId, userId);
   if (all.length === 0) {
     return {
-      skillDirectories: [],
+      skillDirectories: systemDirs,
       skillCount: 0,
       cleanup: async () => {},
     };
@@ -200,7 +202,7 @@ export async function materializeSkillsForSession(opts: {
     writeScopeRoot(userRoot, userSkills),
   ]);
 
-  const skillDirectories: string[] = [];
+  const skillDirectories: string[] = [...systemDirs];
   if (wsSkills.length > 0) skillDirectories.push(wsRoot);
   if (projSkills.length > 0) skillDirectories.push(projRoot);
   if (userSkills.length > 0) skillDirectories.push(userRoot);

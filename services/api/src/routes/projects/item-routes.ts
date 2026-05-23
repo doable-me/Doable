@@ -10,7 +10,7 @@ import { userQueries } from "@doable/db";
 import type { AuthEnv } from "../../middleware/auth.js";
 import { getProjectPath } from "../../ai/project-files.js";
 import { getThumbnailPath } from "../../thumbnails/capture.js";
-import { stopDevServer } from "../../projects/dev-server.js";
+import { stopDevServer, getDevServerInternalUrl } from "../../projects/dev-server.js";
 import { projects, workspacesQ, requireProjectAccess, isRoleAtLeast, validateProjectIdParam } from "./helpers.js";
 import { signProjectJwt } from "../../auth/project-jwt.js";
 import { PROJECT_JWT_SECRET } from "../../lib/secrets.js";
@@ -640,4 +640,285 @@ projectItemRoutes.put("/:id/connector-settings", async (c) => {
   `;
 
   return c.json({ data: newSettings });
+});
+
+// ─── Speed Audit ─────────────────────────────────────────────
+// Transfer-size based performance audit measured from the live preview.
+// Does NOT require headless Chrome — pure HTTP fetch + HTML parsing.
+projectItemRoutes.get("/:id/speed-audit", async (c) => {
+  const id = c.req.param("id");
+  const userId = c.get("userId");
+
+  const access = await requireProjectAccess(userId, id);
+  if (!access) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const previewBaseOrNull = getDevServerInternalUrl(id);
+  if (!previewBaseOrNull) {
+    return c.json({ error: "Preview not running. Open the preview first, then run the audit." }, 409);
+  }
+  const previewBase: string = previewBaseOrNull;
+
+  const TIMEOUT_MS = 8_000;
+  const MAX_ASSETS = 40;
+
+  // ── Helper: timed fetch (same-origin guard built in at call sites) ───
+  async function timedFetch(url: string): Promise<{ body: string; bytes: number; ttfbMs: number; ok: boolean; contentType: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const t0 = Date.now();
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      const ttfbMs = Date.now() - t0;
+      const buf = await res.arrayBuffer();
+      clearTimeout(timer);
+      const bytes = buf.byteLength;
+      const body = new TextDecoder().decode(buf);
+      const contentType = res.headers.get("content-type") ?? "";
+      return { body, bytes, ttfbMs, ok: res.ok, contentType };
+    } catch {
+      clearTimeout(timer);
+      return { body: "", bytes: 0, ttfbMs: Date.now() - t0, ok: false, contentType: "" };
+    }
+  }
+
+  // ── Fetch root HTML ───────────────────────────────────────────────────
+  const rootUrl = `${previewBase}/`;
+  const html = await timedFetch(rootUrl);
+  if (!html.ok && html.bytes === 0) {
+    return c.json({ error: "Preview did not respond. Make sure the preview is running." }, 409);
+  }
+
+  const ttfbMs = html.ttfbMs;
+
+  // ── Parse asset URLs from HTML ────────────────────────────────────────
+  type AssetType = "js" | "css" | "html" | "image" | "font" | "other";
+
+  function classifyUrl(href: string, tag: string, rel: string): AssetType {
+    const lower = href.toLowerCase().split("?")[0]!;
+    if (tag === "script" || lower.endsWith(".js") || lower.endsWith(".mjs")) return "js";
+    if (tag === "link" && rel === "stylesheet") return "css";
+    if (lower.endsWith(".css")) return "css";
+    if (/\.(png|jpe?g|webp|gif|svg|avif|ico)$/.test(lower)) return "image";
+    if (/\.(woff2?|ttf|otf|eot)$/.test(lower)) return "font";
+    if (tag === "img") return "image";
+    return "other";
+  }
+
+  interface ParsedAsset { url: string; type: AssetType }
+  const seen = new Set<string>();
+  const assets: ParsedAsset[] = [];
+
+  function addAsset(href: string, tag: string, rel = "") {
+    if (!href || href.startsWith("data:") || href.startsWith("blob:") || href.startsWith("#")) return;
+    // SSRF guard: only same-origin assets
+    let resolved: string;
+    try {
+      resolved = new URL(href, rootUrl).toString();
+    } catch {
+      return;
+    }
+    if (!resolved.startsWith(previewBase)) return;
+    if (seen.has(resolved)) return;
+    seen.add(resolved);
+    assets.push({ url: resolved, type: classifyUrl(href, tag, rel) });
+  }
+
+  const body = html.body;
+  // script src
+  for (const m of body.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) addAsset(m[1]!, "script");
+  // link href
+  for (const m of body.matchAll(/<link([^>]*)>/gi)) {
+    const attrs = m[1]!;
+    const hrefM = attrs.match(/href=["']([^"']+)["']/i);
+    const relM = attrs.match(/rel=["']([^"']+)["']/i);
+    if (hrefM) addAsset(hrefM[1]!, "link", relM?.[1] ?? "");
+  }
+  // img src
+  for (const m of body.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) addAsset(m[1]!, "img");
+
+  // ── Fetch assets (capped) ─────────────────────────────────────────────
+  const limited = assets.slice(0, MAX_ASSETS);
+  const fetched = await Promise.all(
+    limited.map(async (a) => {
+      const r = await timedFetch(a.url);
+      return { ...a, bytes: r.bytes, ok: r.ok, contentType: r.contentType };
+    }),
+  );
+
+  // ── Aggregate sizes by type ───────────────────────────────────────────
+  const sizes: Record<AssetType, number> = { js: 0, css: 0, html: 0, image: 0, font: 0, other: 0 };
+  sizes.html += html.bytes;
+  for (const f of fetched) {
+    if (f.ok) sizes[f.type] += f.bytes;
+  }
+
+  const totalBytes = Object.values(sizes).reduce((a, b) => a + b, 0);
+  const toKb = (b: number) => Math.round(b / 1024);
+
+  // ── Scoring ───────────────────────────────────────────────────────────
+  // Deductions from 100:
+  //  - TTFB > 200ms: up to -15
+  //  - Total > 500KB: up to -30
+  //  - JS > 200KB: up to -25
+  //  - Images > 200KB: up to -20
+  //  - Requests > 20: up to -10
+  const ttfbPenalty = Math.min(15, Math.max(0, ((ttfbMs - 200) / 800) * 15));
+  const totalKb = toKb(totalBytes);
+  const sizePenalty = Math.min(30, Math.max(0, ((totalKb - 500) / 1500) * 30));
+  const jsPenalty = Math.min(25, Math.max(0, ((toKb(sizes.js) - 200) / 600) * 25));
+  const imgPenalty = Math.min(20, Math.max(0, ((toKb(sizes.image) - 200) / 800) * 20));
+  const reqPenalty = Math.min(10, Math.max(0, ((limited.length - 20) / 20) * 10));
+  const score = Math.round(Math.max(0, 100 - ttfbPenalty - sizePenalty - jsPenalty - imgPenalty - reqPenalty));
+
+  type Rating = "good" | "needs-improvement" | "poor";
+  function ttfbRating(): Rating {
+    if (ttfbMs < 300) return "good";
+    if (ttfbMs < 800) return "needs-improvement";
+    return "poor";
+  }
+  function sizeRating(kb: number, good: number, poor: number): Rating {
+    if (kb <= good) return "good";
+    if (kb <= poor) return "needs-improvement";
+    return "poor";
+  }
+
+  // ── Build files list ──────────────────────────────────────────────────
+  interface BundleFile { name: string; size: number; type: AssetType }
+  const files: BundleFile[] = [
+    { name: "index.html", size: toKb(html.bytes), type: "html" },
+    ...fetched
+      .filter((f) => f.ok && f.bytes > 0)
+      .sort((a, b) => b.bytes - a.bytes)
+      .map((f) => ({
+        name: decodeURIComponent(f.url.split("/").pop()?.split("?")[0] ?? f.url),
+        size: toKb(f.bytes),
+        type: f.type,
+      })),
+  ];
+
+  // ── Recommendations ───────────────────────────────────────────────────
+  interface Rec { id: string; title: string; description: string; impact: "high" | "medium" | "low"; savings: string; fixPrompt: string }
+  const recs: Rec[] = [];
+
+  const jsKb = toKb(sizes.js);
+  if (jsKb > 200) {
+    recs.push({
+      id: "large-js",
+      title: "Reduce JavaScript bundle size",
+      description: `JavaScript totals ${jsKb} KB. Large bundles delay interactivity and increase parse time on slower devices.`,
+      impact: jsKb > 500 ? "high" : "medium",
+      savings: `~${Math.round(jsKb * 0.4)} KB potential`,
+      fixPrompt: "Audit all JavaScript files. Use dynamic import() for routes or components not needed on the initial page load. Remove any unused libraries and prefer lighter alternatives.",
+    });
+  }
+
+  const imgKb = toKb(sizes.image);
+  if (imgKb > 100) {
+    recs.push({
+      id: "large-images",
+      title: "Optimize images",
+      description: `Images total ${imgKb} KB. Converting to WebP and serving at the correct resolution can significantly reduce transfer size.`,
+      impact: imgKb > 300 ? "high" : "medium",
+      savings: `~${Math.round(imgKb * 0.5)} KB potential`,
+      fixPrompt: "Convert JPEG and PNG images to WebP. Add explicit width and height attributes to all <img> tags to prevent layout shift. Compress images to quality 80.",
+    });
+  }
+
+  if (ttfbMs > 300) {
+    recs.push({
+      id: "slow-ttfb",
+      title: "Improve server response time",
+      description: `The preview page took ${ttfbMs} ms to start responding (TTFB). Fast pages typically respond in under 200 ms.`,
+      impact: ttfbMs > 800 ? "high" : "low",
+      savings: `${ttfbMs - 200} ms TTFB`,
+      fixPrompt: "Check if any server-side work happens before the first byte is sent. For static sites, ensure assets are served from a fast host or CDN close to users.",
+    });
+  }
+
+  const cssKb = toKb(sizes.css);
+  if (cssKb > 50) {
+    recs.push({
+      id: "large-css",
+      title: "Reduce stylesheet size",
+      description: `CSS totals ${cssKb} KB. Many apps include unused CSS rules. Removing them reduces render-blocking stylesheet download time.`,
+      impact: "medium",
+      savings: `~${Math.round(cssKb * 0.4)} KB potential`,
+      fixPrompt: "Use Tailwind CSS purge / PurgeCSS to remove unused rules. Audit style sheets for dead selectors. Only import the CSS you actually use.",
+    });
+  }
+
+  const reqCount = 1 + limited.length; // html + assets
+  if (reqCount > 20) {
+    recs.push({
+      id: "many-requests",
+      title: "Reduce number of requests",
+      description: `The page makes ${reqCount} requests. Each extra round-trip adds latency, especially on mobile connections.`,
+      impact: "low",
+      savings: `${reqCount - 10} fewer requests`,
+      fixPrompt: "Bundle small scripts and stylesheets together. Use sprite sheets or inline small SVG icons. Lazy-load assets that are not needed immediately.",
+    });
+  }
+
+  if (recs.length === 0) {
+    recs.push({
+      id: "looks-good",
+      title: "Transfer size looks good",
+      description: `Total transfer is ${totalKb} KB across ${reqCount} requests with a ${ttfbMs} ms TTFB — within reasonable bounds for a preview app.`,
+      impact: "low",
+      savings: "—",
+      fixPrompt: "Continue monitoring as the app grows. Consider adding image lazy-loading and code splitting for larger features.",
+    });
+  }
+
+  // ── Response ──────────────────────────────────────────────────────────
+  return c.json({
+    data: {
+      score,
+      webVitals: [
+        {
+          name: "Time to First Byte",
+          shortName: "TTFB",
+          value: ttfbMs,
+          unit: "ms",
+          target: "< 200ms",
+          rating: ttfbRating(),
+        },
+        {
+          name: "Total Transfer Size",
+          shortName: "Size",
+          value: totalKb,
+          unit: "KB",
+          target: "< 500 KB",
+          rating: sizeRating(totalKb, 500, 1500),
+        },
+        {
+          name: "Request Count",
+          shortName: "Reqs",
+          value: reqCount,
+          unit: "",
+          target: "< 20",
+          rating: sizeRating(reqCount, 20, 40),
+        },
+      ],
+      additionalMetrics: [
+        { name: "JavaScript", value: toKb(sizes.js), unit: "KB", maxValue: 1000, rating: sizeRating(toKb(sizes.js), 200, 500) },
+        { name: "CSS", value: toKb(sizes.css), unit: "KB", maxValue: 200, rating: sizeRating(toKb(sizes.css), 50, 150) },
+        { name: "Images", value: toKb(sizes.image), unit: "KB", maxValue: 1000, rating: sizeRating(toKb(sizes.image), 200, 600) },
+        { name: "Fonts", value: toKb(sizes.font), unit: "KB", maxValue: 200, rating: sizeRating(toKb(sizes.font), 60, 150) },
+      ],
+      bundle: {
+        js: toKb(sizes.js),
+        css: toKb(sizes.css),
+        html: toKb(sizes.html),
+        images: toKb(sizes.image),
+        fonts: toKb(sizes.font),
+        other: toKb(sizes.other),
+        total: totalKb,
+        files,
+      },
+      recommendations: recs,
+    },
+  });
 });

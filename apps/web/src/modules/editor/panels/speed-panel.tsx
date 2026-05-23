@@ -7,10 +7,12 @@ import {
   Zap,
   CheckCircle2,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
 import type { AuditPhase, AuditResults } from "./speed-panel-data";
-import { MOCK_RESULTS, PHASE_LABELS, PHASE_ORDER } from "./speed-panel-data";
+import { PHASE_LABELS, PHASE_ORDER } from "./speed-panel-data";
 import { SpeedPanelResults } from "./speed-panel-results";
+import { apiFetch } from "@/lib/api";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -24,34 +26,56 @@ interface Props {
 export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
   const [phase, setPhase] = useState<AuditPhase>("idle");
   const [results, setResults] = useState<AuditResults | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [expandedRecs, setExpandedRecs] = useState<Set<string>>(new Set());
   const [phaseProgress, setPhaseProgress] = useState(0);
   const phaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Run audit simulation
+  // Run real server-side audit
   const runAudit = useCallback(() => {
     setResults(null);
+    setAuditError(null);
     setExpandedRecs(new Set());
     setPhaseProgress(0);
 
     let phaseIndex = 0;
+    let done = false;
 
+    // Advance phase animation while the real fetch is in-flight
     const advancePhase = () => {
+      if (done) return;
       if (phaseIndex < PHASE_ORDER.length) {
         const currentPhase = PHASE_ORDER[phaseIndex]!;
         setPhase(currentPhase);
         setPhaseProgress(((phaseIndex + 1) / PHASE_ORDER.length) * 100);
         phaseIndex++;
-        phaseTimerRef.current = setTimeout(advancePhase, 800 + Math.random() * 600);
-      } else {
-        setPhase("done");
-        setPhaseProgress(100);
-        setResults(MOCK_RESULTS);
+        phaseTimerRef.current = setTimeout(advancePhase, 900 + Math.random() * 600);
       }
+      // If we run out of animation phases before the fetch returns, just stay on the last phase
     };
 
     advancePhase();
-  }, []);
+
+    apiFetch<{ data: AuditResults }>(`/projects/${projectId}/speed-audit`)
+      .then((resp) => {
+        done = true;
+        if (phaseTimerRef.current) clearTimeout(phaseTimerRef.current);
+        setPhase("done");
+        setPhaseProgress(100);
+        setResults(resp.data);
+      })
+      .catch((err: unknown) => {
+        done = true;
+        if (phaseTimerRef.current) clearTimeout(phaseTimerRef.current);
+        setPhase("idle");
+        setPhaseProgress(0);
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Audit failed. Make sure the preview is running and try again.";
+        setAuditError(msg);
+      });
+  }, [projectId]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -111,16 +135,28 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
         {/* Idle state */}
         {phase === "idle" && !results && (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 mb-4">
-              <Zap className="h-8 w-8 text-amber-400" />
-            </div>
-            <h3 className="text-sm font-medium text-foreground mb-1">
-              Performance Audit
-            </h3>
-            <p className="text-[13px] text-muted-foreground max-w-[300px] mb-5">
-              Analyze your page speed, Core Web Vitals, bundle size, and get
-              actionable recommendations to improve performance.
-            </p>
+            {auditError ? (
+              <>
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10 mb-4">
+                  <AlertCircle className="h-8 w-8 text-red-400" />
+                </div>
+                <h3 className="text-sm font-medium text-foreground mb-1">Audit failed</h3>
+                <p className="text-[13px] text-muted-foreground max-w-[300px] mb-5">{auditError}</p>
+              </>
+            ) : (
+              <>
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 mb-4">
+                  <Zap className="h-8 w-8 text-amber-400" />
+                </div>
+                <h3 className="text-sm font-medium text-foreground mb-1">
+                  Performance Audit
+                </h3>
+                <p className="text-[13px] text-muted-foreground max-w-[300px] mb-5">
+                  Analyze your page speed, transfer size, bundle breakdown, and get
+                  actionable recommendations to improve performance.
+                </p>
+              </>
+            )}
             <button
               onClick={runAudit}
               className="flex items-center gap-2 rounded-lg bg-[#1E52F1] px-5 py-2.5 text-sm font-medium text-white hover:brightness-110 transition-colors"
@@ -130,7 +166,7 @@ export function SpeedPanel({ projectId, onClose, onSendMessage }: Props) {
               }}
             >
               <Play className="h-4 w-4" />
-              Run audit
+              {auditError ? "Try again" : "Run audit"}
             </button>
           </div>
         )}
