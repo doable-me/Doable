@@ -161,6 +161,22 @@ const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+/** Pull a human-readable message from an SSE `error` event's data, which may be
+ *  a string or an object ({message}/{error}); never returns the generic text
+ *  for a payload that actually carries detail. */
+function extractErrorMessage(data: unknown): string {
+  if (typeof data === "string") return data;
+  if (typeof data === "object" && data !== null) {
+    const o = data as Record<string, unknown>;
+    return (
+      (o.message as string | undefined) ??
+      (o.error as string | undefined) ??
+      JSON.stringify(data)
+    );
+  }
+  return "An unknown error occurred.";
+}
+
 // ─── Types ──────────────────────────────────────────────────
 type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "team" | "environment" | "skills" | "build";
 type ChatMode = "agent" | "plan" | "visual-edit";
@@ -777,14 +793,7 @@ async function streamChat(
 
           // Handle error events from the backend
           if (parsed.type === "error") {
-            const errMsg = typeof parsed.data === "string"
-              ? parsed.data
-              : typeof parsed.data === "object" && parsed.data !== null
-                ? ((parsed.data as Record<string, unknown>).message as string | undefined)
-                  ?? ((parsed.data as Record<string, unknown>).error as string | undefined)
-                  ?? JSON.stringify(parsed.data)
-                : "An unknown error occurred.";
-            onError(errMsg);
+            onError(extractErrorMessage(parsed.data));
             // Don't return — keep reading so auto-continue events get processed
           }
 
@@ -1016,14 +1025,7 @@ function processOneSSEPayload(
     }
 
     if (parsed.type === "error") {
-      const errMsg = typeof parsed.data === "string"
-        ? parsed.data
-        : typeof parsed.data === "object" && parsed.data !== null
-          ? ((parsed.data as Record<string, unknown>).message as string | undefined)
-            ?? ((parsed.data as Record<string, unknown>).error as string | undefined)
-            ?? JSON.stringify(parsed.data)
-          : "An unknown error occurred.";
-      cb.onError(errMsg);
+      cb.onError(extractErrorMessage(parsed.data));
       // Don't return true — keep reading the stream so auto-continue
       // events that follow the error can still be processed.
       return false;
