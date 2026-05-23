@@ -23,15 +23,40 @@ per-workspace setup and no row in the `context_skills` table.
 That's it. No code change is needed to ship a new master skill — the loader
 auto-discovers every `_system/<slug>/SKILL.md`.
 
-### Adding a skill you already have as a flat `.md` file
+### Easiest: drop a raw `.md` file in and let Doable absorb it
 
-Got a single `my-skill.md` (no folder, maybe no frontmatter)? Convert it in two steps:
+You don't have to build the folder yourself. **Paste a raw `*.md` file directly
+into this `_system/` folder** and Doable converts it into a proper
+`<slug>/SKILL.md` skill automatically on the next skill load (no restart):
 
-1. Make a folder named after the skill and drop the file in **as `SKILL.md`**:
-   `_system/my-skill/SKILL.md` (the folder name is the slug; the file MUST be
-   named `SKILL.md` — a bare `my-skill.md` is NOT discovered).
-2. Ensure the file starts with a frontmatter block. If it begins with a `#`
-   heading instead, prepend exactly two keys:
+- The folder slug is derived from the file name (`Business Card Maker.md` →
+  `business-card-maker/SKILL.md`).
+- If the file already starts with a `--- … ---` frontmatter block, it is moved
+  verbatim.
+- If it has **no** frontmatter, Doable synthesizes `name` + `description` from
+  the file's H1 and first paragraph. That works, but the auto-description is a
+  rough starting point — **edit the `description` afterward** with concrete
+  trigger keywords for sharper matching (the model decides when to fire a skill
+  by matching its description).
+- A raw file is **never** absorbed over an existing skill of the same slug — if
+  `<slug>/SKILL.md` already exists, the drop-in is skipped with a warning so a
+  hand-authored skill is always safe. Delete the folder first to re-absorb.
+
+Mechanism: `absorbDropinSkills()` in `services/api/src/ai/system-skills.ts`,
+invoked by `getSystemSkillDirs()` on every load. The conversion consumes the
+flat file (it becomes `<slug>/SKILL.md`), so it runs once and is idempotent.
+
+> Persistence note: on a running server the absorbed skill lives in the
+> container/source tree and works immediately. For it to survive a container
+> rebuild, paste the file into the source repo (or a mounted volume) — anything
+> written only inside an ephemeral container is lost when it is recreated.
+
+### Manual alternative (full control)
+
+Prefer to author it precisely? Create the folder yourself:
+
+1. `_system/<slug>/SKILL.md` (the file MUST be named `SKILL.md`).
+2. Start it with frontmatter:
 
    ```markdown
    ---
@@ -39,12 +64,8 @@ Got a single `my-skill.md` (no folder, maybe no frontmatter)? Convert it in two 
    description: "One line rich in trigger keywords. Triggers on: keyword, keyword, ..."
    ---
 
-   # ...your existing skill content, unchanged...
+   # ...your skill content...
    ```
-
-The `description` is what the model matches against to decide when to fire the
-skill, so make it concrete. Then rebuild/redeploy the API image (the files ship
-via the source tree). Done — no code edit required.
 
 ## How it ships (the wiring)
 

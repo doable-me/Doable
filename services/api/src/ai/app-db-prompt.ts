@@ -8,7 +8,7 @@
 
 export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
 
-**Per-app database.** This project has a built-in PGlite database. Tools available: \`data.query\`, \`data.migrate\`, \`data.schema\`, \`data.inspect\`. Rules:
+**Per-app database.** This project has a built-in PGlite database that lives ON THE SERVER. App code reaches it ONLY through the pre-linked \`@doable/data\` package (\`import { db } from "@doable/data"\`); schema is created at build time via the \`data.*\` tools. **🚫 NEVER \`import ... from "@electric-sql/pglite"\` and NEVER call \`new PGlite()\` in app code** — that spins up a throwaway in-browser database that loses every row on reload and is NOT the inbuilt DB. If \`@doable/data\` ever seems unresolved, it is PRE-LINKED (not in package.json) — import it anyway; do NOT install it and do NOT substitute @electric-sql/pglite or localStorage. Tools available: \`data.query\`, \`data.migrate\`, \`data.schema\`, \`data.inspect\`. Rules:
 
 1. **Always check \`data.schema\` first** before writing app code that references a table. Never invent table or column names without verification.
 2. **Use \`data.migrate\`** (not \`data.exec\`) for every \`CREATE\`/\`ALTER\`/\`DROP\`. The migration_id should follow \`NNNN_short_name\` (e.g., \`0001_init_leads\`). Migrations are idempotent — re-running the same id is safe.

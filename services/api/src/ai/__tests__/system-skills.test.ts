@@ -1,10 +1,18 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
-import { getSystemSkillDirs } from "../system-skills.js";
+import { getSystemSkillDirs, absorbDropinSkills } from "../system-skills.js";
 
 /** Asserts a SKILL.md string opens with a `--- … ---` block carrying name + description. */
 function assertNameDescriptionFrontmatter(content: string, label: string): void {
@@ -99,4 +107,67 @@ describe("shipped master skills", () => {
       assertNameDescriptionFrontmatter(readFileSync(md, "utf-8"), `${slug} SKILL.md`);
     });
   }
+});
+
+describe("absorbDropinSkills() — raw drop-in conversion", () => {
+  function withTempDir(fn: (dir: string) => void): void {
+    const dir = mkdtempSync(join(tmpdir(), "skills-absorb-"));
+    try {
+      fn(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("converts a frontmatter-less flat .md into <slug>/SKILL.md with synthesized frontmatter", () => {
+    withTempDir((dir) => {
+      writeFileSync(join(dir, "My Cool Skill.md"), "# My Cool Skill\n\nDoes cool things for users.\n", "utf-8");
+      absorbDropinSkills(dir);
+
+      const out = join(dir, "my-cool-skill", "SKILL.md");
+      assert.ok(existsSync(out), "expected converted SKILL.md");
+      assert.ok(!existsSync(join(dir, "My Cool Skill.md")), "flat file should be consumed");
+
+      const content = readFileSync(out, "utf-8");
+      assertNameDescriptionFrontmatter(content, "absorbed SKILL.md");
+      assert.match(content, /name:\s*my-cool-skill/, "name derived from file slug");
+      assert.ok(content.includes("Does cool things for users."), "body preserved");
+    });
+  });
+
+  it("moves a flat .md that already has frontmatter verbatim into <slug>/SKILL.md", () => {
+    withTempDir((dir) => {
+      const raw = '---\nname: ready\ndescription: "Already has frontmatter."\n---\n\n# Ready\n\nBody.\n';
+      writeFileSync(join(dir, "ready.md"), raw, "utf-8");
+      absorbDropinSkills(dir);
+
+      const out = join(dir, "ready", "SKILL.md");
+      assert.ok(existsSync(out));
+      assert.equal(readFileSync(out, "utf-8"), raw, "content must be byte-identical when frontmatter present");
+    });
+  });
+
+  it("never clobbers an existing <slug>/SKILL.md (skips + leaves the flat file)", () => {
+    withTempDir((dir) => {
+      mkdirSync(join(dir, "dup"));
+      writeFileSync(join(dir, "dup", "SKILL.md"), '---\nname: dup\ndescription: "x"\n---\nORIGINAL', "utf-8");
+      writeFileSync(join(dir, "dup.md"), "# Dup\n\nNew content.\n", "utf-8");
+      absorbDropinSkills(dir);
+
+      assert.ok(
+        readFileSync(join(dir, "dup", "SKILL.md"), "utf-8").includes("ORIGINAL"),
+        "existing skill must not be overwritten",
+      );
+      assert.ok(existsSync(join(dir, "dup.md")), "flat file left untouched when skipped");
+    });
+  });
+
+  it("ignores README.md", () => {
+    withTempDir((dir) => {
+      writeFileSync(join(dir, "README.md"), "# Readme\n", "utf-8");
+      absorbDropinSkills(dir);
+      assert.ok(existsSync(join(dir, "README.md")), "README.md must not be absorbed");
+      assert.ok(!existsSync(join(dir, "readme", "SKILL.md")));
+    });
+  });
 });

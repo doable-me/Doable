@@ -136,6 +136,45 @@ function maybeRewriteToolArgs(
   return { ...args, path: normalized };
 }
 
+// File-write tools whose content we inspect for inbuilt-DB persistence misuse.
+const FILE_WRITE_TOOLS = new Set([
+  "create_file", "edit_file", "write", "create", "str_replace_editor", "str_replace", "multi_edit",
+]);
+
+/**
+ * Deterministic backstop for the per-app database (BUG: generated apps wired to
+ * localStorage instead of the inbuilt DB). When DOABLE_APP_DB_ENABLED, deny any
+ * app-code write that persists data via localStorage/sessionStorage-as-a-store
+ * or by spinning up a browser-side PGlite — the model (esp. MiniMax-M2.7) does
+ * this despite explicit prompt guidance. The deny message redirects it to
+ * @doable/data. Trivial UI-pref localStorage (a plain string value, no
+ * JSON.stringify of a collection) is intentionally NOT matched.
+ */
+function denyDataStoreMisuse(
+  toolName: string,
+  toolArgs: unknown,
+): { permissionDecision: "deny"; permissionDecisionReason: string } | undefined {
+  if (process.env.DOABLE_APP_DB_ENABLED !== "1") return undefined;
+  if (!FILE_WRITE_TOOLS.has(toolName)) return undefined;
+  const a = toolArgs as Record<string, unknown> | undefined;
+  if (!a) return undefined;
+  const content = [a.content, a.file_text, a.new_str, a.text].find((v) => typeof v === "string") as string | undefined;
+  if (!content) return undefined;
+  const usesPglite = /@electric-sql\/pglite|new\s+PGlite\s*\(/.test(content);
+  const usesLocalStoreAsDb = /(?:localStorage|sessionStorage)\.setItem\s*\([^)]*JSON\.stringify/.test(content);
+  if (!usesPglite && !usesLocalStoreAsDb) return undefined;
+  return {
+    permissionDecision: "deny",
+    permissionDecisionReason:
+      "🚫 This project has a built-in SERVER-SIDE database. Persist data ONLY via the inbuilt DB: " +
+      "`import { db } from \"@doable/data\"` then `await db.query(sql, params)` (create tables with the data.migrate tool). " +
+      "Do NOT use " + (usesPglite ? "@electric-sql/pglite / new PGlite()" : "localStorage/sessionStorage") +
+      " as the data store — it loses every row on reload and is NOT the inbuilt DB. @doable/data is PRE-LINKED (absent from package.json is expected) — import it directly, never install it. " +
+      "(A trivial UI preference like a theme toggle may still use localStorage with a plain string value.) " +
+      "Rewrite this file to read and write through @doable/data.",
+  };
+}
+
 export class CopilotEngine {
   private pool: DoCorePool | null = null;
   private config: CopilotEngineConfig;
@@ -246,6 +285,12 @@ export class CopilotEngine {
                 };
               }
             }
+            // Inbuilt-DB backstop: block localStorage/pglite as a data store.
+            const dbDeny = denyDataStoreMisuse(input.toolName, effectiveArgs);
+            if (dbDeny) {
+              console.log(`[CopilotEngine] Denied inbuilt-DB misuse in ${input.toolName} — redirecting to @doable/data`);
+              return dbDeny;
+            }
             // Enforce plan mode: deny write/shell tools via SDK hook
             if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
               if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {
@@ -323,6 +368,12 @@ export class CopilotEngine {
                     permissionDecisionReason: "Do NOT use bash/cat to write files. Use the create_file or edit_file tool instead — it is faster and more reliable.",
                   };
                 }
+              }
+              // Inbuilt-DB backstop: block localStorage/pglite as a data store.
+              const dbDeny = denyDataStoreMisuse(input.toolName, effectiveArgs);
+              if (dbDeny) {
+                console.log(`[CopilotEngine] Denied inbuilt-DB misuse in ${input.toolName} (resume) — redirecting to @doable/data`);
+                return dbDeny;
               }
               if (currentSessionId && this.sessionModes.get(currentSessionId) === "plan") {
                 if (!PLAN_ALLOWED_TOOLS.has(input.toolName)) {

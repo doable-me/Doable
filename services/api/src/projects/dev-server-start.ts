@@ -854,6 +854,10 @@ async function doStartDevServer(
         console.warn(
           `[DevServer] npm install "${label}" failed for project ${projectId} (exit ${code}): ${npmStderr.slice(-500)}`,
         );
+        // A failed npm install can still have pruned the link-sdk'd @doable/*
+        // packages (extraneous to package.json). Re-link so their imports stay
+        // resolvable even though we did NOT restart the dev server here.
+        linkDoableSdk(projectPath).catch(() => {});
       }
     });
     npmChild.on("error", (err) => {
@@ -870,6 +874,14 @@ async function doStartDevServer(
   // into one install command.
   const tryInstallPeerDep = (pkg: string): void => {
     if (!pkg || !NPM_PKG_NAME_RE.test(pkg)) return;
+    // @doable/* packages are link-sdk'd into node_modules (they are NOT on
+    // npm). NEVER auto-install them: `npm install @doable/data` 404s AND npm
+    // prunes the link-sdk'd copies (they're absent from package.json), which
+    // makes the @doable/data import unresolvable ("Failed to resolve import
+    // @doable/data") — the exact failure that pushed generated apps to fall
+    // back to localStorage instead of the inbuilt DB. linkDoableSdk re-links
+    // them on dev-server (re)start.
+    if (pkg.startsWith("@doable/")) return;
     let attempted = peerDepInstallAttempts.get(projectId);
     if (!attempted) {
       attempted = new Set<string>();

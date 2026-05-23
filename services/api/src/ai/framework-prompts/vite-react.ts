@@ -61,7 +61,7 @@ export const viteReactPrompt: FrameworkPrompt = {
     "   const r = await db.query<{ id: string; title: string }>(\"SELECT id, title FROM tasks ORDER BY created_at DESC LIMIT $1\", [50]);",
     "   const tasks = r.ok ? r.rows : [];",
     "   ```",
-    "   🚫 FORBIDDEN as the data store: localStorage, sessionStorage, IndexedDB, in-memory arrays. They are acceptable ONLY for trivial ephemeral UI state (theme toggle, sidebar collapsed, an in-progress draft) — NEVER for persisting real user records. The package being absent from package.json is NOT a reason to fall back to localStorage.",
+    "   🚫 FORBIDDEN as the data store: localStorage, sessionStorage, IndexedDB, in-memory arrays, AND importing `@electric-sql/pglite` or calling `new PGlite()` in app code (that is a throwaway in-browser DB that loses data on reload — NOT the inbuilt DB). They are acceptable ONLY for trivial ephemeral UI state (theme toggle, sidebar collapsed, an in-progress draft) — NEVER for persisting real user records. `@doable/data` being absent from package.json is NOT a reason to fall back — it is PRE-LINKED; import it directly.",
     "",
     "1. **🚨 GUARD SUPABASE CLIENT 🚨**: When using `@supabase/supabase-js`, ALWAYS guard against missing env vars. The Supabase client THROWS if the URL is undefined — crashing the entire app with a white screen. Write it like this:",
     "   ```ts",

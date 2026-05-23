@@ -377,6 +377,16 @@ export default {
     // The platform reverse-proxy in production overrides this further down.
     hmr: baseServer.hmr ?? true,
   },
+  optimizeDeps: {
+    ...(base?.optimizeDeps ?? {}),
+    // @doable/* are linked zero-dependency ESM source packages. Excluding them
+    // from the dep prebundle makes Vite resolve+transform them live on every
+    // request, so a freshly (re)linked copy is always picked up. Pre-bundling
+    // them left a stale ".vite/deps" entry that survived relinks — the import
+    // would fail with 'Failed to resolve import "@doable/data"' until the cache
+    // was wiped by hand. Excluding is the reliable, cache-proof resolution.
+    exclude: [...(base?.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
+  },
 };
 `;
   }
@@ -412,6 +422,16 @@ export default {
     // a strict array. Force-trust the platform domain so the relay handshake
     // succeeds even if the user narrowed allowedHosts.
     allowedHosts: true,
+  },
+  optimizeDeps: {
+    ...(base?.optimizeDeps ?? {}),
+    // @doable/* are linked zero-dependency ESM source packages. Excluding them
+    // from the dep prebundle makes Vite resolve+transform them live on every
+    // request, so a freshly (re)linked copy is always picked up. Pre-bundling
+    // them left a stale ".vite/deps" entry that survived relinks — the import
+    // would fail with 'Failed to resolve import "@doable/data"' until the cache
+    // was wiped by hand. Excluding is the reliable, cache-proof resolution.
+    exclude: [...(base?.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
   },
 };
 `;
