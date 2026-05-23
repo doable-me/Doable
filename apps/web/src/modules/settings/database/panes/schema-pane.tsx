@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { Loader2, ChevronRight, ChevronDown } from "lucide-react";
 import { SectionCard } from "@/modules/settings/components/project-settings-shared";
-import type { DataTokenState } from "../hooks/use-data-token.js";
-import type { SchemaResult, TableSchema } from "../api.js";
+import type { DataTokenState } from "../hooks/use-data-token";
+import type { SchemaResult, TableSchema } from "../api";
 
 interface SchemaPaneProps {
   tokenState: DataTokenState;

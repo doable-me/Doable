@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchDataToken, makeDataClient } from "../api.js";
+import { fetchDataToken, makeDataClient } from "../api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const REFRESH_BUFFER_SEC = 60; // refresh 60s before expiry

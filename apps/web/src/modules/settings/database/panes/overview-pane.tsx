@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { Loader2, Table2, Rows3, FileStack, ShieldCheck } from "lucide-react";
 import { SectionCard } from "@/modules/settings/components/project-settings-shared";
-import type { DataTokenState } from "../hooks/use-data-token.js";
-import type { SchemaResult } from "../api.js";
+import type { DataTokenState } from "../hooks/use-data-token";
+import type { SchemaResult } from "../api";
 
 interface OverviewPaneProps {
   projectId: string;

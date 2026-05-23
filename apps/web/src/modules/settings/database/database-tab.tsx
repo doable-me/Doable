@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { useDataToken } from "./hooks/use-data-token.js";
-import { OverviewPane } from "./panes/overview-pane.js";
-import { SchemaPane } from "./panes/schema-pane.js";
-import { RowsPane } from "./panes/rows-pane.js";
-import { QueriesPane } from "./panes/queries-pane.js";
-import { MigrationsPane } from "./panes/migrations-pane.js";
-import { DangerPane } from "./panes/danger-pane.js";
+import { useDataToken } from "./hooks/use-data-token";
+import { OverviewPane } from "./panes/overview-pane";
+import { SchemaPane } from "./panes/schema-pane";
+import { RowsPane } from "./panes/rows-pane";
+import { QueriesPane } from "./panes/queries-pane";
+import { MigrationsPane } from "./panes/migrations-pane";
+import { DangerPane } from "./panes/danger-pane";
 
 type Pane = "overview" | "schema" | "rows" | "queries" | "migrations" | "danger";
 

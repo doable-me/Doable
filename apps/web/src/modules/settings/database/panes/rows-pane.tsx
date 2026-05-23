@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { SectionCard } from "@/modules/settings/components/project-settings-shared";
-import type { DataTokenState } from "../hooks/use-data-token.js";
-import type { SchemaResult, QueryResult } from "../api.js";
+import type { DataTokenState } from "../hooks/use-data-token";
+import type { SchemaResult, QueryResult } from "../api";
 
 const PAGE_SIZE = 50;
 
