@@ -659,9 +659,16 @@ projectItemRoutes.get("/:id/speed-audit", async (c) => {
     return c.json({ error: "Preview not running. Open the preview first, then run the audit." }, 409);
   }
   const previewBase: string = previewBaseOrNull;
+  // Origin (scheme://host:port) of the preview — used for a strict same-origin
+  // SSRF guard. A startsWith(previewBase) check is bypassable via URL userinfo
+  // (e.g. http://127.0.0.1:PORT@evil/), so compare parsed origins instead.
+  const previewOrigin: string = (() => {
+    try { return new URL(previewBase).origin; } catch { return previewBase; }
+  })();
 
   const TIMEOUT_MS = 8_000;
   const MAX_ASSETS = 40;
+  const MAX_ASSET_BYTES = 10_000_000; // 10 MB per asset — don't buffer giant responses
 
   // ── Helper: timed fetch (same-origin guard built in at call sites) ───
   async function timedFetch(url: string): Promise<{ body: string; bytes: number; ttfbMs: number; ok: boolean; contentType: string }> {
@@ -671,6 +678,15 @@ projectItemRoutes.get("/:id/speed-audit", async (c) => {
     try {
       const res = await fetch(url, { signal: controller.signal });
       const ttfbMs = Date.now() - t0;
+      const contentTypeHdr = res.headers.get("content-type") ?? "";
+      // Skip buffering assets that declare a size over the cap (don't OOM on a
+      // hostile preview serving huge bodies). Count the declared size only.
+      const declared = Number(res.headers.get("content-length") ?? "0");
+      if (Number.isFinite(declared) && declared > MAX_ASSET_BYTES) {
+        controller.abort();
+        clearTimeout(timer);
+        return { body: "", bytes: declared, ttfbMs, ok: false, contentType: contentTypeHdr };
+      }
       const buf = await res.arrayBuffer();
       clearTimeout(timer);
       const bytes = buf.byteLength;
@@ -712,14 +728,16 @@ projectItemRoutes.get("/:id/speed-audit", async (c) => {
 
   function addAsset(href: string, tag: string, rel = "") {
     if (!href || href.startsWith("data:") || href.startsWith("blob:") || href.startsWith("#")) return;
-    // SSRF guard: only same-origin assets
-    let resolved: string;
+    // SSRF guard: only same-origin assets (strict origin compare, not a string
+    // prefix — see previewOrigin above).
+    let parsed: URL;
     try {
-      resolved = new URL(href, rootUrl).toString();
+      parsed = new URL(href, rootUrl);
     } catch {
       return;
     }
-    if (!resolved.startsWith(previewBase)) return;
+    if (parsed.origin !== previewOrigin) return;
+    const resolved = parsed.toString();
     if (seen.has(resolved)) return;
     seen.add(resolved);
     assets.push({ url: resolved, type: classifyUrl(href, tag, rel) });
