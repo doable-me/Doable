@@ -1,0 +1,6 @@
+{
+  "prompt": "Build a leads CRM where each user only sees their own leads.",
+  "expect_tool_calls": [
+    { "tool": "data.migrate", "args_includes": ["CREATE TABLE", "CREATE POLICY", "owner_id"] }
+  ]
+}

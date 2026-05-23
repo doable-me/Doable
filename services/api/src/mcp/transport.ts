@@ -1,6 +1,7 @@
 import { StreamableHttpTransport, LegacySseTransport } from "./transport-http.js";
 import { StdioTransport } from "./transport-stdio.js";
 import type { McpTransport } from "./transport-http.js";
+import { createBuiltinTransport } from "./builtin/index.js";
 
 export type { McpTransport } from "./transport-http.js";
 export { StreamableHttpTransport, LegacySseTransport } from "./transport-http.js";
@@ -15,8 +16,22 @@ export function createTransport(
     serverArgs?: string[];
     serverEnv?: Record<string, string>;
     headers?: Record<string, string>;
+    projectId?: string;
   },
 ): McpTransport {
+  // ── Builtin short-circuit (PRD per-app-db 06) ──
+  // Any connector whose serverCommand starts with `builtin:` resolves to an
+  // in-process handler implementing the same McpTransport interface — no stdio
+  // subprocess, no JSON-RPC over a pipe. Must come BEFORE the transportType
+  // switch (builtin rows carry transport_type 'stdio' as a catch-all).
+  if (opts.serverCommand?.startsWith("builtin:")) {
+    return createBuiltinTransport(opts.serverCommand, {
+      serverArgs: opts.serverArgs,
+      serverEnv: opts.serverEnv,
+      projectId: opts.projectId,
+    });
+  }
+
   switch (transportType) {
     case "streamable_http":
       if (!opts.serverUrl) throw new Error("serverUrl required for streamable_http transport");

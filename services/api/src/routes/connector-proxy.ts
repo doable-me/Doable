@@ -73,16 +73,25 @@ const ALLOWLIST_TTL_MS = 30_000;
 
 // ─── Auth resolution ────────────────────────────────────
 
-interface ResolvedAuth {
+export interface ResolvedAuth {
   projectId: string;
   workspaceId: string;
   userId: string;
   authMode: "jwt" | "api-key";
   rateLimit: number;
   allowedTools: string[] | null; // null = unrestricted
+  /** API-key tier when authMode === "api-key" (server keys get higher limits / DDL access). */
+  tier?: "client" | "server";
 }
 
-async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
+/**
+ * Resolve the caller's project/workspace/user from the bearer token.
+ * Exported verbatim for reuse by the per-app-db data plane
+ * (services/api/src/routes/app-data.ts) — the single source of truth for
+ * data-surface auth. projectId/userId are server-resolved from the credential,
+ * never read from the request body (PRD per-app-db 04 §S3).
+ */
+export async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
   const auth = c.req.header("authorization");
   if (!auth?.startsWith("Bearer ")) {
     return jsonError(c, 401, "UNAUTHORIZED", "Missing Authorization: Bearer <token>");
@@ -142,6 +151,7 @@ async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> {
       workspaceId: row.workspace_id as string,
       userId: row.created_by as string, // credentials resolved for the key creator
       authMode: "api-key",
+      tier: row.tier === "server" ? "server" : "client",
       rateLimit: row.tier === "server" ? RATE_LIMIT_MAX_API_KEY : RATE_LIMIT_MAX_JWT,
       allowedTools: Array.isArray(row.allowed_tools) ? row.allowed_tools as string[] : null,
     };
@@ -535,14 +545,14 @@ async function getProjectConnectorSettings(projectId: string): Promise<Connector
  * Priority: project setting > auth-mode default.
  * Setting of 0 disables rate limiting entirely.
  */
-async function getEffectiveRateLimit(projectId: string, authModeDefault: number): Promise<number | null> {
+export async function getEffectiveRateLimit(projectId: string, authModeDefault: number): Promise<number | null> {
   const settings = await getProjectConnectorSettings(projectId);
   if (settings.rateLimitPerMinute === 0) return null; // disabled
   if (settings.rateLimitPerMinute !== null) return settings.rateLimitPerMinute;
   return authModeDefault;
 }
 
-function rateLimitOk(projectId: string, max: number | null): boolean {
+export function rateLimitOk(projectId: string, max: number | null): boolean {
   if (max === null) return true; // rate limiting disabled for this project
   const now = Date.now();
   const bucket = rateBuckets.get(projectId);

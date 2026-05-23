@@ -54,6 +54,11 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
   var pendingRequests = [];
   function setToken(t) {
     token = t;
+    // Per-app DB (PRD per-app-db 08 §4): the same project JWT authenticates the
+    // /__doable/data/* surface, so expose it as the global the @doable/data SDK
+    // reads lazily (window.__DOABLE_DATA_TOKEN). No %%PROJECT_JWT%% placeholder —
+    // the token is delivered through this existing bridge, not a static template.
+    try { window.__DOABLE_DATA_TOKEN = t; } catch (e) {}
     var queue = pendingRequests; pendingRequests = [];
     queue.forEach(function (resume) { resume(t); });
   }
@@ -197,9 +202,37 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
     return _origFetch.apply(window, arguments);
   };
 
+  // ─── Per-app database client ───
+  // Mirrors callConnector: token-aware POST to /__doable/data/{query,schema}
+  // with one 401 refresh-and-retry. Generated apps can use either this injected
+  // global (window.__doable.db) or the @doable/data SDK import (which reads
+  // window.__DOABLE_DATA_TOKEN set above) — both hit the same surface.
+  async function dataCall(verb, body) {
+    var t = await awaitToken();
+    var doFetch = function (theToken) {
+      return fetch("/__doable/data/" + verb, {
+        method: "POST",
+        headers: { "content-type": "application/json", "authorization": "Bearer " + theToken, "x-doable-data-api": "1" },
+        body: JSON.stringify(body || {}),
+      });
+    };
+    var res = await doFetch(t);
+    if (res.status === 401) {
+      token = null;
+      if (window.parent !== window) { try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {} }
+      else { fetchTokenDirect(); }
+      res = await doFetch(await awaitToken());
+    }
+    return res.json();
+  }
+
   window.__doable = window.__doable || {};
   window.__doable.callConnector = callConnector;
   window.__doable.callMcp = callMcp;
+  window.__doable.db = {
+    query: function (sql, params, opts) { return dataCall("query", Object.assign({ sql: sql, params: params || [] }, opts || {})); },
+    schema: function () { return dataCall("schema", {}); },
+  };
 })();
 </script>`;
 

@@ -20,6 +20,7 @@ import { DomainTab } from "./project-settings-domain";
 import { EnvironmentsTab, DangerTab } from "./project-settings-tabs";
 import { RateLimitingTab } from "./project-settings-ratelimit";
 import { SecurityTab } from "./project-settings-security";
+import { DatabaseTab } from "@/modules/settings/database/database-tab";
 
 // ─── Main Component ─────────────────────────────────────────
 
@@ -32,7 +33,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
     if (typeof window === "undefined") return "general";
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
-    const validTabs: Tab[] = ["general", "integrations", "mcp", "skills", "context", "security", "domain", "environments", "danger"];
+    const validTabs: Tab[] = ["general", "integrations", "mcp", "skills", "context", "security", "domain", "environments", "database", "danger"];
     return validTabs.includes(tab as Tab) ? (tab as Tab) : "general";
   });
   const [project, setProject] = useState<ApiProject | null>(null);
@@ -137,6 +138,9 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
       )}
       {activeTab === "environments" && (
         <EnvironmentsTab project={project} />
+      )}
+      {activeTab === "database" && (
+        <DatabaseTab projectId={projectId} />
       )}
       {activeTab === "danger" && (
         <DangerTab project={project} addToast={addToast} />

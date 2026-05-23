@@ -186,6 +186,18 @@ export async function buildProjectContextForMode(
     }
   }
 
+  // ── Per-app database prompt addendum ──
+  // Injected right after the connected-integrations manifest so the AI sees
+  // data.* tools in the same context block as other connectors.
+  if (process.env["DOABLE_APP_DB_ENABLED"] === "1") {
+    const { buildAppDbContext } = await import("./app-db-prompt.js");
+    const appDbBlock = buildAppDbContext();
+    if (appDbBlock) {
+      console.log("[Chat] Per-app database prompt block injected");
+      context += `\n\n${appDbBlock}`;
+    }
+  }
+
   // ── File listing and package info ──
   if (!isProjectScaffolded(projectId)) return context;
 

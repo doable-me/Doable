@@ -18,6 +18,8 @@ import { getCopilotManager } from "../../ai/providers/copilot-manager.js";
 import { createUsageCollector } from "../../ai/usage-collector.js";
 import { createTraceCollector, type TraceCollector } from "../../ai/trace-collector.js";
 import { creditQueries } from "@doable/db/queries/credits";
+// US-011: per-project builtin data connector registration
+import { ensureDataConnectorForProject } from "../../mcp/builtin/data/register.js";
 import { getProjectPath } from "../../projects/file-manager.js";
 import { resolveAiEngine } from "../../ai/engine-resolver.js";
 import { buildProjectContextForMode, parseSkillInvocations } from "../../ai/context-builder.js";
@@ -188,6 +190,12 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           `;
           if (created) {
             chatProject = await projectQueries(sql).findById(projectId);
+            // US-011: register builtin doable.data MCP connector for the new project.
+            if (process.env.DOABLE_APP_DB_ENABLED === "1") {
+              ensureDataConnectorForProject(projectId, wsId, userId).catch((err) => {
+                console.error("[builtin-data] Failed to provision data connector:", err);
+              });
+            }
           }
         }
       }

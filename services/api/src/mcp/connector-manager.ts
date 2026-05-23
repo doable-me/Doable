@@ -260,6 +260,9 @@ export class ConnectorManager {
       serverArgs: config.serverArgs,
       serverEnv: stdioEnv,
       headers,
+      // Per-project context for builtin: transports (e.g. builtin:data routes to
+      // the right PGlite worker). Real transports ignore it.
+      projectId: config.projectId,
     });
 
     const client = new McpClient(transport);

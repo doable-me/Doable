@@ -233,6 +233,18 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
+  packages/doable-data:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.15
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/doable-sdk:
     devDependencies:
       '@types/node':
@@ -1900,6 +1912,9 @@ importers:
       '@e965/xlsx':
         specifier: ^0.20.3
         version: 0.20.3
+      '@electric-sql/pglite':
+        specifier: 0.4.5
+        version: 0.4.5
       '@github/copilot':
         specifier: ^1.0.16
         version: 1.0.16
@@ -5098,6 +5113,9 @@ packages:
     engines: {bun: '>=1', deno: '>=2', node: '>=16'}
     peerDependencies:
       '@noble/ciphers': ^1.0.0
+
+  '@electric-sql/pglite@0.4.5':
+    resolution: {integrity: sha512-aGG2zGEyZzGWKy8P+9ZoNUV0jxt1+hgbeTf+bVAYyxVZZLXg3/9aFlfLxb08AYZVAfAkQlQIysmWjhc5hwDG8g==}
 
   '@elevenlabs/elevenlabs-js@2.4.1':
     resolution: {integrity: sha512-4EnytSPC0z+cZ6E+eze8um3KgiD3Rk3D5BRsHHeaqD9GjB38ZjD64SfZmj5itWcZVkl8Bx+0xdM/I4n1SO7E5g==}
@@ -27056,6 +27074,8 @@ snapshots:
   '@ecies/ciphers@0.2.5(@noble/ciphers@1.3.0)':
     dependencies:
       '@noble/ciphers': 1.3.0
+
+  '@electric-sql/pglite@0.4.5': {}
 
   '@elevenlabs/elevenlabs-js@2.4.1':
     dependencies:

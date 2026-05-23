@@ -52,6 +52,11 @@ import { directSaveRoutes } from "./direct-save/index.js";
 import artifactsRoutes from "./routes/artifacts.js";
 import { publicFrameworkRoutes } from "./routes/admin-frameworks.js";
 import { setupRoutes } from "./routes/setup.js";
+// Per-app database (PRD per-app-db). Mounted only when the feature flag is on.
+import { appDataRoutes } from "./routes/app-data.js";
+import { dataTokenRoutes } from "./routes/projects/data-token.js";
+import { mcpAppsDataRoutes } from "./routes/mcp-apps-data.js";
+import { DOABLE_APP_DB_ENABLED } from "./data-worker/config.js";
 
 export function mountRoutes(app: Hono): void {
 app.route("/health", healthRoutes);
@@ -65,6 +70,14 @@ app.route("/", previewRoutes);
 // Lets static-kind generated apps reach connected integrations server-side
 // without ever holding the raw secret. JWT-protected, allowlist-gated, audited.
 app.route("/", connectorProxyRoutes);
+// Per-app DB data plane (/__doable/data/*), settings data-token minter, and the
+// MCP Apps inspector resources — gated behind DOABLE_APP_DB_ENABLED. With the
+// flag off there is no /__doable/data/* surface at all (PRD 08 §6 kill switch).
+if (DOABLE_APP_DB_ENABLED) {
+  app.route("/", appDataRoutes);
+  app.route("/", mcpAppsDataRoutes);
+  app.route("/projects", dataTokenRoutes);
+}
 // Per-project runtime status / restart / logs (PRD 06 §4)
 app.route("/", runtimeRoutes);
 app.route("/workspaces", workspaceRuntimeRoutes);

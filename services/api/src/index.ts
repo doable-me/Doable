@@ -32,7 +32,11 @@ if (process.env.NODE_ENV !== "test") {
 // start, build, AI file tools). Idempotent.
 import { initFrameworks } from "./frameworks/init.js";
 import { startIdleEvictionSweeper } from "./projects/dev-server.js";
+import { startDataPoolSweeper } from "./data-worker/pool.js";
+import { DOABLE_APP_DB_ENABLED } from "./data-worker/config.js";
 initFrameworks();
+// Per-app DB worker pool idle reaper (PRD per-app-db 07). No-op unless enabled.
+if (DOABLE_APP_DB_ENABLED) startDataPoolSweeper();
 // Idle dev servers eat ~666 MB each (next-server + launcher). Start a
 // 5-minute sweeper that kills sessions with no preview-proxy traffic in
 // the last DEV_SERVER_IDLE_MS (default 15 min). Safe to call once at boot;
@@ -531,11 +535,13 @@ server.on("upgrade", (req, socket, head) => {
 async function gracefulShutdown(signal: string): Promise<void> {
   console.log(`[Server] ${signal} received, shutting down...`);
   try {
+    const { shutdownDataPool } = await import("./data-worker/pool.js");
     await Promise.all([
       getConnectorManager().shutdown(),
       getCopilotManager().stopAll(),
       shutdownDocore(),
       stopEmailService(),
+      shutdownDataPool(),
     ]);
   } catch (err) {
     console.error("[Server] Error during shutdown:", err);

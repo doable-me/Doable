@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Table Inspector</title>
+  <link rel="stylesheet" href="shared/styles.css" />
+</head>
+<body>
+  <span id="back" class="back-link">← All tables</span>
+  <h1 id="title">Table</h1>
+  <div id="status" class="status">Loading…</div>
+  <div id="error" class="error" style="display:none"></div>
+  <div id="container"></div>
+  <div class="pagination" id="pagination" style="display:none">
+    <button id="btn-prev">← Prev</button>
+    <span id="page-info"></span>
+    <button id="btn-next">Next →</button>
+  </div>
+  <script src="shared/host-bridge.js" type="module"></script>
+  <script src="table-inspector.js" type="module"></script>
+</body>
+</html>
