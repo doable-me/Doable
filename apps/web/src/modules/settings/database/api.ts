@@ -19,6 +19,40 @@ export async function fetchDataToken(
   );
 }
 
+// ─── Management plane (session-authed; NOT the data token) ──
+
+export interface MigrationRow {
+  migration_id: string;
+  sql_hash: string;
+  applied_at: string;
+}
+
+/** Applied-migration ledger history for the project's DB. */
+export async function fetchMigrations(projectId: string): Promise<MigrationRow[]> {
+  const r = await apiFetch<{ migrations: MigrationRow[] }>(
+    `/projects/${projectId}/data/migrations`,
+  );
+  return r.migrations ?? [];
+}
+
+/** Drop a single user table (owner/admin only). */
+export async function dropTable(
+  projectId: string,
+  table: string,
+): Promise<{ ok: boolean; dropped: string }> {
+  return apiFetch(`/projects/${projectId}/data/drop-table`, {
+    method: "POST",
+    body: JSON.stringify({ table }),
+  });
+}
+
+/** Drop all tables — clean slate (owner/admin only). */
+export async function resetDatabase(
+  projectId: string,
+): Promise<{ ok: boolean; dropped: number }> {
+  return apiFetch(`/projects/${projectId}/data/reset`, { method: "POST" });
+}
+
 // ─── Data-plane helpers ─────────────────────────────────────
 
 async function dataFetch<T>(

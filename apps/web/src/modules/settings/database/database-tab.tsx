@@ -77,9 +77,9 @@ export function DatabaseTab({ projectId }: DatabaseTabProps) {
         )}
         {activePane === "schema" && <SchemaPane tokenState={tokenState} />}
         {activePane === "rows" && <RowsPane tokenState={tokenState} />}
-        {activePane === "queries" && <QueriesPane />}
-        {activePane === "migrations" && <MigrationsPane />}
-        {activePane === "danger" && <DangerPane />}
+        {activePane === "queries" && <QueriesPane tokenState={tokenState} />}
+        {activePane === "migrations" && <MigrationsPane projectId={projectId} />}
+        {activePane === "danger" && <DangerPane projectId={projectId} tokenState={tokenState} />}
       </div>
     </div>
   );
