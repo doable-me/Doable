@@ -13,7 +13,7 @@ INSERT INTO mcp_connectors (
 SELECT
   p.workspace_id,
   p.id,
-  p.owner_id,
+  w.owner_id,   -- projects have no owner column; ownership is the workspace owner
   'project',
   'Doable Per-App Database',
   'Built-in: per-project PGlite. Use data.query for runtime DML, data.migrate for schema.',
@@ -24,6 +24,7 @@ SELECT
   'active',
   jsonb_build_object('tools', jsonb_build_object('listChanged', false))
 FROM projects p
+JOIN workspaces w ON w.id = p.workspace_id
 WHERE NOT EXISTS (
   SELECT 1 FROM mcp_connectors c
   WHERE c.project_id = p.id AND c.server_command = 'builtin:data'
