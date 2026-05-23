@@ -23,6 +23,29 @@ per-workspace setup and no row in the `context_skills` table.
 That's it. No code change is needed to ship a new master skill — the loader
 auto-discovers every `_system/<slug>/SKILL.md`.
 
+### Adding a skill you already have as a flat `.md` file
+
+Got a single `my-skill.md` (no folder, maybe no frontmatter)? Convert it in two steps:
+
+1. Make a folder named after the skill and drop the file in **as `SKILL.md`**:
+   `_system/my-skill/SKILL.md` (the folder name is the slug; the file MUST be
+   named `SKILL.md` — a bare `my-skill.md` is NOT discovered).
+2. Ensure the file starts with a frontmatter block. If it begins with a `#`
+   heading instead, prepend exactly two keys:
+
+   ```markdown
+   ---
+   name: my-skill
+   description: "One line rich in trigger keywords. Triggers on: keyword, keyword, ..."
+   ---
+
+   # ...your existing skill content, unchanged...
+   ```
+
+The `description` is what the model matches against to decide when to fire the
+skill, so make it concrete. Then rebuild/redeploy the API image (the files ship
+via the source tree). Done — no code edit required.
+
 ## How it ships (the wiring)
 
 - `services/api/src/ai/system-skills.ts` → `getSystemSkillDirs()` resolves this
@@ -53,3 +76,14 @@ situations where the skill should fire.
   `data.query` / `data.schema` at build time, the `created_by` RLS pattern, the
   `@doable/data` runtime client, and the Database settings tab (view / add /
   edit / delete / export records).
+- `business-card-maker/` — print-ready and digital business card design: layouts,
+  typography, color, print specs (bleed/DPI/CMYK), and PNG/PDF/SVG export.
+- `ecommerce-website/` — conversion-focused, accessible, fast online stores
+  (PLP/PDP/cart/checkout) with a design system, Core Web Vitals, WCAG 2.2, and
+  PCI-safe (gateway-hosted) payments.
+- `greeting-card/` — occasion-appropriate greeting cards and e-cards
+  (front/inside/back) with matched tone, typography, color, and print/digital export.
+- `magazine-flipbook/` — realistic web magazine/flipbook reader with page-flip
+  physics, page curl, shadows, optional sound, and keyboard/touch navigation.
+- `resume-cv/` — full-lifecycle resume and CV creation: ATS optimization, keyword
+  mapping, achievement writing, and industry-specific formatting.

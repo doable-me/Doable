@@ -46,7 +46,7 @@ Schema tab's "Enable RLS" button, but you should never ship a table without it.)
 ```sql
 CREATE TABLE <name> (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_by  uuid NOT NULL,
+  created_by  uuid NOT NULL DEFAULT (nullif(current_setting('app.user_id', true), ''))::uuid,
   created_at  timestamptz NOT NULL DEFAULT now()
   -- add your columns here
 );
@@ -58,7 +58,7 @@ CREATE POLICY <name>_owner ON <name>
 
 **Why `created_by::text`?** An absent end-user identity is an empty string `''`. Casting to `::uuid` would raise an error instead of cleanly matching zero rows, so always compare the text form to `current_setting('app.user_id', true)`.
 
-**Insert rule:** always set `created_by = current_setting('app.user_id', true)::uuid` so RLS lets the row through.
+**Insert rule:** do NOT include `created_by` in your INSERT and do NOT filter SELECTs by it. The column DEFAULT stamps `created_by` from the session identity automatically, and RLS auto-scopes every read/write to the current user. Manually passing `created_by` (e.g. a value the app made up) will mismatch the session identity and the row will be rejected by the WITH CHECK or invisible to reads.
 
 ### Multi-tenant / workspace apps
 
@@ -82,7 +82,7 @@ Every call returns a `{ ok, rows, rowCount, error }` result — it does NOT thro
 import { db } from "@doable/data";
 
 const r = await db.query<{ id: string; title: string }>(
-  "SELECT id, title FROM tasks WHERE created_by = current_setting('app.user_id', true)::uuid ORDER BY created_at DESC LIMIT $1",
+  "SELECT id, title FROM tasks ORDER BY created_at DESC LIMIT $1",
   [50],
 );
 if (!r.ok) {
@@ -99,14 +99,14 @@ import { db } from "@doable/data";
 
 // SELECT
 const result = await db.query<{ id: string; title: string }>(
-  "SELECT id, title FROM tasks WHERE created_by = current_setting('app.user_id', true)::uuid ORDER BY created_at DESC LIMIT $1",
+  "SELECT id, title FROM tasks ORDER BY created_at DESC LIMIT $1",
   [50],
 );
 const rows = result.ok ? result.rows : [];
 
 // INSERT
 await db.query(
-  "INSERT INTO tasks (title, created_by) VALUES ($1, current_setting('app.user_id', true)::uuid)",
+  "INSERT INTO tasks (title) VALUES ($1)",
   [title],
 );
 

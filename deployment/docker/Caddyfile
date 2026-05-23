@@ -79,6 +79,17 @@
                 }
         }
 
+        # ─── Per-app DB + connector-proxy surface (api) ────────────────────
+        # AI-generated previews call origin-relative /__doable/data/* (the
+        # @doable/data SDK) and /__doable/connector-proxy/* (the connector
+        # bridge). Without this route they fall through to the catch-all and
+        # hit the Next.js frontend, which returns HTML — the @doable/data
+        # client's res.json() then throws "Unexpected token '<'" and NO data
+        # is ever persisted. Path is preserved (the api serves /__doable/*).
+        handle /__doable/* {
+                reverse_proxy api:4000
+        }
+
         # ─── WebSocket (Yjs CRDT collab + AI trace stream) ──────────────────
         @ws path /ws /ws/* /socket /socket/*
         handle @ws {

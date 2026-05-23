@@ -16,7 +16,7 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
    \`\`\`sql
    CREATE TABLE <name> (
      id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-     created_by  uuid NOT NULL,
+     created_by  uuid NOT NULL DEFAULT (nullif(current_setting('app.user_id', true), ''))::uuid,
      created_at  timestamptz NOT NULL DEFAULT now(),
      -- your columns
    );
@@ -25,15 +25,17 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
      USING (created_by::text = current_setting('app.user_id', true))
      WITH CHECK (created_by::text = current_setting('app.user_id', true));
    \`\`\`
-   (Cast the column to text and compare to the GUC — never \`current_setting(...)::uuid\`: an absent end-user identity is the empty string, and \`''::uuid\` raises an error instead of cleanly matching zero rows.)
+   **\`created_by\` MUST have that exact DEFAULT** — the data API sets \`app.user_id\` to the signed-in end-user, so the default stamps the row owner automatically. In the POLICY, cast the column to text and compare to the GUC — never \`current_setting(...)::uuid\` there: an absent identity is the empty string, and \`''::uuid\` raises instead of matching zero rows.
+   **In app code: NEVER set \`created_by\` and NEVER filter by it.** Just INSERT your business columns (e.g. \`INSERT INTO leads (title, email) VALUES ($1,$2)\`) — the DEFAULT fills \`created_by\`. SELECT without a \`created_by\` filter (e.g. \`SELECT * FROM leads\`) — RLS auto-scopes every read/write to the current user. Manually passing \`created_by\` will mismatch the session identity and the row will be rejected or invisible.
 4. **For multi-tenant apps** with a workspace concept, add a \`workspace_id uuid NOT NULL\` column and a second policy that joins through a workspace-membership table.
 5. **In app code, always use parameterised queries.** Never interpolate user input into the SQL string. Example:
    \`\`\`ts
    import { db } from "@doable/data";
    const r = await db.query(
-     "SELECT id, title FROM leads WHERE created_by = $1 LIMIT $2",
-     [user.id, 50],
+     "SELECT id, title FROM leads ORDER BY created_at DESC LIMIT $1",
+     [50],
    );
+   if (!r.ok) throw new Error(r.error?.message);
    \`\`\`
 6. **Never call \`db.exec\`** from app code — schema changes belong in migrations issued via \`data.migrate\` from this chat.`;
 
