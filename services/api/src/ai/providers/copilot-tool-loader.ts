@@ -95,6 +95,29 @@ async function loadMcpTools(
     const connectors = connectorQueries(sql);
     const manager = getConnectorManager();
 
+    // Lazy-provision the built-in doable.data connector. Projects can be
+    // materialized through several paths (POST /projects, the chat
+    // create-if-missing seam, dashboard scaffold), and not all of them run
+    // the creation-time hook. Provisioning here — the single point every AI
+    // turn loads tools through — guarantees the connector exists whenever the
+    // feature is on, no matter how the project was created. Idempotent and
+    // gated by a cheap indexed lookup so it only writes once per project.
+    if (process.env.DOABLE_APP_DB_ENABLED === "1" && userId) {
+      try {
+        const [existing] = await sql<Array<{ one: number }>>`
+          SELECT 1 AS one FROM mcp_connectors
+          WHERE project_id = ${projectId} AND server_command = 'builtin:data'
+          LIMIT 1
+        `;
+        if (!existing) {
+          const { ensureDataConnectorForProject } = await import("../../mcp/builtin/data/register.js");
+          await ensureDataConnectorForProject(projectId, workspaceId, userId);
+        }
+      } catch (err) {
+        console.warn("[CopilotEngine] builtin:data lazy provision failed:", err instanceof Error ? err.message : err);
+      }
+    }
+
     // DB-backed MCP connectors
     let connectorRows: Array<Record<string, any>> = [];
     if (!(connectorFilter && connectorFilter.length === 0)) {
