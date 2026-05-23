@@ -75,7 +75,10 @@ app.route("/", connectorProxyRoutes);
 // flag off there is no /__doable/data/* surface at all (PRD 08 §6 kill switch).
 if (DOABLE_APP_DB_ENABLED) {
   app.route("/", appDataRoutes);
-  app.route("/", mcpAppsDataRoutes);
+  // mcpAppsDataRoutes defines GET /:resource{.+} — it MUST be mounted under its
+  // own prefix, NOT at "/", or the {.+} wildcard swallows every GET request
+  // (/workspaces, /projects, …) and 404s the whole app.
+  app.route("/__doable/mcp-apps/data", mcpAppsDataRoutes);
   app.route("/projects", dataTokenRoutes);
 }
 // Per-project runtime status / restart / logs (PRD 06 §4)
