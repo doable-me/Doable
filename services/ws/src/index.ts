@@ -16,7 +16,7 @@ import { RoomManager } from "./rooms/room-manager.js";
 import { type WsClientMessage, type WsServerMessage, type PresenceUser, userColor } from "./rooms/room.js";
 import { createMessageHandler, send, type ClientState } from "./message-handler.js";
 
-import { randomBytes } from "node:crypto";
+import { resolveSecret } from "@doable/shared/security/secret-resolver.js";
 
 const tracer = getTracer("doable-ws");
 
@@ -28,23 +28,14 @@ const PORT = parseInt(process.env.WS_PORT ?? "4001", 10);
 const HOST = process.env.WS_HOST ?? "127.0.0.1";
 const JWT_ISSUER = process.env.JWT_ISSUER ?? "doable";
 
-// ─── Secret guards (crash in production if missing) ──────
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
-
-function requireSecret(name: string): string {
-  const value = process.env[name];
-  if (value) return value;
-  if (IS_PRODUCTION) {
-    console.error(`[FATAL] ${name} is not set. Cannot start WS server in production.`);
-    process.exit(1);
-  }
-  const ephemeral = randomBytes(32).toString("hex");
-  console.warn(`[SECURITY] ${name} is not set — using a random ephemeral value. Set it in .env for stable sessions.`);
-  return ephemeral;
-}
-
-const JWT_SECRET = requireSecret("JWT_SECRET");
-const INTERNAL_SECRET = requireSecret("INTERNAL_SECRET");
+// ─── Secret guards ───────────────────────────────────────
+// Delegated to the shared resolver so api + ws agree on identical, restart-
+// stable values. In production a missing secret is fatal; in dev/self-host a
+// stable secret is persisted to disk and shared with the api process (a
+// per-boot random value here would mismatch the api's JWT_SECRET and break all
+// WS auth + internal RPC).
+const JWT_SECRET = resolveSecret("JWT_SECRET", "WS server");
+const INTERNAL_SECRET = resolveSecret("INTERNAL_SECRET", "WS server");
 
 // ─── State ──────────────────────────────────────────────
 const rooms = new RoomManager();

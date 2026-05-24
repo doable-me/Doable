@@ -82,26 +82,49 @@ let refreshPromise: Promise<AuthTokens | null> | null = null;
  * share a single in-flight request to avoid rotating the same token twice.
  */
 export async function refreshAccessToken(): Promise<AuthTokens | null> {
-  // Deduplicate: if a refresh is already in-flight, piggyback on it.
+  // Deduplicate: if a refresh is already in-flight in THIS tab, piggyback.
   if (refreshPromise) return refreshPromise;
 
-  const { refreshToken } = getStoredTokens();
-  if (!refreshToken) return null;
+  // The token we intend to rotate, captured before we (possibly) wait on the
+  // cross-tab lock. If a peer rotates it while we wait, we adopt theirs.
+  const tokenAtCall = getStoredTokens().refreshToken;
+  if (!tokenAtCall) return null;
 
-  refreshPromise = (async () => {
+  const doRefresh = async (): Promise<AuthTokens | null> => {
+    // Re-read inside the critical section. A peer tab that held the lock
+    // before us may have already rotated the token; replaying our now-stale
+    // token would 401 and (pre-fix) call clearTokens() → log every tab out.
+    const current = getStoredTokens();
+    if (!current.refreshToken) return null;
+    if (current.refreshToken !== tokenAtCall) {
+      // A peer already refreshed — adopt the fresh pair, don't rotate again.
+      return current.accessToken
+        ? { accessToken: current.accessToken, refreshToken: current.refreshToken, expiresIn: 0 }
+        : null;
+    }
+
     try {
       const res = await fetch(`${API_URL}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken } satisfies RefreshTokenRequest),
+        body: JSON.stringify({ refreshToken: current.refreshToken } satisfies RefreshTokenRequest),
       });
 
       if (!res.ok) {
-        // Only clear tokens on definitive rejection (token revoked/invalid).
-        // 5xx or other transient errors should NOT destroy the session.
+        // Only clear on definitive rejection — but first distinguish a benign
+        // rotation race from a real revocation: if the stored token changed
+        // while our request was in flight, a peer tab rotated it out from
+        // under us. Adopt the fresh pair instead of destroying the session.
         if (res.status === 401 || res.status === 403) {
+          const latest = getStoredTokens();
+          if (latest.refreshToken && latest.refreshToken !== current.refreshToken) {
+            return latest.accessToken
+              ? { accessToken: latest.accessToken, refreshToken: latest.refreshToken, expiresIn: 0 }
+              : null;
+          }
           clearTokens();
         }
+        // 5xx or other transient errors should NOT destroy the session.
         return null;
       }
 
@@ -113,6 +136,21 @@ export async function refreshAccessToken(): Promise<AuthTokens | null> {
       // clear tokens. The next request will retry the refresh.
       return null;
     }
+  };
+
+  refreshPromise = (async () => {
+    // Serialize refresh ACROSS browser tabs. Without this, two tabs sharing
+    // the same localStorage refresh token both POST /auth/refresh; the server
+    // rotates (deletes old row, inserts new) on the first, so the second hits
+    // a now-deleted row → 401 → both tabs logged out. The Web Locks API
+    // guarantees only one tab runs doRefresh at a time; the others then see
+    // the already-rotated token and adopt it. Degrades gracefully where
+    // navigator.locks is unavailable (the in-flight peer check still applies).
+    const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+    if (locks?.request) {
+      return locks.request("doable-token-refresh", doRefresh);
+    }
+    return doRefresh();
   })();
 
   refreshPromise.finally(() => {

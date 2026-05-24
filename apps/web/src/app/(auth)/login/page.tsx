@@ -28,7 +28,10 @@ function LoginPageInner() {
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       const params = new URLSearchParams(window.location.search);
-      const returnTo = params.get("returnTo");
+      // Honor `returnTo` (OAuth/native flows) and `next` (SSR middleware's
+      // loginRedirect writes ?next=, e.g. when an admin's access-token cookie
+      // expired) so re-auth returns to the page the user actually wanted.
+      const returnTo = params.get("returnTo") ?? params.get("next");
       const urlPrompt = params.get("prompt");
       let target: string;
       if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
@@ -109,7 +112,10 @@ function LoginPageInner() {
         return;
       }
       const params = new URLSearchParams(window.location.search);
-      const returnTo = params.get("returnTo");
+      // Honor `returnTo` (OAuth/native flows) and `next` (SSR middleware's
+      // loginRedirect writes ?next=, e.g. when an admin's access-token cookie
+      // expired) so re-auth returns to the page the user actually wanted.
+      const returnTo = params.get("returnTo") ?? params.get("next");
       const urlPrompt = params.get("prompt");
       let target: string;
       if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
@@ -149,7 +155,10 @@ function LoginPageInner() {
     try {
       await completeMfaLogin({ mfaToken, code: mfaCode });
       const params = new URLSearchParams(window.location.search);
-      const returnTo = params.get("returnTo");
+      // Honor `returnTo` (OAuth/native flows) and `next` (SSR middleware's
+      // loginRedirect writes ?next=, e.g. when an admin's access-token cookie
+      // expired) so re-auth returns to the page the user actually wanted.
+      const returnTo = params.get("returnTo") ?? params.get("next");
       const urlPrompt = params.get("prompt");
       let target: string;
       if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {

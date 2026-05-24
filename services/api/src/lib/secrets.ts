@@ -1,39 +1,27 @@
 /**
  * Centralized secret configuration with boot-time validation.
  *
- * In production (NODE_ENV=production), missing secrets crash the process
- * immediately — never allow the app to run on fallback dev keys.
- *
- * In development, random ephemeral secrets are generated (sessions won't
- * survive restarts — set real values in .env for a stable dev experience).
+ * Resolution is delegated to the shared `resolveSecret` (see
+ * @doable/shared/security/secret-resolver) so the api and ws processes use ONE
+ * implementation with identical, restart-stable behavior:
+ *   - env var set            → use it (production / managed deployments).
+ *   - production + missing    → fatal; never boot on a generated key.
+ *   - dev/self-host + missing → a STABLE secret persisted to disk, shared with
+ *                               ws. (The old code returned a fresh random value
+ *                               every boot, which rotated JWT_SECRET on each
+ *                               restart and logged users out within seconds.)
  */
 
-import { randomBytes } from "node:crypto";
-
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
-
-function requireSecret(name: string): string {
-  const value = process.env[name];
-  if (value) return value;
-
-  if (IS_PRODUCTION) {
-    console.error(`[FATAL] ${name} is not set. Set a strong secret before starting in production.`);
-    process.exit(1);
-  }
-
-  const ephemeral = randomBytes(32).toString("hex");
-  console.warn(`[SECURITY] ${name} is not set — using a random ephemeral value. Set it in .env for stable sessions.`);
-  return ephemeral;
-}
+import { resolveSecret } from "@doable/shared/security/secret-resolver.js";
 
 /** JWT signing key (HS256). Must be a strong random string in production. */
-export const JWT_SECRET = requireSecret("JWT_SECRET");
+export const JWT_SECRET = resolveSecret("JWT_SECRET", "api");
 
 /** AES key for pgp_sym_encrypt. Must match across API and migration runs. */
-export const ENCRYPTION_KEY = requireSecret("ENCRYPTION_KEY");
+export const ENCRYPTION_KEY = resolveSecret("ENCRYPTION_KEY", "api");
 
 /** Shared secret for API ↔ WS internal communication. */
-export const INTERNAL_SECRET = requireSecret("INTERNAL_SECRET");
+export const INTERNAL_SECRET = resolveSecret("INTERNAL_SECRET", "api");
 
 /**
  * HS256 signing key for short-lived project JWTs (connector-proxy, preview).
