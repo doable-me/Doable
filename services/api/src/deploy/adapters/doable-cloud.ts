@@ -79,7 +79,7 @@ export async function assertSitesDirWritable(sitesDir: string): Promise<void> {
  *   - Production: /data/sites (served by Caddy/Nginx)
  *   - Dev (Windows): ./data/sites/ relative to cwd
  */
-const SITES_DIR =
+export const SITES_DIR =
   process.env.SITES_DIR ??
   (process.platform === "win32"
     ? path.join(process.cwd(), "data", "sites")
@@ -508,7 +508,7 @@ interface FileInfo {
  * Recursively collect file info (relative path, size, content hash)
  * for all files in a directory.
  */
-async function collectFileInfo(
+export async function collectFileInfo(
   dir: string,
   baseDir: string
 ): Promise<FileInfo[]> {
@@ -547,7 +547,7 @@ function hashFile(filePath: string): Promise<string> {
   });
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

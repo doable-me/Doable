@@ -145,6 +145,17 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       NODE_ENV: ${NODE_ENV:-production}
       PROJECTS_ROOT: ./projects
+      # ─── Publishing (PRD 07 publish topologies) ────────────────────────
+      # SITES_DIR: where deploy adapters write published static sites. Shared
+      # read-only into the caddy container at /srv/sites and served at
+      # https://<host>/sites/<slug>/ under the PATH topology — the OOB default
+      # when no Cloudflare tunnel / wildcard DNS is present.
+      SITES_DIR: /data/sites
+      # Public origin for path-topology publish URLs. Defaults to the app URL.
+      PUBLISH_BASE_URL: ${PUBLISH_BASE_URL:-${NEXT_PUBLIC_APP_URL:-http://localhost:3000}}
+      # Leave empty to auto-detect topology (subdomain when a tunnel/wildcard
+      # exists, else path). Force with "path" | "subdomain".
+      PUBLISH_MODE: ${PUBLISH_MODE:-}
       # Per-app database (PRD per-app-db). ON by default; set DOABLE_APP_DB_ENABLED=0
       # in deployment/docker/.env to disable (unmounts /__doable/data/* + skips the
       # doable.data builtin MCP server). The worker runs as a plain child inside this
@@ -213,6 +224,9 @@ services:
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
+      # Published static sites — written here by the deploy adapters, served
+      # read-only by caddy from /srv/sites (path topology).
+      - doable_sites:/data/sites
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -339,6 +353,8 @@ services:
       # Persistent ACME state for Let's Encrypt (cert renewals, account key)
       - caddy_data:/data
       - caddy_config:/config
+      # Published static sites (read-only) — served at /sites/<slug>/.
+      - doable_sites:/srv/sites:ro
     depends_on:
       api:
         condition: service_healthy
@@ -362,3 +378,6 @@ volumes:
   ws_projects:
   caddy_data:
   caddy_config:
+  # Published static sites — written by api (rw at /data/sites), served by
+  # caddy (ro at /srv/sites). Shared so the path topology works OOB.
+  doable_sites:

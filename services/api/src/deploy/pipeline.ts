@@ -13,10 +13,15 @@ import type { DeployAdapter } from "./adapter.js";
 import {
   DoableCloudAdapter,
   generateSubdomain,
-  computeSitePublishLocation,
   registerCloudflareDns,
   SitesDirUnwritableError,
 } from "./adapters/doable-cloud.js";
+import { DoablePathAdapter } from "./adapters/doable-path.js";
+import {
+  resolvePublishTopology,
+  computePublishLocation,
+  adapterNameForTopology,
+} from "./topology.js";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { nodeStandaloneAdapter } from "../runtime/adapters/node-standalone.js";
 import { pythonAsgiAdapter } from "../runtime/adapters/python-asgi.js";
@@ -47,6 +52,7 @@ async function getDnsMode(): Promise<"per_publish" | "wildcard"> {
 // ─── Adapter Registry ──────────────────────────────────────
 const adapters: Record<string, DeployAdapter> = {
   "doable-cloud": new DoableCloudAdapter(),
+  "doable-path": new DoablePathAdapter(),
 };
 
 export function getAdapter(name: string): DeployAdapter {
@@ -110,7 +116,6 @@ export async function runPipeline(
     projectId,
     userId,
     environment,
-    adapterName = "doable-cloud",
     onBuildLog,
   } = input;
   const pipelineStart = Date.now();
@@ -126,6 +131,19 @@ export async function runPipeline(
     throw new Error(`Workspace not found: ${project.workspace_id}`);
   }
 
+  // ── Resolve publish topology (subdomain vs path) ─────────
+  // Auto-detects from available infra: subdomain hosting when a Cloudflare
+  // Tunnel or an admin-managed wildcard CNAME exists, else path-based hosting
+  // (works out-of-the-box on a single-domain install with one cert). Forced
+  // by PUBLISH_MODE. The chosen topology drives the URL, the build's --base,
+  // and which adapter copies the files.
+  const dnsMode = await getDnsMode();
+  const topology = resolvePublishTopology({
+    publishMode: process.env.PUBLISH_MODE,
+    hasTunnel: !!process.env.CLOUDFLARED_TUNNEL_ID,
+    dnsMode,
+  });
+  const adapterName = input.adapterName ?? adapterNameForTopology(topology);
   const adapter = getAdapter(adapterName);
 
   // ── 1. Ensure subdomain exists (generate on first publish) ──
@@ -161,7 +179,7 @@ export async function runPipeline(
     // available during Vite compilation and baked into the JS bundle.
     if (environment === "production") {
       try {
-        const publishLoc = computeSitePublishLocation(subdomain, environment);
+        const publishLoc = computePublishLocation(subdomain, environment, topology);
         await autoProvisionApiKey({
           projectId,
           userId,
@@ -185,25 +203,28 @@ export async function runPipeline(
     // Skipped when the platform admin has configured DNS_MODE=wildcard:
     // an admin-managed wildcard CNAME (e.g. *.doable.me) is expected to
     // already cover the published hostname, so no per-publish API call
-    // is needed (and the CF API token may not even be set).
-    const dnsMode = await getDnsMode();
+    // is needed (and the CF API token may not even be set). Also skipped
+    // entirely under the path topology — there are no per-publish hostnames.
     const cfToken = await getEffectiveCfApiToken();
     if (
+      topology === "subdomain" &&
       dnsMode === "per_publish" &&
       process.env.CLOUDFLARED_TUNNEL_ID &&
       cfToken
     ) {
-      const earlyLoc = computeSitePublishLocation(subdomain, environment);
-      registerCloudflareDns(
-        process.env.CLOUDFLARED_TUNNEL_ID,
-        earlyLoc.hostname,
-      ).catch((err) => {
-        console.warn(
-          `[pipeline] Early DNS registration failed for ${earlyLoc.hostname}:`,
-          err instanceof Error ? err.message : err,
-        );
-      });
-      // Fire-and-forget — don't await; let it run in parallel with the build
+      const earlyLoc = computePublishLocation(subdomain, environment, topology);
+      if (earlyLoc.hostname) {
+        registerCloudflareDns(
+          process.env.CLOUDFLARED_TUNNEL_ID,
+          earlyLoc.hostname,
+        ).catch((err) => {
+          console.warn(
+            `[pipeline] Early DNS registration failed for ${earlyLoc.hostname}:`,
+            err instanceof Error ? err.message : err,
+          );
+        });
+        // Fire-and-forget — don't await; let it run in parallel with the build
+      }
     }
 
     // ── 3. Build ─────────────────────────────────────────
@@ -218,7 +239,7 @@ export async function runPipeline(
 
     // Compute publish URL & base path BEFORE build so Vite emits assets
     // with the correct base href when path-based hosting is enabled.
-    const publishLoc = computeSitePublishLocation(subdomain, environment);
+    const publishLoc = computePublishLocation(subdomain, environment, topology);
     // Pass userId so the build env picks up vault-backed integration
     // credentials for the deploying user (Phase 1C/1D of the integration↔AI
     // chat bridge). User env_vars still override vault values on collision.
@@ -273,22 +294,30 @@ export async function runPipeline(
     // runtime adapter, register the per-host Caddy reverse_proxy route,
     // and INSERT a project_runtime row. Failures here do NOT roll back
     // the deploy — file copy is still useful for static-export fallback.
-    try {
-      await registerRuntimeForDeploy({
-        projectId,
-        projectSlug: subdomain,
-        workspaceSlug: workspace.slug,
-        siteDir: path.join(process.env.SITES_DIR ?? "/data/sites", subdomain, environment === "preview" ? "test" : "live"),
-        projectDir: getProjectPath(projectId),
-        frameworkId: (project as { framework_id?: string }).framework_id ?? "vite-react",
-        userId,
-        publicHostname: new URL(deployResult.url).hostname,
-      });
-    } catch (err) {
-      console.warn(
-        `[pipeline] Runtime registration warning for ${projectId}:`,
-        err instanceof Error ? err.message : err,
-      );
+    //
+    // Subdomain topology only: a per-process runtime is reverse-proxied by
+    // public HOSTNAME, which only exists when each app has its own subdomain.
+    // Under the path topology v1 we serve static SPA output off the shared
+    // domain (no per-host route), so registering one here would wrongly bind
+    // the main domain. Process-kind apps need the subdomain topology.
+    if (topology === "subdomain") {
+      try {
+        await registerRuntimeForDeploy({
+          projectId,
+          projectSlug: subdomain,
+          workspaceSlug: workspace.slug,
+          siteDir: path.join(process.env.SITES_DIR ?? "/data/sites", subdomain, environment === "preview" ? "test" : "live"),
+          projectDir: getProjectPath(projectId),
+          frameworkId: (project as { framework_id?: string }).framework_id ?? "vite-react",
+          userId,
+          publicHostname: new URL(deployResult.url).hostname,
+        });
+      } catch (err) {
+        console.warn(
+          `[pipeline] Runtime registration warning for ${projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
 
     // ── 5. Track artifacts ───────────────────────────────

@@ -131,8 +131,13 @@ COPY --from=build --chown=node:node /app .
 # Pre-creating the dirs with node ownership in the image lets docker preserve
 # that ownership when it copies the (empty) dir contents into the volume on
 # first up.
-RUN mkdir -p /app/services/api/projects /app/services/api/thumbnails \
-  && chown -R node:node /app/services/api/projects /app/services/api/thumbnails \
+#
+# /data/sites is the SITES_DIR volume the deploy adapters write published
+# static sites into (path publish topology). Same root:root-on-first-mount
+# trap — pre-create it node-owned so the doable_sites volume initialises
+# writable by USER node.
+RUN mkdir -p /app/services/api/projects /app/services/api/thumbnails /data/sites \
+  && chown -R node:node /app/services/api/projects /app/services/api/thumbnails /data/sites \
   && ln -sf services/api/projects /app/projects \
   && ln -sf services/api/thumbnails /app/thumbnails \
   && chown -h node:node /app/projects /app/thumbnails

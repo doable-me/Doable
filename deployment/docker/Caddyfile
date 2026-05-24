@@ -96,6 +96,29 @@
                 reverse_proxy ws:4001
         }
 
+        # ─── Published static sites (path publish topology) ─────────────────
+        # The doable-path deploy adapter writes built SPAs to the shared
+        # doable_sites volume, mounted read-only here at /srv/sites/<slug>/.
+        # We serve them at https://${DOABLE_SITE}/sites/<slug>/ so publishing
+        # works out-of-the-box on a single domain (no wildcard DNS, no tunnel,
+        # one cert). The subdomain topology bypasses this entirely.
+        #
+        # Canonicalise the bare site root to a trailing slash so the SPA's
+        # absolute base href (/sites/<slug>/) lines up.
+        @published_noslash path_regexp ^/sites/[^/]+$
+        redir @published_noslash {http.request.uri.path}/ 308
+
+        # Serve <slug>/<asset> from /srv/sites, falling back to the per-site
+        # index.html so client-side routes (deep links) resolve. The named
+        # capture is evaluated because the matcher gates the handle block.
+        @published path_regexp pub ^/sites/(?P<slug>[^/]+)/
+        handle @published {
+                root * /srv/sites
+                uri strip_prefix /sites
+                try_files {path} /{re.pub.slug}/index.html
+                file_server
+        }
+
         # ─── Frontend (Next.js) catch-all ────────────────────────────────────
         handle {
                 reverse_proxy web:3000
