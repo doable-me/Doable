@@ -1037,6 +1037,12 @@ WILDCARD_HOSTNAME=${WILDCARD_HOSTNAME}
 # ─── Environment ───────────────────────────────────────────
 NODE_ENV=development
 
+# ─── Feature flags ──────────────────────────────────────────
+# Per-app database (PRD per-app-db): isolated per-app PGlite DB exposed via
+# /__doable/data/* + the doable.data builtin MCP server. ON by default on new
+# installs; set to 0 to disable.
+DOABLE_APP_DB_ENABLED=1
+
 # ─── Email ───
 # Provider: smtp, resend, or google (auto-detects if not set)
 EMAIL_PROVIDER=

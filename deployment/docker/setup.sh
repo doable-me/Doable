@@ -457,6 +457,12 @@ POSTGRES_DB=doable
 # no role grants. Migrate keeps using POSTGRES_USER above (owner).
 DOABLE_APP_PASSWORD=${DOABLE_APP_PASSWORD}
 
+# ─── Feature flags ─────────────────────────────────
+# Per-app database (PRD per-app-db): every generated app gets an isolated,
+# sandboxed PGlite database, exposed via /__doable/data/* + the doable.data
+# builtin MCP server. ON by default on new installs; set to 0 to disable.
+DOABLE_APP_DB_ENABLED=1
+
 # ─── URLs ──────────────────────────────────────────
 NEXT_PUBLIC_API_URL=${API_URL}
 NEXT_PUBLIC_WS_URL=${WS_URL}
@@ -472,7 +478,7 @@ WS_ALLOWED_ORIGINS=${CORS}
 # GitHub OAuth. lib/oauth.ts uses these when building the auth URL it
 # sends to GitHub; GitHub then validates the redirect_uri against the
 # Authorization callback URL registered in your OAuth App. Registering
-# the PARENT path `${API_URL}/oauth/github/` in GitHub covers all three
+# the PARENT path ${API_URL}/oauth/github/ in GitHub covers all three
 # sub-paths below via GitHub's subdirectory-match rule, so you only
 # create ONE OAuth App.
 GITHUB_REDIRECT_URI=${API_URL}/oauth/github/login/callback

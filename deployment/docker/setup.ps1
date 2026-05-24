@@ -316,6 +316,11 @@ POSTGRES_PASSWORD=$pgPass
 POSTGRES_DB=doable
 DOABLE_APP_PASSWORD=$appPass
 
+# --- Feature flags -----------
+# Per-app database (PRD per-app-db): isolated per-app PGlite DB exposed via
+# /__doable/data/* + the doable.data builtin MCP server. ON by default; set 0 to disable.
+DOABLE_APP_DB_ENABLED=1
+
 # --- URLs --------------------
 NEXT_PUBLIC_API_URL=$ApiUrl
 NEXT_PUBLIC_WS_URL=$WsUrl
