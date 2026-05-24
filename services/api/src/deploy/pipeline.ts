@@ -143,7 +143,17 @@ export async function runPipeline(
     hasTunnel: !!process.env.CLOUDFLARED_TUNNEL_ID,
     dnsMode,
   });
-  const adapterName = input.adapterName ?? adapterNameForTopology(topology);
+  // The deploy UI and legacy clients hardcode adapterName="doable-cloud" as a
+  // default, so we can't treat its presence as an explicit topology choice.
+  // Treat both unset AND the legacy "doable-cloud" default as "auto" — let the
+  // resolved topology pick the adapter. An explicit NON-default adapter (e.g. a
+  // future "cloudflare-pages") is still honored; forcing subdomain on a
+  // path-default box is done with PUBLISH_MODE=subdomain.
+  const requestedAdapter = input.adapterName;
+  const adapterName =
+    requestedAdapter && requestedAdapter !== "doable-cloud"
+      ? requestedAdapter
+      : adapterNameForTopology(topology);
   const adapter = getAdapter(adapterName);
 
   // ── 1. Ensure subdomain exists (generate on first publish) ──
