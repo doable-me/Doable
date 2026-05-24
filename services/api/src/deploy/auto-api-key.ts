@@ -71,6 +71,17 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
         while ((match = intRegex.exec(content)) !== null) {
           tools.add(`${match[1]!}/${match[2]!}`);
         }
+        // Per-app database: reached via `import { db } from "@doable/data"` +
+        // db.query()/db.schema(), NOT via .mcp.call(), so the patterns above miss
+        // it. Without this a published app that uses BOTH the inbuilt DB and any
+        // MCP/integration tool would get a key scoped to that tool only, and its
+        // db.query() calls would be rejected (403 TOOL_NOT_ALLOWED). Grant the
+        // data-plane query/schema tools whenever the app touches @doable/data.
+        // (data.exec/migrate stay out — they're server-tier/MCP-only by design.)
+        if (/@doable\/data/.test(content) || /\bdb\.(?:query|schema)\s*\(/.test(content)) {
+          tools.add("data.query");
+          tools.add("data.schema");
+        }
       } catch {
         // skip unreadable files
       }
