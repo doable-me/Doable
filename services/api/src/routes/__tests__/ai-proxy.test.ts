@@ -22,6 +22,7 @@ const {
   __setEmbedExecutorForTest,
   __setSettingsResolverForTest,
   __setEngineResolverForTest,
+  __setEmbeddingResolverForTest,
   toolNotAllowed,
   appUserId,
   estimateTokens,
@@ -45,6 +46,10 @@ function settings(overrides: Partial<ProjectAiSettings> = {}): ProjectAiSettings
     systemPrompt: null,
     embeddingModel: null,
     embeddingProviderId: null,
+    thinkingVisibility: "auto",
+    systemPromptOverride: null,
+    chatModelOverride: null,
+    embeddingModelOverride: null,
     ...overrides,
   };
 }
@@ -69,7 +74,24 @@ after(() => {
   __setEmbedExecutorForTest(null);
   __setSettingsResolverForTest(null);
   __setEngineResolverForTest(null);
+  __setEmbeddingResolverForTest(null);
 });
+
+// Default test embedding resolver — returns a sane fake provider so /embed
+// tests that just want to verify the executor pipeline don't need to wire
+// the resolver in every test. Tests that need a specific provider can call
+// __setEmbeddingResolverForTest() to override.
+function defaultTestEmbeddingResolver() {
+  __setEmbeddingResolverForTest(async (_projectId, override) => ({
+    provider: {
+      type: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "test-key",
+    },
+    model: override.embeddingModel ?? "text-embedding-3-small",
+    source: "platform" as const,
+  }));
+}
 
 function req(path: string, body: unknown, extraHeaders: Record<string, string> = {}) {
   return app.request(path, {
@@ -242,6 +264,77 @@ test("project default model wins over workspace resolved model", () => {
   assert.deepEqual(r, { ok: true, model: "project-model" });
 });
 
+test("chat_model_override beats both defaultModel and resolved model", () => {
+  const r = enforceModelAllowList(
+    "workspace-model",
+    settings({ defaultModel: "project-model", chatModelOverride: "tab-override-model" }),
+  );
+  assert.deepEqual(r, { ok: true, model: "tab-override-model" });
+});
+
+test("system_prompt_override is concatenated with legacy systemPrompt", async () => {
+  __setSettingsResolverForTest(async () => settings({
+    defaultModel: "x",
+    systemPrompt: "Be safe.",
+    systemPromptOverride: "You always answer in haiku.",
+  }));
+  __setEngineResolverForTest(async () => ({ model: "x" }));
+  let seenMessages: Array<{ role: string; content: string }> = [];
+  __setChatExecutorForTest(async function* (ctx) {
+    seenMessages = ctx.messages as typeof seenMessages;
+    yield { type: "text_delta", data: "haiku" };
+    yield { type: "done", data: { usage: { prompt_tokens: 1, completion_tokens: 1 } } };
+  });
+  const res = await req("/__doable/ai/chat", {
+    messages: [{ role: "user", content: "hi" }],
+    stream: false,
+  });
+  assert.equal(res.status, 200);
+  assert.equal(seenMessages[0]!.role, "system");
+  assert.match(seenMessages[0]!.content, /Be safe/);
+  assert.match(seenMessages[0]!.content, /haiku/);
+});
+
+test("thinking_visibility=hide strips <think> blocks server-side (non-stream)", async () => {
+  __setSettingsResolverForTest(async () => settings({
+    defaultModel: "x",
+    thinkingVisibility: "hide",
+  }));
+  __setEngineResolverForTest(async () => ({ model: "x" }));
+  __setChatExecutorForTest(async function* () {
+    yield { type: "text_delta", data: "<think>I should answer carefully.</think>" };
+    yield { type: "text_delta", data: "The answer is 42." };
+    yield { type: "done", data: { usage: { prompt_tokens: 1, completion_tokens: 2 } } };
+  });
+  const res = await req("/__doable/ai/chat", {
+    messages: [{ role: "user", content: "x" }],
+    stream: false,
+  });
+  assert.equal(res.status, 200);
+  const j = (await res.json()) as { content: string };
+  assert.equal(j.content.includes("<think>"), false);
+  assert.equal(j.content.includes("answer carefully"), false);
+  assert.match(j.content, /The answer is 42/);
+});
+
+test("thinking_visibility=auto passes <think> through to the SDK", async () => {
+  __setSettingsResolverForTest(async () => settings({
+    defaultModel: "x",
+    thinkingVisibility: "auto",
+  }));
+  __setEngineResolverForTest(async () => ({ model: "x" }));
+  __setChatExecutorForTest(async function* () {
+    yield { type: "text_delta", data: "<think>sneaky</think>visible" };
+    yield { type: "done", data: { usage: { prompt_tokens: 1, completion_tokens: 1 } } };
+  });
+  const res = await req("/__doable/ai/chat", {
+    messages: [{ role: "user", content: "x" }],
+    stream: false,
+  });
+  const j = (await res.json()) as { content: string };
+  assert.match(j.content, /<think>sneaky<\/think>visible/);
+});
+
 test("streaming chat with empty messages => 400 PARAMS_INVALID", async () => {
   const res = await req("/__doable/ai/chat", { messages: [] });
   assert.equal(res.status, 400);
@@ -310,6 +403,7 @@ test("embed too many texts => 400 PARAMS_INVALID", async () => {
 });
 
 test("embed propagates executor result as ok envelope", async () => {
+  defaultTestEmbeddingResolver();
   __setEmbedExecutorForTest(async (ctx) => {
     assert.deepEqual(ctx.texts, ["alpha", "beta"]);
     assert.ok(ctx.model.length > 0, "default embed model should be passed");
@@ -338,6 +432,7 @@ test("embed propagates executor result as ok envelope", async () => {
 });
 
 test("embed surfaces executor errors as 503 PROVIDER_ERROR envelope", async () => {
+  defaultTestEmbeddingResolver();
   __setEmbedExecutorForTest(async () => {
     throw new Error("upstream down");
   });
@@ -347,6 +442,14 @@ test("embed surfaces executor errors as 503 PROVIDER_ERROR envelope", async () =
   assert.equal(j.ok, false);
   assert.equal(j.error.code, "PROVIDER_ERROR");
   assert.match(j.error.message, /upstream down/);
+});
+
+test("embed returns 503 EMBEDDING_NOT_CONFIGURED when no provider configured anywhere", async () => {
+  __setEmbeddingResolverForTest(async () => null);
+  const res = await req("/__doable/ai/embed", { texts: ["x"] });
+  assert.equal(res.status, 503);
+  const j = (await res.json()) as { error: { code: string } };
+  assert.equal(j.error.code, "EMBEDDING_NOT_CONFIGURED");
 });
 
 // ── CORS preflight ─────────────────────────────────────────────────────────
@@ -398,7 +501,7 @@ test("estimateTokens ~ length/4", () => {
 });
 
 test("enforceModelAllowList policies", () => {
-  const baseSettings = {
+  const baseSettings: ProjectAiSettings = {
     enabled: true,
     defaultModel: null,
     modelAllowlist: null,
@@ -411,6 +514,10 @@ test("enforceModelAllowList policies", () => {
     systemPrompt: null,
     embeddingModel: null,
     embeddingProviderId: null,
+    thinkingVisibility: "auto",
+    systemPromptOverride: null,
+    chatModelOverride: null,
+    embeddingModelOverride: null,
   };
   // no model resolved + no project default => PROVIDER_ERROR
   let r = enforceModelAllowList(undefined, baseSettings);

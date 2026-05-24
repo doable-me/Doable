@@ -1912,6 +1912,9 @@ importers:
       '@activepieces/shared':
         specifier: ^0.50.0
         version: 0.50.0(bufferutil@4.1.0)
+      '@doable/ai':
+        specifier: workspace:*
+        version: link:../../packages/doable-ai
       '@doable/db':
         specifier: workspace:*
         version: link:../../packages/db

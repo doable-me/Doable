@@ -248,3 +248,14 @@ export const ai = new DoableAiClient({ token: "" });
 export function createAiClient(opts: AiClientOptions): DoableAiClient {
   return new DoableAiClient(opts);
 }
+
+// ── Thinking-tag helpers (exported for generated apps + Doable's own UI) ───
+
+export {
+  stripThinking,
+  createThinkingStripper,
+  THINKING_TAGS,
+  type StripThinkingResult,
+  type ThinkingStripper,
+  type ThinkingTagName,
+} from "./thinking.js";

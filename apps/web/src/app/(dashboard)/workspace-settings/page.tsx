@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Settings, Loader2, Boxes, Plug, Radio, Brain, Sparkles } from "lucide-react";
+import { ArrowLeft, Settings, Loader2, Boxes, Plug, Radio, Brain, Sparkles, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   apiListWorkspaces,
@@ -27,6 +27,9 @@ import { McpPanel } from "@/modules/settings/components/mcp-panel";
 import { SkillsRulesPanel } from "@/modules/settings/components/skills-rules-panel";
 import { WorkspaceKnowledgePanel } from "./workspace-knowledge";
 import { GeneralTab } from "./general-tab";
+import { DoableAiWorkspaceTab } from "./doable-ai-tab";
+import { useToasts } from "@/hooks/use-toasts";
+import { ToastContainer } from "@/components/ui/toast-container";
 
 // ─── Tab definitions ──────────────────────────────────────
 
@@ -37,6 +40,7 @@ const TABS = [
   { id: "mcp", label: "MCP Servers", icon: Radio },
   { id: "skills", label: "Skills & Rules", icon: Sparkles },
   { id: "knowledge", label: "Knowledge", icon: Brain },
+  { id: "doable-ai", label: "Doable AI", icon: Bot },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -111,6 +115,7 @@ function WorkspaceSettingsPageInner() {
 
   const isOwner = workspace?.userRole === "owner";
   const isAdmin = isOwner || workspace?.userRole === "admin";
+  const { toasts, addToast, dismissToast } = useToasts();
 
   const loadData = useCallback(async () => {
     setLoadError(null);
@@ -422,6 +427,12 @@ function WorkspaceSettingsPageInner() {
           <WorkspaceKnowledgePanel workspaceId={workspace.id} />
         </SettingsSection>
       )}
+
+      {activeTab === "doable-ai" && (
+        <DoableAiWorkspaceTab workspaceId={workspace.id} isAdmin={isAdmin} addToast={addToast} />
+      )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

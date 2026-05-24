@@ -5,6 +5,9 @@ import { aiSettingsQueries, platformAiDefaultsQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { platformAdminMiddleware } from "../middleware/platform-admin.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
+import { getConfig } from "../lib/platformConfig.js";
+import { savePlatformEmbeddingProvider } from "./setup.js";
+import { recordAdminAction } from "../admin/audit-log.js";
 
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const platformDefaults = platformAiDefaultsQueries(sql);
@@ -430,6 +433,64 @@ adminAiRoutes.put("/platform-ai-defaults/:plan", async (c) => {
 const applyExistingSchema = z.object({
   plan: z.enum(["free", "pro", "business", "enterprise"]),
   overwrite: z.boolean().default(false),
+});
+
+// ─── Platform-default Embedding Provider ─────────────────
+//
+// Set once during /setup, editable any time afterwards from /admin. Every
+// workspace inherits it silently (resolveEmbeddingEngine() walks project →
+// workspace → platform-default). End users never see embeddings config —
+// they just say "build me a chatbot with my docs" and Doable does the rest.
+
+adminAiRoutes.get("/embedding-provider", async (c) => {
+  const [provider, baseUrl, model, apiKey] = await Promise.all([
+    getConfig("setup.embedding_provider"),
+    getConfig("setup.embedding_base_url"),
+    getConfig("setup.embedding_model"),
+    getConfig("setup.embedding_api_key"),
+  ]);
+  return c.json({
+    data: {
+      provider: provider ?? null,
+      baseUrl: baseUrl ?? null,
+      model: model ?? null,
+      configured: !!(provider && apiKey),
+      apiKeyMasked: apiKey ? "••••••••" : null,
+    },
+  });
+});
+
+const adminEmbeddingProviderSchema = z.object({
+  provider: z
+    .enum(["openai", "gemini", "custom"])
+    .transform((v) => (v === "gemini" ? "openai" : v === "custom" ? "openai" : v)),
+  apiKey: z.string().min(1),
+  baseUrl: z.string().url(),
+  model: z.string().min(1).max(120),
+});
+
+adminAiRoutes.put("/embedding-provider", async (c) => {
+  const parsed = adminEmbeddingProviderSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+  const userId = c.get("userId");
+  const saved = await savePlatformEmbeddingProvider({
+    userId,
+    provider: parsed.data.provider as "openai" | "anthropic",
+    apiKey: parsed.data.apiKey,
+    baseUrl: parsed.data.baseUrl,
+    model: parsed.data.model,
+    bindToAdminWorkspace: true,
+  });
+  if (!saved.ok) {
+    return c.json({ ok: false, error: "EMBEDDING_PROBE_FAILED", detail: saved.error }, 422);
+  }
+  recordAdminAction(c, {
+    action: "admin_update_embedding_provider",
+    details: { provider: parsed.data.provider, model: parsed.data.model, baseUrl: parsed.data.baseUrl, dims: saved.dims },
+  }).catch(() => {});
+  return c.json({ ok: true, providerId: saved.providerId, dimensions: saved.dims });
 });
 
 adminAiRoutes.post("/platform-ai-defaults/apply-to-existing", async (c) => {

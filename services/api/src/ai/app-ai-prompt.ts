@@ -67,7 +67,66 @@ Rules:
    message rather than the raw error. The thrown \`Error\` has a \`code\`
    property carrying these strings.
 5. **Embeddings are batchable.** Prefer one call with several texts over
-   many small calls; the server limits batches to 100 strings.`;
+   many small calls; the server limits batches to 100 strings.
+
+### Reasoning / "thinking" content (default UX)
+
+Some chat models emit \`<think>…</think>\` reasoning blocks (and the
+related family: \`<reasoning>\`, \`<plan>\`, \`<scratchpad>\`, …) *inside*
+the assistant message. **NEVER render these inline** — split them out
+with \`stripThinking\` and put them in a collapsed \`<details>\`
+disclosure so the user can peek if they want but isn't distracted by
+default:
+
+\`\`\`tsx
+import { ai, stripThinking, type ChatMessage } from "@doable/ai";
+
+function MessageBubble({ raw }: { raw: string }) {
+  const { visible, thinking } = stripThinking(raw);
+  return (
+    <div className="space-y-2">
+      {thinking.length > 0 && (
+        <details className="rounded-md border border-zinc-200/60 bg-zinc-50/60 px-3 py-2 text-sm text-zinc-700">
+          <summary className="cursor-pointer select-none font-medium text-zinc-600">
+            💭 Thinking…
+          </summary>
+          <div className="mt-2 whitespace-pre-wrap text-zinc-600">
+            {thinking.join("\\n\\n")}
+          </div>
+        </details>
+      )}
+      <div className="whitespace-pre-wrap">{visible}</div>
+    </div>
+  );
+}
+\`\`\`
+
+For streaming UIs use \`createThinkingStripper()\` which buffers any
+in-flight opening tag across SSE chunks:
+
+\`\`\`ts
+import { createThinkingStripper, ai } from "@doable/ai";
+
+const stripper = createThinkingStripper();
+let visible = "";
+const thinking: string[] = [];
+for await (const tok of ai.chat(messages)) {
+  const r = stripper.push(tok);
+  visible += r.visible;
+  for (const t of r.thinking) thinking.push(t);
+  render(visible, thinking);
+}
+const tail = stripper.flush();
+visible += tail.visible;
+for (const t of tail.thinking) thinking.push(t);
+render(visible, thinking);
+\`\`\`
+
+The Doable project owner can flip thinking visibility (\`auto\` /
+\`always-show\` / \`hide\`) from the **Doable AI** tab of Project
+Settings; \`hide\` is enforced server-side so you don't have to
+special-case it in the app, but \`auto\` is the default and you SHOULD
+ship the disclosure component above so users still see them on demand.`;
 
 export const APP_AI_RAG_PROMPT_BLOCK: string = `## RAG (retrieval-augmented generation) with pgvector
 

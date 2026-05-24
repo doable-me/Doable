@@ -71,6 +71,7 @@ export async function buildProjectContext(projectId: string): Promise<string> {
 function preInstalledDepsLine(): string {
   const pre = ["@doable/sdk"];
   if (process.env["DOABLE_APP_DB_ENABLED"] === "1") pre.push("@doable/data");
+  if (process.env["DOABLE_APP_AI_ENABLED"] === "1") pre.push("@doable/ai");
   return `\nPre-installed (do NOT install, do NOT add to package.json): ${pre.join(", ")}`;
 }
 

@@ -60,6 +60,26 @@ const aiProviderSchema = z.object({
   copilotModel: z.string().min(1).max(120).optional(),
 });
 
+// Platform-default embedding provider. Set once during /setup (or later in
+// /admin/embedding-provider). All workspaces inherit it silently — end users
+// never see embedding-model UI. Mirrors aiProviderSchema's shape (provider
+// type, base URL, key, model) but with an embeddings-only validator.
+const aiEmbeddingProviderSchema = z.object({
+  provider: z
+    .enum(["openai", "gemini", "custom"])
+    // gemini is OpenAI-compatible at https://generativelanguage.googleapis.com/v1beta/openai
+    // — treat it as 'openai' downstream so engine-resolver + embedding-resolver
+    // don't need a third code path.
+    .transform((v) => (v === "gemini" ? "openai" : v === "custom" ? "openai" : v)),
+  apiKey: z.string().min(1),
+  baseUrl: z.string().url(),
+  model: z.string().min(1).max(120),
+  // Auto-bind as the workspace default for the admin's workspace too so the
+  // admin's own projects immediately have embeddings available. Defaults
+  // true; out-of-band callers may pass false.
+  bindToAdminWorkspace: z.boolean().optional().default(true),
+});
+
 const oauthSchema = z.object({
   clientId: z.string().min(1),
   clientSecret: z.string().min(1),
@@ -378,6 +398,182 @@ setupRoutes.post("/ai-provider", async (c) => {
   }).catch(() => {});
 
   return c.json({ ok: true });
+});
+
+// ─── Embedding provider helpers ────────────────────────────────────────────
+//
+// The platform-default embedding provider lives in TWO places:
+//   1) platform_config.setup.embedding_*  → the platform fallback that every
+//      workspace inherits silently (read by embedding-resolver.ts when no
+//      workspace/project override exists).
+//   2) ai_providers (scope=workspace, role='embedding') + bound onto the
+//      admin's workspace_ai_settings.default_embedding_provider_id  →ensures
+//      the admin's OWN projects already have embeddings working without an
+//      additional workspace-level configuration step.
+//
+// Both writes happen in one transaction-ish flow. (1) is the source of truth
+// for inheritance; (2) is a convenience so the admin's first project works.
+
+async function probeEmbeddingEndpoint(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+): Promise<{ ok: true; dims: number } | { ok: false; error: string }> {
+  try {
+    const url = `${baseUrl.replace(/\/$/, "")}/embeddings`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, input: "doable embedding self-test" }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return { ok: false, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
+    }
+    const json = (await res.json()) as { data?: Array<{ embedding?: number[] }> };
+    const dims = json.data?.[0]?.embedding?.length ?? 0;
+    if (!dims) return { ok: false, error: "Provider returned no embedding vector" };
+    return { ok: true, dims };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * Shared logic for storing the platform-default embedding provider. Called
+ * from /api/setup/ai-embedding-provider (initial install) AND from
+ * /admin/embedding-provider (post-install edits). Returns { ok:false,error }
+ * for clean error mapping in the handler.
+ */
+export async function savePlatformEmbeddingProvider(opts: {
+  userId: string;
+  provider: "openai" | "anthropic";
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  bindToAdminWorkspace: boolean;
+}): Promise<{ ok: true; providerId: string | null; dims: number } | { ok: false; error: string }> {
+  const probe = await probeEmbeddingEndpoint(opts.baseUrl, opts.apiKey, opts.model);
+  if (!probe.ok) {
+    return { ok: false, error: probe.error };
+  }
+
+  // 1) Persist the platform-config fallback (encrypted key, plain everything
+  // else). embedding-resolver.ts reads these on every /__doable/ai/embed call
+  // when no workspace/project override exists.
+  await setConfig("setup.embedding_provider", opts.provider, { updatedBy: opts.userId });
+  await setConfig("setup.embedding_base_url", opts.baseUrl, { updatedBy: opts.userId });
+  await setConfig("setup.embedding_model", opts.model, { updatedBy: opts.userId });
+  await setEncryptedConfig("setup.embedding_api_key", opts.apiKey, opts.userId);
+
+  // 2) Mirror into ai_providers + workspace_ai_settings for the admin's
+  // workspace so /admin/ai-settings can list it like any other workspace
+  // provider, AND so the admin's own projects work out-of-the-box.
+  let providerId: string | null = null;
+  if (opts.bindToAdminWorkspace) {
+    try {
+      const [adminWorkspace] = await sql<{ id: string }[]>`
+        SELECT w.id FROM workspaces w
+        JOIN workspace_members m ON m.workspace_id = w.id
+        WHERE m.user_id = ${opts.userId} AND m.role IN ('owner', 'admin')
+        ORDER BY w.created_at LIMIT 1
+      `;
+      if (adminWorkspace) {
+        const label = `${opts.provider} embeddings (${opts.model})`;
+        const [existing] = await sql<{ id: string }[]>`
+          SELECT id FROM ai_providers
+          WHERE workspace_id = ${adminWorkspace.id}
+            AND scope = 'workspace'
+            AND role IN ('embedding', 'both')
+          ORDER BY updated_at DESC NULLS LAST, created_at DESC
+          LIMIT 1
+        `;
+        if (existing) {
+          await sql`
+            UPDATE ai_providers
+            SET encrypted_api_key = pgp_sym_encrypt(${opts.apiKey}, ${ENCRYPTION_KEY}),
+                provider_type = ${opts.provider}::ai_provider_type,
+                base_url = ${opts.baseUrl},
+                role = 'embedding',
+                label = ${label},
+                is_valid = true,
+                updated_at = now()
+            WHERE id = ${existing.id}
+          `;
+          providerId = existing.id;
+        } else {
+          const [created] = await sql<{ id: string }[]>`
+            INSERT INTO ai_providers (
+              workspace_id, label, provider_type, base_url,
+              encrypted_api_key, is_valid, added_by, scope, role
+            ) VALUES (
+              ${adminWorkspace.id}, ${label}, ${opts.provider}::ai_provider_type,
+              ${opts.baseUrl}, pgp_sym_encrypt(${opts.apiKey}, ${ENCRYPTION_KEY}),
+              true, ${opts.userId}, 'workspace'::ai_account_scope, 'embedding'
+            ) RETURNING id
+          `;
+          providerId = created?.id ?? null;
+        }
+        if (providerId) {
+          await sql`
+            INSERT INTO workspace_ai_settings (
+              workspace_id, default_embedding_provider_id, default_embedding_model, updated_by
+            ) VALUES (
+              ${adminWorkspace.id}, ${providerId}, ${opts.model}, ${opts.userId}
+            )
+            ON CONFLICT (workspace_id) DO UPDATE SET
+              default_embedding_provider_id = EXCLUDED.default_embedding_provider_id,
+              default_embedding_model       = EXCLUDED.default_embedding_model,
+              updated_by                    = EXCLUDED.updated_by
+          `;
+        }
+      }
+    } catch (err) {
+      // Non-fatal: platform_config write is the inheritance source-of-truth.
+      // Workspace-binding failures still leave embeddings working for every
+      // workspace via the platform fallback path.
+      console.warn("[setup] embedding provider workspace bind failed:", err);
+    }
+  }
+
+  return { ok: true, providerId, dims: probe.dims };
+}
+
+// ─── POST /api/setup/ai-embedding-provider ────────────────────────────────
+// Saves the platform-default embedding provider during the install wizard.
+// One-shot configuration that every workspace inherits — end users never
+// see embedding-model UI. Validates the key against the provider's
+// /embeddings endpoint before persisting.
+setupRoutes.post("/ai-embedding-provider", async (c) => {
+  const parsed = aiEmbeddingProviderSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+  }
+  const userId = c.get("userId");
+  const { provider, apiKey, baseUrl, model, bindToAdminWorkspace } = parsed.data;
+
+  const saved = await savePlatformEmbeddingProvider({
+    userId,
+    provider: provider as "openai" | "anthropic",
+    apiKey,
+    baseUrl,
+    model,
+    bindToAdminWorkspace,
+  });
+  if (!saved.ok) {
+    return c.json({ ok: false, error: "EMBEDDING_PROBE_FAILED", detail: saved.error }, 422);
+  }
+
+  recordAdminAction(c, {
+    action: "setup_save_ai_embedding_provider",
+    details: { provider, model, baseUrl, dims: saved.dims },
+  }).catch(() => {});
+
+  return c.json({ ok: true, providerId: saved.providerId, dimensions: saved.dims });
 });
 
 // ─── POST /api/setup/oauth/google ─────────────────────────────────────────
@@ -710,6 +906,10 @@ setupRoutes.get("/status", async (c) => {
     supabaseUrl,
     supabaseKey,
     aiProviderBaseUrl,
+    embeddingProvider,
+    embeddingBaseUrl,
+    embeddingModel,
+    embeddingApiKey,
   ] = await Promise.all([
     getConfig("setup_completed_at"),
     getConfig("setup.workspace_name"),
@@ -722,6 +922,10 @@ setupRoutes.get("/status", async (c) => {
     getConfig("setup.supabase_url"),
     getConfig("setup.supabase_service_role_key"),
     getConfig("setup.ai_provider_base_url"),
+    getConfig("setup.embedding_provider"),
+    getConfig("setup.embedding_base_url"),
+    getConfig("setup.embedding_model"),
+    getConfig("setup.embedding_api_key"),
   ]);
 
   const setupCompleted = !!(
@@ -743,6 +947,7 @@ setupRoutes.get("/status", async (c) => {
       google_oauth: !!(googleClientId && googleClientId !== "null"),
       github_oauth: !!(githubClientId && githubClientId !== "null"),
       supabase: !!(supabaseUrl && supabaseUrl !== "null"),
+      embedding_provider: !!(embeddingProvider && embeddingProvider !== "null" && embeddingApiKey && embeddingApiKey !== "null"),
     },
     // Plain (non-secret) field values — safe to surface
     ai_provider: aiProvider ?? null,
@@ -750,10 +955,14 @@ setupRoutes.get("/status", async (c) => {
     google_client_id: googleClientId ?? null,
     github_client_id: githubClientId ?? null,
     supabase_url: supabaseUrl ?? null,
+    embedding_provider: embeddingProvider ?? null,
+    embedding_base_url: embeddingBaseUrl ?? null,
+    embedding_model: embeddingModel ?? null,
     // Masked secret indicators — NEVER plaintext
     ai_provider_key: masked(aiProviderKey as string),
     google_client_secret: masked(googleClientSecret as string),
     github_client_secret: masked(githubClientSecret as string),
     supabase_service_role_key: masked(supabaseKey as string),
+    embedding_api_key: masked(embeddingApiKey as string),
   });
 });

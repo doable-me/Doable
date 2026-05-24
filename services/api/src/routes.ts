@@ -60,6 +60,8 @@ import { DOABLE_APP_DB_ENABLED } from "./data-worker/config.js";
 // Runtime AI data-plane (PRD ChatBotInfra). Mounted only when the feature flag is on.
 import { aiProxyRoutes } from "./routes/ai-proxy.js";
 import { aiSettingsRoutes as projectAiSettingsRoutes } from "./routes/projects/ai-settings.js";
+import { embeddingsRoutes as projectEmbeddingsRoutes } from "./routes/projects/embeddings.js";
+import { workspaceAiExtrasRoutes } from "./routes/workspaces/ai-extras.js";
 import { DOABLE_APP_AI_ENABLED } from "./ai/runtime-config.js";
 
 export function mountRoutes(app: Hono): void {
@@ -123,6 +125,8 @@ if (DOABLE_APP_DB_ENABLED) {
 // dataTokenRoutes — the router applies authMiddlewareWithRls on "/projects/*".
 if (DOABLE_APP_AI_ENABLED) {
   app.route("/projects", projectAiSettingsRoutes);
+  app.route("/projects", projectEmbeddingsRoutes);
+  app.route("/workspaces", workspaceAiExtrasRoutes);
 }
 app.route("/projects", projectRoutes);
 app.route("/workspaces", workspaceRoutes);

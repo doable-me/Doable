@@ -544,6 +544,7 @@
     "@activepieces/pieces-common": "^0.12.0",
     "@activepieces/pieces-framework": "^0.26.0",
     "@activepieces/shared": "^0.50.0",
+    "@doable/ai": "workspace:*",
     "@doable/db": "workspace:*",
     "@doable/marketplace-bundle": "workspace:*",
     "@doable/shared": "workspace:*",

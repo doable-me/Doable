@@ -21,6 +21,7 @@ import {
   PROVIDER_COUNT,
   type ProviderPreset,
 } from "@doable/shared";
+import { Step2EmbeddingPanel } from "./Step2EmbeddingPanel";
 
 interface StepProps {
   onNext: () => void;
@@ -664,6 +665,8 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
           );
         })}
       </div>
+
+      <Step2EmbeddingPanel />
 
       <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-xs text-muted-foreground space-y-1">
         <p>

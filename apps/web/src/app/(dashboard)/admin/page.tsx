@@ -39,6 +39,7 @@ import { UserManagementPanel, type BulkApplyPayload } from "./user-management-pa
 import { ToolsConfigPanel } from "./tools-config-panel";
 import { PlanDefaultsPanel } from "./plan-defaults-panel";
 import { PlanLimitsPanel } from "./plan-limits-panel";
+import { EmbeddingProviderPanel } from "./embedding-provider-panel";
 import { IntegrationsAdminPanel } from "@/modules/integrations/integrations-admin-panel";
 import { FrameworksPanel } from "./frameworks-panel";
 import { AdminMfaPanel } from "./mfa-panel";
@@ -75,7 +76,7 @@ export default function AdminPage() {
     }
     return "features";
   });
-  const [plansSubTab, setPlansSubTab] = useState<"limits" | "defaults">("limits");
+  const [plansSubTab, setPlansSubTab] = useState<"limits" | "defaults" | "embedding">("limits");
 
   // AI allocations state
   const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
@@ -408,9 +409,18 @@ export default function AdminPage() {
             >
               Plan Defaults
             </button>
+            <button
+              onClick={() => setPlansSubTab("embedding")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+                plansSubTab === "embedding" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Embedding Model
+            </button>
           </div>
           {plansSubTab === "limits" && <PlanLimitsPanel />}
           {plansSubTab === "defaults" && <PlanDefaultsPanel />}
+          {plansSubTab === "embedding" && <EmbeddingProviderPanel />}
         </div>
       )}
 

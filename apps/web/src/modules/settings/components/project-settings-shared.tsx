@@ -18,6 +18,7 @@ import {
   Map,
   Shield,
   Database,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ export type Tab =
   | "skills"
   | "context"
   | "security"
+  | "doable-ai"
   | "domain"
   | "environments"
   | "database"
@@ -61,6 +63,7 @@ export const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "mcp", label: "MCP Servers", icon: Terminal },
   { id: "skills", label: "Skills & Rules", icon: Brain },
   { id: "context", label: "Knowledge", icon: Brain },
+  { id: "doable-ai", label: "Doable AI", icon: Sparkles },
   { id: "security", label: "Security", icon: Shield },
   { id: "domain", label: "Custom Domain", icon: Globe },
   { id: "environments", label: "Environments", icon: Server },

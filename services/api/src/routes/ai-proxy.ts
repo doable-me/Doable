@@ -36,6 +36,11 @@ import {
 import { resolveAiEngine } from "../ai/engine-resolver.js";
 import type { ByokProviderConfig } from "../ai/engine-types.js";
 import {
+  resolveEmbeddingEngine,
+  type ResolvedEmbeddingEngine,
+} from "../ai/embedding-resolver.js";
+import { createThinkingStripper } from "@doable/ai";
+import {
   DOABLE_APP_AI_MAX_INPUT_TOKENS,
   DOABLE_APP_AI_MAX_OUTPUT_TOKENS,
   DOABLE_APP_AI_MAX_MESSAGES,
@@ -98,6 +103,11 @@ export interface ProjectAiSettings {
   systemPrompt: string | null;
   embeddingModel: string | null;
   embeddingProviderId: string | null;
+  // ─── Migration 096 additions ─────────────────────────────────
+  thinkingVisibility: "auto" | "always-show" | "hide";
+  systemPromptOverride: string | null;
+  chatModelOverride: string | null;
+  embeddingModelOverride: string | null;
 }
 
 /** A single chat-stream chunk shape we pass to the SDK. */
@@ -133,11 +143,16 @@ type EngineResolver = (projectId: string, userId: string) => Promise<{
   provider?: ByokProviderConfig;
   githubToken?: string;
 } | null>;
+type EmbeddingResolver = (
+  projectId: string,
+  projectOverride: { embeddingProviderId: string | null; embeddingModel: string | null },
+) => Promise<ResolvedEmbeddingEngine | null>;
 
 let chatExecutor: ChatExecutor = defaultChatExecutor;
 let embedExecutor: EmbedExecutor = defaultEmbedExecutor;
 let settingsResolver: SettingsResolver | null = null;
 let engineResolver: EngineResolver | null = null;
+let embeddingResolver: EmbeddingResolver | null = null;
 
 /** Test seam: override the chat provider executor. Pass null to reset. */
 export function __setChatExecutorForTest(fn: ChatExecutor | null): void {
@@ -154,6 +169,10 @@ export function __setSettingsResolverForTest(fn: SettingsResolver | null): void 
 /** Test seam: override the AI engine resolver. Pass null to reset. */
 export function __setEngineResolverForTest(fn: EngineResolver | null): void {
   engineResolver = fn;
+}
+/** Test seam: override the embedding-engine resolver. Pass null to reset. */
+export function __setEmbeddingResolverForTest(fn: EmbeddingResolver | null): void {
+  embeddingResolver = fn;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -195,12 +214,17 @@ export async function getProjectAiSettings(projectId: string): Promise<ProjectAi
              budget_tokens, budget_window_sec, per_user_budget_tokens,
              max_input_tokens, max_output_tokens, max_turns_per_session,
              system_prompt,
-             embedding_model, embedding_provider_id
+             embedding_model, embedding_provider_id,
+             thinking_visibility, system_prompt_override,
+             chat_model_override, embedding_model_override
       FROM project_ai_settings
       WHERE project_id = ${projectId}
       LIMIT 1
     `;
     if (!row) return defaultProjectAiSettings();
+    const tv = (row.thinking_visibility as string | null) ?? "auto";
+    const tvValid: "auto" | "always-show" | "hide" =
+      tv === "always-show" || tv === "hide" ? tv : "auto";
     return {
       enabled: (row.enabled as boolean | null) ?? true,
       defaultModel: (row.default_model as string | null) ?? null,
@@ -214,6 +238,10 @@ export async function getProjectAiSettings(projectId: string): Promise<ProjectAi
       systemPrompt: (row.system_prompt as string | null) ?? null,
       embeddingModel: (row.embedding_model as string | null) ?? null,
       embeddingProviderId: (row.embedding_provider_id as string | null) ?? null,
+      thinkingVisibility: tvValid,
+      systemPromptOverride: (row.system_prompt_override as string | null) ?? null,
+      chatModelOverride: (row.chat_model_override as string | null) ?? null,
+      embeddingModelOverride: (row.embedding_model_override as string | null) ?? null,
     };
   } catch {
     return defaultProjectAiSettings();
@@ -234,6 +262,10 @@ function defaultProjectAiSettings(): ProjectAiSettings {
     systemPrompt: null,
     embeddingModel: null,
     embeddingProviderId: null,
+    thinkingVisibility: "auto",
+    systemPromptOverride: null,
+    chatModelOverride: null,
+    embeddingModelOverride: null,
   };
 }
 
@@ -303,8 +335,9 @@ export function enforceModelAllowList(
   resolvedModel: string | undefined,
   settings: ProjectAiSettings,
 ): { ok: true; model: string } | { ok: false; code: string; message: string } {
-  // Project default model wins over workspace default when set.
-  const model = settings.defaultModel ?? resolvedModel ?? "";
+  // Priority: chat_model_override (Doable AI tab) >
+  //           legacy default_model > workspace/engine-resolved default.
+  const model = settings.chatModelOverride ?? settings.defaultModel ?? resolvedModel ?? "";
   if (!model) {
     return { ok: false, code: "PROVIDER_ERROR", message: "No model resolved for this workspace" };
   }
@@ -399,10 +432,19 @@ async function* defaultChatExecutor(ctx: {
     return;
   }
   // Default to OpenAI-compatible. Anthropic is a small variation.
-  const baseUrl = (ctx.provider?.baseUrl ?? "https://api.openai.com").replace(/\/$/, "");
+  // BUG-CHATBOT-001: The stored baseUrl for OpenAI-compatible providers
+  // already includes the version segment (e.g. `https://api.openai.com/v1`,
+  // `https://api.minimax.io/v1`, `https://generativelanguage.googleapis.com/v1beta/openai`).
+  // The wizard probe in setup.ts agrees: it appends just `/embeddings` or
+  // `/models`. The runtime path here must do the same — appending `/v1`
+  // unconditionally produced `.../v1/v1/chat/completions` and a 404 for
+  // every non-Anthropic provider. Anthropic's stored baseUrl is
+  // `https://api.anthropic.com` (no /v1) so we keep the explicit /v1 prefix
+  // for that branch.
+  const baseUrl = (ctx.provider?.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
   const url = ctx.provider?.type === "anthropic"
     ? `${baseUrl}/v1/messages`
-    : `${baseUrl}/v1/chat/completions`;
+    : `${baseUrl}/chat/completions`;
 
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (ctx.provider?.apiKey) headers["authorization"] = `Bearer ${ctx.provider.apiKey}`;
@@ -531,8 +573,11 @@ async function defaultEmbedExecutor(ctx: {
   if (!ctx.provider) {
     throw new Error("No embedding provider configured");
   }
+  // BUG-CHATBOT-001: stored embedding-provider baseUrls already include the
+  // version segment (`.../v1`, `.../v1beta/openai`). The wizard's probe
+  // call uses `${baseUrl}/embeddings`; the runtime path must match.
   const baseUrl = ctx.provider.baseUrl.replace(/\/$/, "");
-  const url = `${baseUrl}/v1/embeddings`;
+  const url = `${baseUrl}/embeddings`;
 
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (ctx.provider.apiKey) headers["authorization"] = `Bearer ${ctx.provider.apiKey}`;
@@ -641,8 +686,19 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
   const model = allow.model;
 
   // Inject pinned system prompt server-side (never echoed to client).
-  const messages: ChatMessage[] = settings.systemPrompt
-    ? [{ role: "system", content: settings.systemPrompt }, ...parsed.messages]
+  // Priority: explicit per-call request (caller is trusted via project JWT
+  // only for the request body — system prompts come from settings):
+  //   1. settings.systemPromptOverride (from the Doable AI tab)
+  //   2. settings.systemPrompt (legacy field; kept for backward-compat)
+  // We concatenate when BOTH are present so a workspace admin's pinned
+  // safety prompt can't be silently replaced by a per-project override.
+  const systemPrompts: string[] = [];
+  if (settings.systemPrompt) systemPrompts.push(settings.systemPrompt);
+  if (settings.systemPromptOverride && settings.systemPromptOverride !== settings.systemPrompt) {
+    systemPrompts.push(settings.systemPromptOverride);
+  }
+  const messages: ChatMessage[] = systemPrompts.length
+    ? [{ role: "system", content: systemPrompts.join("\n\n") }, ...parsed.messages]
     : parsed.messages;
 
   const inputCap = settings.maxInputTokens ?? DOABLE_APP_AI_MAX_INPUT_TOKENS;
@@ -674,6 +730,13 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
   const shouldStream = parsed.stream !== false;
   const provider = aiConfig?.provider;
   const githubToken = aiConfig?.githubToken;
+  // thinking-visibility = "hide" → strip <think>…</think> server-side using
+  // the same util the SDK ships, so the app never sees the reasoning even in
+  // DevTools. "auto" and "always-show" pass through unchanged; the app is
+  // expected to render thinking inside a <details> disclosure (default) or
+  // inline. Hidden mode is also what enforces the spec's "ask again →
+  // thinking section is gone entirely" expectation.
+  const hideThinking = settings.thinkingVisibility === "hide";
 
   if (!shouldStream) {
     let content = "";
@@ -693,6 +756,13 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
       }
     } catch (e) {
       err = (e as Error).message;
+    }
+    if (hideThinking) {
+      // One-shot pass on the assembled content.
+      const stripper = createThinkingStripper();
+      const out = stripper.push(content);
+      const tail = stripper.flush();
+      content = (out.visible + tail.visible).trim();
     }
     const durationMs = Date.now() - started;
     if (err) {
@@ -721,11 +791,22 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
     let promptTokens = 0;
     let completionTokens = 0;
     let providerError: string | null = null;
+    // Server-side thinking stripper (only used when visibility=hide). For
+    // "auto"/"always-show" we pass deltas through verbatim and the SDK on
+    // the client renders the disclosure.
+    const stripper = hideThinking ? createThinkingStripper() : null;
     try {
       for await (const ev of chatExecutor({ provider, githubToken, model, messages, max_tokens: maxTokens, stream: true })) {
         if (ev.type === "text_delta" && typeof ev.data === "string") {
           content += ev.data;
-          await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: ev.data }) });
+          let toSend = ev.data;
+          if (stripper) {
+            const r = stripper.push(ev.data);
+            toSend = r.visible;
+          }
+          if (toSend.length > 0) {
+            await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: toSend }) });
+          }
         } else if (ev.type === "done" && ev.data && typeof ev.data === "object") {
           const u = (ev.data as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage;
           promptTokens = u?.prompt_tokens ?? estimateTokens(messages.map((m) => m.content).join(" "));
@@ -736,6 +817,16 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
       }
     } catch (err) {
       providerError = (err as Error).message ?? String(err);
+    }
+    // Flush any buffered partial thinking opener (e.g. "<th" that never
+    // closed). When hiding, we DROP these tails entirely — they're either
+    // not really a tag or a malformed one we don't want to risk leaking.
+    if (stripper) {
+      // Intentionally NOT calling stripper.flush() — its return value
+      // includes the buffered tail, which may contain partial thinking
+      // content. Hidden mode prefers a possibly-truncated answer over a
+      // leak. (For the non-streaming branch the entire content is fed in
+      // one push() and the tail can't be split, so flush() is safe.)
     }
     const durationMs = Date.now() - started;
     if (providerError) {
@@ -791,11 +882,30 @@ aiProxyRoutes.post("/__doable/ai/embed", async (c) => {
     return jsonError(c, 503, "AI_DISABLED_FOR_PROJECT", "Doable AI is disabled for this project");
   }
 
-  const aiConfig = engineResolver
-    ? await engineResolver(auth.projectId, auth.userId).catch(() => null)
-    : await resolveAiEngine(auth.projectId, auth.userId, {}).catch(() => null);
-  const model = settings.embeddingModel ?? DOABLE_APP_AI_DEFAULT_EMBED_MODEL;
-  const provider = aiConfig?.provider;
+  // Embedding-specific resolver — different from chat. Walks project →
+  // workspace → platform-default (set in /setup or /admin/embedding-provider).
+  // `embedding_model_override` (096) wins over `embedding_model` (095) so the
+  // Doable AI tab can rebind a project to a new model without dropping the
+  // legacy column (which may still be used by older project_ai_settings rows).
+  const effectiveEmbeddingModel =
+    settings.embeddingModelOverride ?? settings.embeddingModel;
+  const embedConfig = await (embeddingResolver ?? resolveEmbeddingEngine)(auth.projectId, {
+    embeddingProviderId: settings.embeddingProviderId,
+    embeddingModel: effectiveEmbeddingModel,
+  }).catch((err) => {
+    console.error("[ai-proxy] embedding resolve failed:", err);
+    return null;
+  });
+  if (!embedConfig) {
+    return jsonError(
+      c,
+      503,
+      "EMBEDDING_NOT_CONFIGURED",
+      "No embedding provider configured. Set one in /setup or /admin/ai-settings.",
+    );
+  }
+  const model = embedConfig.model || DOABLE_APP_AI_DEFAULT_EMBED_MODEL;
+  const provider = embedConfig.provider;
 
   const endUser = appUserId(c, auth);
   const estimated = parsed.texts.reduce((acc, t) => acc + estimateTokens(t), 0);
