@@ -1042,6 +1042,9 @@ NODE_ENV=development
 # /__doable/data/* + the doable.data builtin MCP server. ON by default on new
 # installs; set to 0 to disable.
 DOABLE_APP_DB_ENABLED=1
+# Per-app AI runtime (/__doable/ai/*, @doable/ai SDK, project Doable AI tab).
+# ON by default on new installs; set to 0 to disable.
+DOABLE_APP_AI_ENABLED=1
 
 # ─── Email ───
 # Provider: smtp, resend, or google (auto-detects if not set)

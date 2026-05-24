@@ -462,6 +462,8 @@ DOABLE_APP_PASSWORD=${DOABLE_APP_PASSWORD}
 # sandboxed PGlite database, exposed via /__doable/data/* + the doable.data
 # builtin MCP server. ON by default on new installs; set to 0 to disable.
 DOABLE_APP_DB_ENABLED=1
+# Per-app AI runtime (/__doable/ai/*, @doable/ai SDK). ON by default.
+DOABLE_APP_AI_ENABLED=1
 
 # ─── URLs ──────────────────────────────────────────
 NEXT_PUBLIC_API_URL=${API_URL}

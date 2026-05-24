@@ -320,6 +320,7 @@ DOABLE_APP_PASSWORD=$appPass
 # Per-app database (PRD per-app-db): isolated per-app PGlite DB exposed via
 # /__doable/data/* + the doable.data builtin MCP server. ON by default; set 0 to disable.
 DOABLE_APP_DB_ENABLED=1
+DOABLE_APP_AI_ENABLED=1
 
 # --- URLs --------------------
 NEXT_PUBLIC_API_URL=$ApiUrl

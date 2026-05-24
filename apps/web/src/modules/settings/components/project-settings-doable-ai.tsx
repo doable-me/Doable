@@ -13,6 +13,7 @@ import {
 
 import { apiFetch } from "@/lib/api";
 import { SectionCard } from "./project-settings-shared";
+import { ProjectChatModelPicker } from "./project-chat-model-picker";
 
 type Visibility = "auto" | "always-show" | "hide";
 
@@ -51,15 +52,16 @@ const SYSTEM_PROMPT_MAX = 4_096;
 
 interface Props {
   projectId: string;
+  workspaceId: string;
   addToast: (kind: "success" | "error", msg: string) => void;
 }
 
-export function DoableAiTab({ projectId, addToast }: Props) {
+export function DoableAiTab({ projectId, workspaceId, addToast }: Props) {
   const [settings, setSettings] = useState<DoableAiSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState("");
-  const [pendingChatModel, setPendingChatModel] = useState("");
+  const [pendingChatModel, setPendingChatModel] = useState<string | null>(null);
   const [pendingVisibility, setPendingVisibility] = useState<Visibility>("auto");
   const [pendingEnabled, setPendingEnabled] = useState(true);
 
@@ -81,7 +83,7 @@ export function DoableAiTab({ projectId, addToast }: Props) {
       .then(({ data }) => {
         setSettings(data);
         setPendingPrompt(data.systemPromptOverride ?? "");
-        setPendingChatModel(data.chatModelOverride ?? "");
+        setPendingChatModel(data.chatModelOverride);
         setPendingVisibility(data.thinkingVisibility ?? "auto");
         setPendingEnabled(data.enabled);
       })
@@ -104,7 +106,7 @@ export function DoableAiTab({ projectId, addToast }: Props) {
     if (!settings) return false;
     return (
       pendingPrompt !== (settings.systemPromptOverride ?? "") ||
-      pendingChatModel !== (settings.chatModelOverride ?? "") ||
+      pendingChatModel !== settings.chatModelOverride ||
       pendingVisibility !== (settings.thinkingVisibility ?? "auto") ||
       pendingEnabled !== settings.enabled
     );
@@ -119,7 +121,7 @@ export function DoableAiTab({ projectId, addToast }: Props) {
           enabled: pendingEnabled,
           thinkingVisibility: pendingVisibility,
           systemPromptOverride: pendingPrompt.trim().length === 0 ? null : pendingPrompt.trim(),
-          chatModelOverride: pendingChatModel.trim().length === 0 ? null : pendingChatModel.trim(),
+          chatModelOverride: pendingChatModel,
         }),
       });
       addToast("success", "Doable AI settings saved.");
@@ -163,7 +165,7 @@ export function DoableAiTab({ projectId, addToast }: Props) {
             // Required because PUT replaces NULL-able fields too.
             thinkingVisibility: pendingVisibility,
             systemPromptOverride: pendingPrompt.trim().length === 0 ? null : pendingPrompt.trim(),
-            chatModelOverride: pendingChatModel.trim().length === 0 ? null : pendingChatModel.trim(),
+            chatModelOverride: pendingChatModel,
             enabled: pendingEnabled,
           }),
         });
@@ -286,15 +288,13 @@ export function DoableAiTab({ projectId, addToast }: Props) {
       {/* ── Chat model override ── */}
       <SectionCard
         title="Chat model override"
-        description="Overrides the workspace-resolved chat model. Leave blank to inherit. Use the exact model id from the provider catalog (e.g. MiniMax-M2.5)."
+        description="Overrides the workspace-resolved chat model for runtime chat in this project's generated app."
       >
-        <input
-          type="text"
+        <ProjectChatModelPicker
+          workspaceId={workspaceId}
           value={pendingChatModel}
-          onChange={(e) => setPendingChatModel(e.target.value)}
-          placeholder={settings.defaultModel ? `Use workspace default (${settings.defaultModel})` : "Use workspace default"}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          data-testid="chat-model-override"
+          defaultModel={settings.defaultModel}
+          onChange={setPendingChatModel}
         />
       </SectionCard>
 

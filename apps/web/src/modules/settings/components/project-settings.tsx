@@ -131,8 +131,12 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
       {activeTab === "context" && (
         <ContextFilesTab projectId={projectId} addToast={addToast} />
       )}
-      {activeTab === "doable-ai" && (
-        <DoableAiTab projectId={projectId} addToast={addToast} />
+      {activeTab === "doable-ai" && project.workspace_id && (
+        <DoableAiTab
+          projectId={projectId}
+          workspaceId={project.workspace_id}
+          addToast={addToast}
+        />
       )}
       {activeTab === "security" && (
         <SecurityTab projectId={projectId} addToast={addToast} />
