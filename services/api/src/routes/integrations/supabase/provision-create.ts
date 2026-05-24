@@ -16,7 +16,7 @@ import { requireMember, getMgmtAccessToken, activeProvisions } from "./provision
 
 export const provisionCreateRoutes = new Hono<AuthEnv>({ strict: false });
 
-// ─── POST /api/integrations/supabase/provision ────────────
+// ─── POST /integrations/supabase/provision ────────────────
 
 const provisionSchema = z.object({
   projectId: z.string().uuid(),
@@ -43,7 +43,7 @@ const provisionSchema = z.object({
 });
 
 provisionCreateRoutes.post(
-  "/api/integrations/supabase/provision",
+  "/integrations/supabase/provision",
   authMiddleware,
   zValidator("json", provisionSchema),
   async (c) => {

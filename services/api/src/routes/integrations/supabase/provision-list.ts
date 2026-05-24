@@ -10,10 +10,10 @@ import { requireMember, getMgmtAccessToken } from "./provision-helpers.js";
 
 export const provisionListRoutes = new Hono<AuthEnv>({ strict: false });
 
-// ─── GET /api/integrations/supabase/orgs ──────────────────
+// ─── GET /integrations/supabase/orgs ──────────────────────
 
 provisionListRoutes.get(
-  "/api/integrations/supabase/orgs",
+  "/integrations/supabase/orgs",
   authMiddleware,
   async (c) => {
     const userId = c.get("userId");
@@ -43,13 +43,13 @@ provisionListRoutes.get(
   },
 );
 
-// ─── GET /api/integrations/supabase/projects ──────────────
+// ─── GET /integrations/supabase/projects ──────────────────
 //
 // Lists the user's existing Supabase projects (across all their orgs)
 // via the Management API. Powers the "Connect an existing project"
 // branch of the provision dialog.
 provisionListRoutes.get(
-  "/api/integrations/supabase/projects",
+  "/integrations/supabase/projects",
   authMiddleware,
   async (c) => {
     const userId = c.get("userId");
@@ -78,7 +78,7 @@ provisionListRoutes.get(
   },
 );
 
-// ─── POST /api/integrations/supabase/use-existing ─────────
+// ─── POST /integrations/supabase/use-existing ─────────────
 //
 // Connects an existing Supabase project to a Doable project without
 // provisioning a new one.
@@ -88,7 +88,7 @@ const useExistingSchema = z.object({
 });
 
 provisionListRoutes.post(
-  "/api/integrations/supabase/use-existing",
+  "/integrations/supabase/use-existing",
   authMiddleware,
   zValidator("json", useExistingSchema),
   async (c) => {
