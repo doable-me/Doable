@@ -110,4 +110,9 @@ export async function linkDoableSdk(projectPath: string): Promise<void> {
   // @doable/data — per-app DB client (src/index.ts only; index.test.ts is
   // intentionally excluded so node:test never reaches the Vite bundle).
   await linkWorkspacePackage(projectPath, "doable-data", ["index.ts"]);
+  // @doable/ai — runtime AI client (chat + embed). Same exclusion of tests so
+  // they never reach the Vite bundle. Reuses the same project-scoped token
+  // injected by the CONNECTOR_BRIDGE_SNIPPET (preview) and the index.html
+  // snippet baked in by deploy/auto-api-key.ts:injectDataToken (published).
+  await linkWorkspacePackage(projectPath, "doable-ai", ["index.ts"]);
 }

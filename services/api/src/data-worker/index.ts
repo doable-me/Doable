@@ -26,6 +26,7 @@
 
 import net from "node:net";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 
 import { encodeFrame, parseFrames, FrameError } from "./ipc.js";
 import { classifyForQuery, classifyForExec, DEFAULT_EXTENSION_ALLOWLIST } from "./sql-classifier.js";
@@ -154,7 +155,12 @@ async function main(): Promise<void> {
 
   // PGlite logs are silenced on stdout/stderr; the process emits structured
   // events itself. The data dir is the only fs surface the worker writes.
-  const db = await PGlite.create(args.dataDir);
+  // The `vector` extension is loaded into every project DB so generated apps
+  // can `CREATE EXTENSION vector` from a data.migrate call and use pgvector
+  // for RAG / semantic search. "vector" is already in
+  // DEFAULT_EXTENSION_ALLOWLIST (sql-classifier.ts) so the subsequent
+  // CREATE EXTENSION call passes the classifier without further changes.
+  const db = await PGlite.create(args.dataDir, { extensions: { vector } });
   await db.exec(APP_ROLE_BOOTSTRAP);
 
   // Worker-side idle self-shutdown (belt-and-suspenders if the API died and the

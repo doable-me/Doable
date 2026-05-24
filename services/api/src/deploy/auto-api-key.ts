@@ -82,6 +82,18 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
           tools.add("data.query");
           tools.add("data.schema");
         }
+        // Doable AI runtime: detected by the @doable/ai import or by direct
+        // calls to the `ai.chat`, `ai.chatSync` or `ai.embed` methods. We
+        // grant `ai.chat` whenever the package is imported (the import alone
+        // signals the developer intends to use chat) but withhold the more
+        // expensive `ai.embed` grant unless an actual .embed() call is found.
+        // (Mirrors the per-tool scoping pattern above for data.*).
+        if (/@doable\/ai/.test(content) || /\bai\.(?:chat|chatSync)\s*\(/.test(content)) {
+          tools.add("ai.chat");
+        }
+        if (/\bai\.embed\s*\(/.test(content)) {
+          tools.add("ai.embed");
+        }
       } catch {
         // skip unreadable files
       }

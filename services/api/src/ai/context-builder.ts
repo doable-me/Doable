@@ -213,6 +213,19 @@ export async function buildProjectContextForMode(
     }
   }
 
+  // Per-app Doable AI prompt block (chat / embed / RAG recipes). Mirrors the
+  // per-app DB pattern above. When DOABLE_APP_AI_ENABLED is on, the block is
+  // appended after the DB block so the AI knows about both SDKs and can
+  // emit RAG recipes that combine @doable/ai + @doable/data.
+  if (process.env["DOABLE_APP_AI_ENABLED"] === "1") {
+    const { buildAppAiContext } = await import("./app-ai-prompt.js");
+    const appAiBlock = buildAppAiContext();
+    if (appAiBlock) {
+      console.log("[Chat] Per-app Doable AI prompt block injected");
+      context += `\n\n${appAiBlock}`;
+    }
+  }
+
   // ── File listing and package info ──
   if (!isProjectScaffolded(projectId)) return context;
 

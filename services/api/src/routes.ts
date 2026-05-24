@@ -57,6 +57,10 @@ import { appDataRoutes } from "./routes/app-data.js";
 import { dataTokenRoutes } from "./routes/projects/data-token.js";
 import { mcpAppsDataRoutes } from "./routes/mcp-apps-data.js";
 import { DOABLE_APP_DB_ENABLED } from "./data-worker/config.js";
+// Runtime AI data-plane (PRD ChatBotInfra). Mounted only when the feature flag is on.
+import { aiProxyRoutes } from "./routes/ai-proxy.js";
+import { aiSettingsRoutes as projectAiSettingsRoutes } from "./routes/projects/ai-settings.js";
+import { DOABLE_APP_AI_ENABLED } from "./ai/runtime-config.js";
 
 export function mountRoutes(app: Hono): void {
 app.route("/health", healthRoutes);
@@ -86,6 +90,13 @@ if (DOABLE_APP_DB_ENABLED) {
   // concurrent Promise.all() DB queries (AI turns hung 180s, "no tools, no
   // content"). See the mount below.
 }
+// Runtime AI proxy (/__doable/ai/*) — gated behind DOABLE_APP_AI_ENABLED.
+// Mirrors the appDataRoutes pattern exactly: an unauthenticated POST surface
+// that resolves identity from the project-scoped token, calls the workspace's
+// configured AI model server-side, and never exposes the provider key.
+if (DOABLE_APP_AI_ENABLED) {
+  app.route("/", aiProxyRoutes);
+}
 // Per-project runtime status / restart / logs (PRD 06 §4)
 app.route("/", runtimeRoutes);
 app.route("/workspaces", workspaceRuntimeRoutes);
@@ -106,6 +117,12 @@ app.route("/", editorRoutes);
 // 180s with no output). Same ordering rationale as projectRoutes below.
 if (DOABLE_APP_DB_ENABLED) {
   app.route("/projects", dataTokenRoutes);
+}
+// Per-project Doable AI settings (CRUD + usage readout). Mounted AFTER
+// chatRoutes for the same RLS-deadlock reason documented above for
+// dataTokenRoutes — the router applies authMiddlewareWithRls on "/projects/*".
+if (DOABLE_APP_AI_ENABLED) {
+  app.route("/projects", projectAiSettingsRoutes);
 }
 app.route("/projects", projectRoutes);
 app.route("/workspaces", workspaceRoutes);
