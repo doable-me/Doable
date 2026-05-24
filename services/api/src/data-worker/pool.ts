@@ -44,6 +44,45 @@ import type { WorkerRequest, WorkerResponse } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** Sudo wrapper that validates args + execs setpriv (installed by setup-v3). */
+const SANDBOX_SPAWN_PATH = "/opt/doable/bin/sandbox-spawn";
+
+/**
+ * Apply the per-project UID drop to the worker spawn — the SAME mechanism
+ * vite-jail uses for the preview process (setpriv, or sudo + sandbox-spawn when
+ * the API is unprivileged). The worker is the UNTRUSTED side (it runs PGlite +
+ * arbitrary RLS-gated SQL), so it must run as the project's sandbox uid, not the
+ * API uid. Gated on `uid !== null`: acquireDevUid only hands out a uid when a
+ * drop path is actually viable (API is root, OR the sudo sandbox-spawn wrapper is
+ * installed), so this is a transparent no-op on dev/Docker hosts that lack the
+ * sandbox infra (there the worker keeps running as the API user, as before).
+ * NOTE: on the dist/bwrap path `command` is `bwrap`, so the wrap becomes
+ * `setpriv -- bwrap …` (uid-drop then namespace). The setpriv/sudo drop itself is
+ * proven by vite-jail; the setpriv+bwrap stacking should be smoke-tested on a
+ * hardened dist runner before prod flag-on (per the original TODO).
+ */
+function applyUidDrop(
+  command: string,
+  args: string[],
+  uid: number | null,
+  useWrapper: boolean,
+  projectId: string,
+): { command: string; args: string[] } {
+  if (process.platform !== "linux" || typeof uid !== "number") {
+    return { command, args };
+  }
+  if (useWrapper) {
+    return {
+      command: "sudo",
+      args: ["-n", SANDBOX_SPAWN_PATH, String(uid), projectId, command, ...args],
+    };
+  }
+  return {
+    command: "setpriv",
+    args: ["--reuid", String(uid), "--regid", String(uid), "--clear-groups", "--", command, ...args],
+  };
+}
+
 interface PendingRequest {
   resolve: (r: WorkerResponse) => void;
   reject: (e: Error) => void;
@@ -121,11 +160,11 @@ function workerInvocation(workerArgs: string[], opts: { projectId: string; dataD
       queryTimeoutMs: DOABLE_APP_DB_QUERY_TIMEOUT_MS,
       uid: opts.uid,
     });
-    // KNOWN GAP (servertodo/per-app-db-runbook.md §Sandbox): plan.uid is carried
-    // but NOT yet applied — the worker runs as the API uid, isolated by the bwrap
-    // mount namespace (and bwrap --setenv env) but not by per-project DAC. TODO:
-    // wrap with the vite-jail sandbox-spawn/setpriv mechanism and validate on a
-    // Linux runner before prod flag-on.
+    // plan.uid is applied by applyUidDrop() in spawnWorker (setpriv / sudo+
+    // sandbox-spawn), the same mechanism vite-jail uses — so the worker drops to
+    // the per-project DAC uid on top of this bwrap mount-namespace isolation.
+    // (The setpriv+bwrap stacking wants a smoke test on a hardened dist runner;
+    // off-Linux/dev hosts return uid=null and run unwrapped, as before.)
     return { command: plan.command, args: plan.args };
   }
 
@@ -179,9 +218,11 @@ async function spawnWorker(projectId: string, opts: AcquireOpts): Promise<Worker
 
   // Per-project uid (same identity as vite-jail). null off-Linux/dev.
   let uid: number | null = null;
+  let useWrapper = false;
   try {
-    const { acquireDevUid } = await import("../runtime/dev-uid-allocator.js");
-    uid = acquireDevUid(projectId);
+    const m = await import("../runtime/dev-uid-allocator.js");
+    uid = m.acquireDevUid(projectId);
+    useWrapper = m.isSandboxWrapperAvailable();
   } catch {
     uid = null;
   }
@@ -214,7 +255,12 @@ async function spawnWorker(projectId: string, opts: AcquireOpts): Promise<Worker
     "--exec-timeout-ms", String(DOABLE_APP_DB_EXEC_TIMEOUT_MS),
     "--idle-shutdown-ms", String(DOABLE_APP_DB_IDLE_MS + 60_000),
   ];
-  const { command, args } = workerInvocation(workerArgs, { projectId, dataDir, endpoint, uid });
+  const invocation = workerInvocation(workerArgs, { projectId, dataDir, endpoint, uid });
+  // Drop to the per-project sandbox uid (no-op when uid is null — see applyUidDrop).
+  const { command, args } = applyUidDrop(invocation.command, invocation.args, uid, useWrapper, projectId);
+  if (typeof uid === "number") {
+    console.log(`[data-pool] uid-drop (${useWrapper ? "sudo+sandbox-spawn" : "setpriv"}): project=${projectId} uid=${uid}`);
+  }
 
   const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
 
