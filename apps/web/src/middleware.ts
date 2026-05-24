@@ -30,6 +30,21 @@ function loginRedirect(req: NextRequest): NextResponse {
   return res;
 }
 
+// Recoverable-auth redirect. The access-token cookie was rejected (most
+// commonly: it expired — they're only valid 15 min), but the user still holds
+// a refresh token in localStorage. Rather than clear the session and bounce
+// through /login, send them to a tiny client page that refreshes the access
+// token (which re-mirrors a fresh cookie) and returns them to `next`. The
+// /auth/refresh route is intentionally NOT in the middleware matcher, so it
+// runs client-side without re-gating. We do NOT clear the cookie here.
+function refreshRedirect(req: NextRequest): NextResponse {
+  const url = req.nextUrl.clone();
+  const next = req.nextUrl.pathname + req.nextUrl.search;
+  url.pathname = "/auth/refresh";
+  url.search = `?next=${encodeURIComponent(next)}`;
+  return NextResponse.redirect(url);
+}
+
 // Aligns with /setup/page.tsx: the canonical "needs setup" signal is
 // `setup_completed_at IS NULL`. We deliberately do NOT key off "no AI
 // providers" — once an admin has finished the wizard, deleting a provider
@@ -58,7 +73,17 @@ async function checkNeedsSetup(token: string): Promise<boolean> {
   }
 }
 
-async function verifyPlatformAdmin(req: NextRequest, token: string): Promise<boolean> {
+type AdminAuthStatus = "admin" | "forbidden" | "expired" | "error";
+
+/**
+ * Classify the caller's access-token cookie against /auth/me:
+ *   - "admin"     200 + isPlatformAdmin === true
+ *   - "forbidden" 200 + authenticated but NOT a platform admin
+ *   - "expired"   401/403 — token rejected (most commonly an expired access
+ *                 token). Recoverable client-side via the refresh token.
+ *   - "error"     network/timeout/other — fail closed (treat as not-admin).
+ */
+async function classifyAdminAuth(token: string): Promise<AdminAuthStatus> {
   // Prefer an explicit server-side API URL when set (lets the edge talk to a
   // private hostname different from NEXT_PUBLIC_API_URL). Fall back to the
   // public URL so single-host dev/prod setups Just Work.
@@ -78,13 +103,17 @@ async function verifyPlatformAdmin(req: NextRequest, token: string): Promise<boo
       // open a fresh connection each time. Caching is handled per-request.
       cache: "no-store",
     });
-    if (!resp.ok) return false;
+    // A rejected token is recoverable (the client can refresh) — distinguish
+    // it from a genuine "you are not an admin" so the gate doesn't log out a
+    // user whose access token merely lapsed.
+    if (resp.status === 401 || resp.status === 403) return "expired";
+    if (!resp.ok) return "error";
     const data = (await resp.json()) as AuthMeResponse;
-    return data?.user?.isPlatformAdmin === true;
+    return data?.user?.isPlatformAdmin === true ? "admin" : "forbidden";
   } catch {
-    // Fail closed on network/timeout — better to bounce to login than to
-    // accidentally serve admin HTML when /auth/me is unreachable.
-    return false;
+    // Fail closed on network/timeout — better to bounce than to accidentally
+    // serve admin HTML when /auth/me is unreachable.
+    return "error";
   }
 }
 
@@ -96,18 +125,29 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(TOKEN_COOKIE)?.value;
 
   if (ADMIN_PATHS.test(pathname)) {
-    // Existing gate: must be authenticated platform admin.
+    // Gate: must be an authenticated platform admin.
     if (!token) return loginRedirect(req);
-    const isAdmin = await verifyPlatformAdmin(req, token);
-    if (!isAdmin) return loginRedirect(req);
-    return NextResponse.next();
+    const status = await classifyAdminAuth(token);
+    if (status === "admin") return NextResponse.next();
+    // Access token lapsed — recover via client refresh, don't log them out.
+    if (status === "expired") return refreshRedirect(req);
+    // Validly authenticated but not an admin — send to the dashboard WITHOUT
+    // clearing their session; they're legitimately logged in, just not here.
+    if (status === "forbidden") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    // "error" — /auth/me unreachable; fail closed.
+    return loginRedirect(req);
   }
 
   // Post-auth surfaces: dashboard, editor, projects.
   // Don't redirect /setup itself — would create a redirect loop.
   if (POST_AUTH_PATHS.test(pathname)) {
     if (!token) return loginRedirect(req);
-    const isAdmin = await verifyPlatformAdmin(req, token);
+    const isAdmin = (await classifyAdminAuth(token)) === "admin";
     if (isAdmin) {
       const needsSetup = await checkNeedsSetup(token);
       if (needsSetup) {
