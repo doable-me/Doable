@@ -121,9 +121,20 @@ export function toolNotAllowed(auth: ResolvedAuth, op: DataOp): boolean {
 }
 
 function appUserId(c: Context, auth: ResolvedAuth): string {
-  // End-user-of-app identity the developer threads through; falls back to the
-  // platform user for preview sessions (PRD 04 §6.2 / S7).
-  return c.req.header("x-doable-app-user") ?? auth.userId ?? "";
+  // RLS scopes every row to this identity, so who may ASSERT it is security-critical.
+  // Only a SERVER-tier API key (a trusted backend, never exposed to the browser)
+  // may set an arbitrary end-user identity via x-doable-app-user — that is how a
+  // developer threads their authenticated end-user through (PRD 04 §6.2 / S7).
+  // For browser-exposed credentials (client-tier keys, preview JWTs) the header is
+  // IGNORED and the credential acts only as its own identity. Otherwise a user who
+  // read the token client-side could set x-doable-app-user=<victim> and read another
+  // end-user's RLS-scoped rows. The @doable/data SDK never sets the header, so this
+  // is a no-op for the normal app path — it only blocks forged impersonation.
+  const trustedBackend = auth.authMode === "api-key" && auth.tier === "server";
+  if (trustedBackend) {
+    return c.req.header("x-doable-app-user") ?? auth.userId ?? "";
+  }
+  return auth.userId ?? "";
 }
 
 // ── Audit (extended columns from migration 093) ────────────────────────────
