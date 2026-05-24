@@ -1747,6 +1747,22 @@ CERTDOC
         reverse_proxy 127.0.0.1:4001
     }
 
+    # Published static sites (path publish topology) — mirrors deployment/docker/Caddyfile.
+    # Auto-selected when no Cloudflare tunnel / wildcard DNS exists (the OOB case for
+    # NO_TUNNEL installs). The doable-path deploy adapter writes built SPAs flat to
+    # SITES_DIR (= ${INSTALL_DIR}/sites)/<slug>/; served at https://${HOST}/sites/<slug>/
+    # with a per-site index.html fallback so client-side routes resolve.
+    @published_noslash path_regexp ^/sites/[^/]+\$
+    redir @published_noslash {http.request.uri.path}/ 308
+
+    @published path_regexp pub ^/sites/(?P<slug>[^/]+)/
+    handle @published {
+        root * ${INSTALL_DIR}/sites
+        uri strip_prefix /sites
+        try_files {path} /{re.pub.slug}/index.html
+        file_server
+    }
+
     # Everything else → Next.js web on 127.0.0.1:3000
     handle {
         reverse_proxy 127.0.0.1:3000
