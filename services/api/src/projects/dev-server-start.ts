@@ -711,6 +711,43 @@ async function doStartDevServer(
     );
   }
 
+  // The pre-spawn `npm install` above prunes node_modules/@doable: the linked
+  // workspace packages are "extraneous" (absent from package.json), so npm
+  // removes them. That leaves a generated app's `import { db } from "@doable/data"`
+  // unresolvable until the next restart — the model then sees a persistent Vite
+  // resolve error and improvises broken workarounds. Re-link AFTER the install
+  // and BEFORE Vite spawns so the link is present the instant Vite builds its
+  // module graph. Idempotent.
+  try {
+    await linkDoableSdk(projectPath);
+    // The relink ran as the API uid, AFTER the chown -R to sandboxUid above, so
+    // the new @doable files are owned api:apiGid. The sandboxed Vite runs as
+    // sandboxUid and is not in apiGid, so it could otherwise only read them via
+    // the world-read bit — which is umask-dependent and would break under a
+    // hardened umask (0027/0077). Re-own just the @doable scope dir to sandboxUid
+    // so reads never depend on world bits. Scoped + cheap (a few small files).
+    if (sandboxUid !== null && process.platform === "linux") {
+      const doableDir = `${projectPath}/node_modules/@doable`;
+      const apiGid = process.getegid?.() ?? 0;
+      const useSudo = isSandboxWrapperAvailable();
+      await new Promise<void>((resolve) => {
+        const cmd = useSudo ? "sudo" : "chown";
+        const args = useSudo
+          ? ["-n", "chown", "-R", `${sandboxUid}:${apiGid}`, doableDir]
+          : ["-R", `${sandboxUid}:${apiGid}`, doableDir];
+        const ch = nodeSpawn(cmd, args, { stdio: "ignore" });
+        ch.on("exit", () => resolve());
+        ch.on("error", () => resolve());
+      });
+    }
+  } catch (err) {
+    console.warn(
+      `[DevServer] post-install @doable/* re-link failed for ${projectId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+
   const jailed = await spawnJailedVite({
     execPath: spec.command,
     args: spec.args,

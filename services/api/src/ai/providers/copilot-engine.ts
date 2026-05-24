@@ -158,7 +158,19 @@ function denyDataStoreMisuse(
   if (!FILE_WRITE_TOOLS.has(toolName)) return undefined;
   const a = toolArgs as Record<string, unknown> | undefined;
   if (!a) return undefined;
-  const content = [a.content, a.file_text, a.new_str, a.text].find((v) => typeof v === "string") as string | undefined;
+  // The file-content arg key varies by tool and model (content, file_text,
+  // new_str, text, code, contents, …) and the copilot CLI's create_file uses
+  // its OWN key — checking a fixed list silently missed it, so the deny never
+  // fired and apps shipped with localStorage. Scan EVERY string value (and
+  // strings nested one level inside arrays/objects, e.g. multi_edit's edits[]).
+  const strings: string[] = [];
+  const collect = (v: unknown, depth: number): void => {
+    if (typeof v === "string") strings.push(v);
+    else if (depth > 0 && Array.isArray(v)) for (const x of v) collect(x, depth - 1);
+    else if (depth > 0 && v && typeof v === "object") for (const x of Object.values(v)) collect(x, depth - 1);
+  };
+  collect(a, 2);
+  const content = strings.join("\n");
   if (!content) return undefined;
   const usesPglite = /@electric-sql\/pglite|new\s+PGlite\s*\(/.test(content);
   const usesLocalStoreAsDb = /(?:localStorage|sessionStorage)\.setItem\s*\([^)]*JSON\.stringify/.test(content);

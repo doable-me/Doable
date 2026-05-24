@@ -271,6 +271,16 @@ async function runQuery(
     return tx.query(finalSql, params);
   });
 
+  // Durability: flush the committed write to the on-disk data dir before we ack.
+  // Empirically, without this an abrupt worker death (container restart / crash /
+  // SIGKILL) lost every row added since the last clean db.close() — the app
+  // appeared to "not persist" to the inbuilt DB; with it, a row survives a
+  // `kill -9` of the worker (verified). db.transaction() suppresses PGlite's
+  // per-statement syncToFs, so we flush explicitly after the write. Reads
+  // (SELECT) don't dirty the FS, so skip them. (Harmless no-op on a backend that
+  // already persists write-through.)
+  if (!isSelect) await db.syncToFs();
+
   const fields: WorkerField[] = (result.fields ?? []).map((f) => ({ name: f.name, dataTypeID: f.dataTypeID }));
   let rows = result.rows as unknown[];
   let truncated = false;
@@ -320,6 +330,10 @@ async function runExec(
       fields = (last?.fields ?? []).map((f) => ({ name: f.name, dataTypeID: f.dataTypeID }));
     }
   });
+  // Flush DDL/migration writes to disk before we ack (see runQuery durability
+  // note): db.transaction() suppresses PGlite's per-statement syncToFs, so this
+  // makes the schema durable immediately rather than only on a clean close.
+  await db.syncToFs();
   send({ id: req.id, ok: true, rows, rowCount: affected, fields, notices: [] });
 }
 
