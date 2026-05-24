@@ -11,7 +11,7 @@
  * seamlessly without the project owner needing to manually configure anything.
  */
 
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { sql } from "../db/index.js";
 import { generateProjectApiKey } from "../routes/connector-proxy.js";
@@ -200,4 +200,108 @@ export async function autoProvisionApiKey(opts: {
   );
 
   return { key, allowedTools };
+}
+
+/**
+ * Ensure the project has a publish-ready client key and return its plaintext so
+ * the deploy pipeline can bake it into the published app (see
+ * {@link injectDataToken}).
+ *
+ * - First publish: provisions a new client key (via {@link autoProvisionApiKey})
+ *   bound to the current publish origin; returns the freshly-minted plaintext.
+ * - Subsequent publishes: the key already exists (its plaintext is stored
+ *   encrypted as the VITE_DOABLE_PROJECT_KEY env var). We decrypt and return it,
+ *   and — crucially — make sure the CURRENT publish origin is in the key's
+ *   allowed_origins. A project first published under the subdomain topology
+ *   (origin <slug>.doable.me) and later under the path topology (origin
+ *   <host>) would otherwise be origin-rejected on the new host. Unrestricted
+ *   keys (allowed_origins = null) are left as-is.
+ *
+ * Returns null when no plaintext can be recovered (legacy key with no stored
+ * env var) — the caller then skips token injection rather than crash.
+ */
+export async function ensurePublishKey(opts: {
+  projectId: string;
+  userId: string;
+  projectDir: string;
+  publishedUrl: string;
+}): Promise<{ key: string } | null> {
+  const { projectId, publishedUrl } = opts;
+
+  let publishOrigin: string | null = null;
+  try {
+    publishOrigin = new URL(publishedUrl).origin;
+  } catch {
+    /* invalid URL — skip origin binding */
+  }
+
+  const existing = await sql`
+    SELECT id FROM project_api_keys
+    WHERE project_id = ${projectId} AND tier = 'client' AND revoked_at IS NULL
+    LIMIT 1
+  `;
+
+  if (existing.length === 0) {
+    // First publish — provision a new key bound to this origin.
+    const created = await autoProvisionApiKey(opts);
+    return created ? { key: created.key } : null;
+  }
+
+  // Existing key — make sure it accepts the current publish origin.
+  if (publishOrigin) {
+    const [row] = await sql`SELECT allowed_origins FROM project_api_keys WHERE id = ${existing[0]!.id}`;
+    const origins = Array.isArray(row?.allowed_origins) ? (row!.allowed_origins as string[]) : null;
+    // null = unrestricted (any origin) → nothing to add. Otherwise add ours.
+    if (origins !== null && !origins.includes(publishOrigin)) {
+      await sql`
+        UPDATE project_api_keys
+        SET allowed_origins = ${JSON.stringify([...origins, publishOrigin])}::jsonb
+        WHERE id = ${existing[0]!.id}
+      `;
+      console.log(`[auto-api-key] Added publish origin ${publishOrigin} to client key for project ${projectId}`);
+    }
+  }
+
+  // Recover the plaintext key from the stored (encrypted) env var.
+  const [secret] = await sql`
+    SELECT pgp_sym_decrypt(value_encrypted, ${ENCRYPTION_KEY}) AS key
+    FROM env_vars
+    WHERE project_id = ${projectId} AND key = 'VITE_DOABLE_PROJECT_KEY' AND target = 'production'
+    LIMIT 1
+  `;
+  const plaintext = (secret as { key?: string } | undefined)?.key;
+  return plaintext ? { key: plaintext } : null;
+}
+
+/**
+ * Bake the per-app database token into a built static app so the @doable/data
+ * SDK (which reads globalThis.__DOABLE_DATA_TOKEN at call time) authenticates
+ * against /__doable/data/* from the PUBLISHED origin.
+ *
+ * Done platform-side rather than relying on the AI to wire
+ * `import.meta.env.VITE_DOABLE_PROJECT_KEY` — generated apps frequently omit
+ * that, leaving published apps unable to reach their own database. We inject a
+ * tiny inline script at the top of <head> so the global is set before the app
+ * bundle executes.
+ *
+ * The injected value is a CLIENT-tier key: origin-bound, tool-scoped, and
+ * RLS-scoped — intentionally browser-exposed per the per-app-db security model
+ * (see app-data.ts / auto-api-key.ts). No-op when there is no index.html
+ * (non-SPA output) or the token is already present (idempotent).
+ */
+export async function injectDataToken(buildOutputDir: string, token: string): Promise<void> {
+  const indexPath = path.join(buildOutputDir, "index.html");
+  let html: string;
+  try {
+    html = await readFile(indexPath, "utf8");
+  } catch {
+    return; // no index.html (e.g. SSR/process output) — nothing to inject into
+  }
+  if (html.includes("__DOABLE_DATA_TOKEN")) return; // already injected — idempotent
+
+  const snippet = `<script>window.__DOABLE_DATA_TOKEN=${JSON.stringify(token)};</script>`;
+  const out = /<head[^>]*>/i.test(html)
+    ? html.replace(/(<head[^>]*>)/i, `$1${snippet}`)
+    : snippet + html;
+  await writeFile(indexPath, out, "utf8");
 }

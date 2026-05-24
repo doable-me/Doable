@@ -31,7 +31,7 @@ import { getEffectiveCfApiToken } from "../lib/cloudflare-token.js";
 import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
 import { getProjectPath } from "../ai/project-files.js";
-import { autoProvisionApiKey } from "./auto-api-key.js";
+import { ensurePublishKey, injectDataToken } from "./auto-api-key.js";
 import { linkDoableSdk } from "../projects/link-sdk.js";
 
 const deployments = deploymentQueries(sql);
@@ -184,25 +184,31 @@ export async function runPipeline(
   });
 
   try {
-    // ── 2b. Auto-provision API key BEFORE build (production only) ────
-    // Must happen before build so VITE_DOABLE_PROJECT_KEY env var is
-    // available during Vite compilation and baked into the JS bundle.
-    if (environment === "production") {
-      try {
-        const publishLoc = computePublishLocation(subdomain, environment, topology);
-        await autoProvisionApiKey({
-          projectId,
-          userId,
-          projectDir: getProjectPath(projectId),
-          publishedUrl: publishLoc.url,
-        });
-      } catch (err) {
-        // Non-fatal: key provisioning failure should not break deployment
-        console.warn(
-          `[pipeline] Auto API key provisioning failed for ${projectId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
+    // ── 2b. Ensure publish key + capture data token BEFORE build ─────
+    // The @doable/data SDK in the built app authenticates to /__doable/data/*
+    // with a client-tier key it reads from globalThis.__DOABLE_DATA_TOKEN. We
+    // provision (first publish) or recover (subsequent) that key here — binding
+    // the current publish origin so the key isn't origin-rejected when the app
+    // moves between topologies — and inject it into the built index.html after
+    // the build (see injectDataToken below). Doing this platform-side means a
+    // published app reaches its own database even when the generated app didn't
+    // wire VITE_DOABLE_PROJECT_KEY itself. Non-fatal: a failure here just leaves
+    // the published app without DB access, it doesn't block the deploy.
+    let publishDataToken: string | null = null;
+    try {
+      const publishLoc = computePublishLocation(subdomain, environment, topology);
+      const provisioned = await ensurePublishKey({
+        projectId,
+        userId,
+        projectDir: getProjectPath(projectId),
+        publishedUrl: publishLoc.url,
+      });
+      publishDataToken = provisioned?.key ?? null;
+    } catch (err) {
+      console.warn(
+        `[pipeline] Publish key provisioning failed for ${projectId}:`,
+        err instanceof Error ? err.message : err,
+      );
     }
 
     // ── 2c. Pre-register DNS BEFORE build ────────────────
@@ -279,6 +285,22 @@ export async function runPipeline(
         error: buildResult.error,
         errorCode: buildResult.errorCode,
       };
+    }
+
+    // ── 3b. Bake the per-app DB token into the built index.html ──────
+    // Must run AFTER the build (operates on the emitted index.html) and BEFORE
+    // the adapter copies the output to its serving directory. Sets
+    // window.__DOABLE_DATA_TOKEN so the @doable/data SDK authenticates from the
+    // published origin. No-op for non-SPA output or when no token is available.
+    if (publishDataToken) {
+      try {
+        await injectDataToken(buildResult.outputDir, publishDataToken);
+      } catch (err) {
+        console.warn(
+          `[pipeline] Data-token injection failed for ${projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
 
     // ── 4. Deploy via adapter ────────────────────────────
