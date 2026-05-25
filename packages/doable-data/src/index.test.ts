@@ -148,3 +148,71 @@ describe("lazy token resolution", () => {
     assert.equal(result.ok, true);
   });
 });
+
+describe("token-timing race", () => {
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"];
+    restoreFetch();
+  });
+
+  it("awaits a token injected after the call starts (bridge round-trip) — never sends empty Bearer", async () => {
+    const auths: string[] = [];
+    stubFetch(async (_input, init) => {
+      const headers = init?.headers as Record<string, string>;
+      auths.push(headers["authorization"]);
+      return makeResponse({ ok: true, rows: [{ id: "x" }], rowCount: 1, fields: [], truncated: false, elapsed_ms: 1 });
+    });
+
+    // No token yet — simulate the bridge delivering it 120ms after the query fires.
+    setTimeout(() => {
+      (globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] = "late-tok";
+    }, 120);
+
+    const result = await db.query("SELECT 1");
+    // The request must have used the late token, never an empty Bearer.
+    assert.equal(auths.length, 1, "should fire exactly one request once the token arrives");
+    assert.equal(auths[0], "Bearer late-tok");
+    assert.equal(result.ok, true);
+  });
+
+  it("retries once when the server 401s, after the token has since arrived", async () => {
+    const auths: string[] = [];
+    let callCount = 0;
+    stubFetch(async (_input, init) => {
+      const headers = init?.headers as Record<string, string>;
+      auths.push(headers["authorization"]);
+      callCount += 1;
+      if (callCount === 1) {
+        // First call: token raced in as empty/expired → server rejects.
+        // Now the bridge populates the global so the retry can pick it up.
+        (globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] = "refreshed-tok";
+        return makeResponse({ ok: false, error: { code: "unauthorized", message: "jwt" } }, 401);
+      }
+      return makeResponse({ ok: true, rows: [], rowCount: 0, fields: [], truncated: false, elapsed_ms: 1 });
+    });
+
+    // Seed a stale token so resolveToken returns immediately on the first call.
+    (globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] = "stale-tok";
+
+    const result = await db.query("SELECT 1");
+    assert.equal(callCount, 2, "should retry exactly once after 401");
+    assert.equal(auths[0], "Bearer stale-tok");
+    assert.equal(auths[1], "Bearer refreshed-tok");
+    assert.equal(result.ok, true);
+  });
+
+  it("no-op fast path: an explicit constructor token never waits or refreshes", async () => {
+    let callCount = 0;
+    stubFetch(async () => {
+      callCount += 1;
+      return makeResponse({ ok: false, error: { code: "unauthorized", message: "jwt" } }, 401);
+    });
+
+    const client = createDataClient({ token: "explicit-tok", baseUrl: "http://localhost:4000" });
+    const result = await client.query("SELECT 1");
+    // Even on a 401, an explicitly-provided token must not trigger the
+    // refresh-and-retry path (that path is only for the lazy/global token).
+    assert.equal(callCount, 1, "explicit token should fire exactly one request");
+    assert.equal(result.ok, false);
+  });
+});

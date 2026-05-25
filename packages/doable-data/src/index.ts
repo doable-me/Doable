@@ -25,11 +25,48 @@ export interface DataClientOptions {
   baseUrl?: string;
 }
 
+/** Max time to wait for a runtime-injected token before giving up (ms). */
+const TOKEN_WAIT_MS = 5000;
+/** Poll interval while waiting for the token global to be populated (ms). */
+const TOKEN_POLL_MS = 50;
+
 export class DoableDataClient {
   private opts: DataClientOptions;
 
   constructor(opts: DataClientOptions) {
     this.opts = opts;
+  }
+
+  /**
+   * Resolve the auth token. Reads the constructor token first, then the global
+   * `__DOABLE_DATA_TOKEN` that the connector bridge populates at runtime.
+   *
+   * The bridge delivers the token asynchronously (postMessage round-trip in the
+   * editor iframe, fetch in standalone), so an app's on-mount query can fire
+   * before the token lands. When that happens this method waits — bounded to
+   * TOKEN_WAIT_MS — for the global to appear instead of sending an empty Bearer.
+   *
+   * Fast path: when a token is already present (constructor or global), it
+   * returns synchronously-resolved with zero added latency. SSR/no-window safe:
+   * if there is no global object the loop simply times out and returns "".
+   */
+  private async resolveToken(): Promise<string> {
+    if (this.opts.token) return this.opts.token;
+
+    const readGlobal = (): string =>
+      ((globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] as string) || "";
+
+    const immediate = readGlobal();
+    if (immediate) return immediate;
+
+    // Token not here yet — bounded poll for the bridge to inject it.
+    const deadline = Date.now() + TOKEN_WAIT_MS;
+    while (Date.now() < deadline) {
+      await new Promise<void>((r) => setTimeout(r, TOKEN_POLL_MS));
+      const t = readGlobal();
+      if (t) return t;
+    }
+    return "";
   }
 
   async query<T = Record<string, unknown>>(
@@ -48,10 +85,16 @@ export class DoableDataClient {
     return this.call("/__doable/data/schema", {});
   }
 
-  private async call(path: string, body: unknown, retries = 3): Promise<DataResult> {
-    // Resolve token lazily: if the stored token is empty, read from globalThis at call time
-    // so a token injected after import still works.
-    const token = this.opts.token || ((globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] as string) || "";
+  private async call(
+    path: string,
+    body: unknown,
+    retries = 3,
+    triedTokenRefresh = false,
+  ): Promise<DataResult> {
+    // Resolve token, awaiting a bounded window for the bridge to inject it so an
+    // on-mount query doesn't race the (async) token arrival and send an empty
+    // Bearer. No-op when a token is already present.
+    const token = await this.resolveToken();
 
     const res = await fetch(`${this.opts.baseUrl ?? ""}${path}`, {
       method: "POST",
@@ -65,7 +108,21 @@ export class DoableDataClient {
 
     if (res.status === 503 && retries > 0) {
       await new Promise<void>((r) => setTimeout(r, (4 - retries) * 250));
-      return this.call(path, body, retries - 1);
+      return this.call(path, body, retries - 1, triedTokenRefresh);
+    }
+
+    // If we sent an empty token (token arrived after resolveToken gave up) or
+    // the server rejected an in-flight/expired token with 401, re-resolve once
+    // and retry — by now the bridge has very likely populated the global.
+    if (
+      !triedTokenRefresh &&
+      (res.status === 401 || token === "") &&
+      this.opts.token === ""
+    ) {
+      const fresh = await this.resolveToken();
+      if (fresh && fresh !== token) {
+        return this.call(path, body, retries, true);
+      }
     }
 
     return res.json() as Promise<DataResult>;
