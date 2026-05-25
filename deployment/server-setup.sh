@@ -377,9 +377,25 @@ if ! command -v psql &>/dev/null; then
   apt-get install -y postgresql postgresql-contrib
 fi
 
-# pgvector extension for PostgreSQL
+# pgvector extension for PostgreSQL.
+# Must match the major version of the cluster that ACTUALLY serves :5432.
+# Hardcoding a major (e.g. 16) silently breaks on hosts where PGDG has advanced
+# to a newer default (e.g. 18, pulled in by the `postgresql` meta-package above):
+# the wrong `postgresql-<major>-pgvector` installs, `CREATE EXTENSION vector`
+# then fails, and embeddings / RAG / generated chatbots are silently disabled.
+# Detect the live major dynamically and install the matching package.
 if ! dpkg -l | grep -q "postgresql-.*-pgvector"; then
-  apt-get install -y postgresql-16-pgvector 2>/dev/null || apt-get install -y postgresql-14-pgvector 2>/dev/null || true
+  PG_MAJOR="$(pg_lsclusters -h 2>/dev/null | awk '$4=="online"{print $1; exit}')"
+  [ -z "${PG_MAJOR:-}" ] && PG_MAJOR="$(psql -V 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+  [ -z "${PG_MAJOR:-}" ] && PG_MAJOR="$(ls -d /usr/lib/postgresql/* 2>/dev/null | grep -oE '[0-9]+$' | sort -rn | head -1)"
+  if [ -n "${PG_MAJOR:-}" ]; then
+    info "Installing pgvector for PostgreSQL ${PG_MAJOR}"
+    apt-get install -y "postgresql-${PG_MAJOR}-pgvector" 2>/dev/null \
+      || apt-get install -y postgresql-16-pgvector 2>/dev/null \
+      || warn "pgvector package not available for PG ${PG_MAJOR}; vector features may be disabled"
+  else
+    apt-get install -y postgresql-16-pgvector 2>/dev/null || true
+  fi
 fi
 
 # fail2ban (SSH brute-force protection)

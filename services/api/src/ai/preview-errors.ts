@@ -133,6 +133,61 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
       }
     }
 
+    // Deep-module probe. The entry files (main/App) transform fine even when a
+    // NON-entry module (e.g. src/hooks/useGoldPrice.ts) has a resolve or syntax
+    // error, because Vite transforms modules on-demand per request and does not
+    // eagerly walk the import graph when you fetch the entry. The HMR error
+    // overlay is injected client-side over the websocket, so it never appears in
+    // the server-rendered "/" HTML either. Net effect: a single bad import in any
+    // non-entry module produces a blank screen that the checks above miss. Probe
+    // every local source module through Vite and surface the first transform
+    // error. Type-only imports are elided by the transform, so a wrong `import
+    // type` path never false-positives here — only real (value) resolve/syntax
+    // errors 500.
+    {
+      const SOURCE_RE = /\.(tsx?|jsx?|mjs)$/;
+      const deepFiles = projectFiles
+        .map((f) => f.replace(/\\/g, "/"))
+        .filter(
+          (f) =>
+            f.startsWith("src/") &&
+            SOURCE_RE.test(f) &&
+            !f.endsWith(".d.ts") &&
+            !filesToCheck.includes(f),
+        )
+        .slice(0, 80); // bound cost for pathologically large projects
+
+      const probe = async (file: string): Promise<PreviewErrorInfo | null> => {
+        try {
+          const res = await fetch(`${base}/${file}`, {
+            headers: { Accept: "application/javascript" },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (res.ok) return null;
+          const body = await res.text();
+          const clean = body
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 800);
+          if (isDoableResolveTransient(clean) && (await doableImportNowResolves(base, clean))) {
+            return null;
+          }
+          return { message: `Error in ${file}: ${clean}`, source: file, raw: clean };
+        } catch {
+          return null; // network blip — dev server may be restarting
+        }
+      };
+
+      const CONCURRENCY = 8;
+      for (let i = 0; i < deepFiles.length; i += CONCURRENCY) {
+        const batch = deepFiles.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(batch.map(probe));
+        const firstErr = results.find((r): r is PreviewErrorInfo => r !== null);
+        if (firstErr) return firstErr;
+      }
+    }
+
     try {
       const pageRes = await fetch(`${base}/`, {
         headers: { Accept: "text/html" },
@@ -192,13 +247,45 @@ export function buildAutoFixPrompt(error: string): string {
       `packages (not on npm); keep the real \`import { ai } from "@doable/ai"\` plus the real call and ` +
       `fix the actual usage instead.\n`
     : "";
+  // A "Failed to resolve import './x'" or "../x" is a LOCAL FILE path error, not
+  // a missing npm package. install_package can never fix it (and 404s). The
+  // model must correct the relative path (or create the missing file) instead.
+  const isRelativeResolve =
+    /failed to resolve import\s+["']\.\.?\//i.test(error) ||
+    /(?:cannot|could not) resolve\s+["']\.\.?\//i.test(error);
+  const relativeNote = isRelativeResolve
+    ? `\n⚠️ This is a RELATIVE import (starts with "./" or "../") — it points to a LOCAL file in this ` +
+      `project, NOT an npm package. DO NOT install_package it (that will 404). The file was likely ` +
+      `placed in a different folder than the import assumes. Read the importing file, find where the ` +
+      `target actually lives (commonly src/lib/, src/components/, src/hooks/, src/types), and correct ` +
+      `the relative path (e.g. a file in src/hooks/ importing shared utils must use "../lib/utils", not ` +
+      `"./utils"). If the target genuinely does not exist, create it. Then re-save the importing file.\n`
+    : "";
+  // A "lucide-react does not provide an export named 'X'" error means the model
+  // imported an icon that does not exist in lucide-react — almost always a
+  // hallucinated Phosphor / react-icons / heroicons name (e.g. ChatCircle,
+  // ArrowSquareOut). install_package can't fix it and re-importing the same bad
+  // name loops forever (this is the #1 cause of stuck auto-fix). Tell the model
+  // the import is invalid and to swap to a real lucide-react icon.
+  const badIconMatch = /lucide-react[^]*?does not provide an export named ['"]?([A-Za-z0-9_]+)/i.exec(error);
+  const lucideNote = badIconMatch
+    ? `\n⚠️ "${badIconMatch[1]}" is NOT a real lucide-react icon (it looks like a Phosphor/react-icons/` +
+      `heroicons name). DO NOT install_package and DO NOT keep re-importing it — that loops forever. ` +
+      `Replace it (and audit EVERY lucide-react import across all components) with a real lucide-react ` +
+      `icon. Common valid swaps: ChatCircle/ChatCircleDots→MessageCircle or MessageSquare, ` +
+      `ArrowSquareOut→ExternalLink, Maximize2→Maximize, Minimize2→Minimize, MagnifyingGlass→Search, ` +
+      `Trash→Trash2, Gear→Settings, House→Home, CurrencyDollar→DollarSign, Coins→Coins, Diamond→Gem. ` +
+      `If unsure a name exists, use a safe common icon (Circle, Star, Info, Check, X). Then re-save.\n`
+    : "";
   return (
     `URGENT: The live preview has an error that users can see. You MUST fix this now.\n\n` +
     `Error details:\n${error}\n` +
     doableNote +
+    relativeNote +
+    lucideNote +
     `\nRULES for fixing:\n` +
     `1. Read the file that has the error FIRST\n` +
-    `2. If it's "Failed to resolve import 'X'" → install the package with install_package, then re-save the importing file (EXCEPT @doable/* — see the warning above; never install or stub those)\n` +
+    `2. If it's "Failed to resolve import 'X'": when X is a RELATIVE path ("./" or "../") fix the path to the real local file (or create it) — do NOT install_package. When X is a bare package name, install it with install_package, then re-save the importing file (EXCEPT @doable/* — see the warning above; never install or stub those)\n` +
     `3. If it's a syntax error → read the file, find the exact issue, rewrite the COMPLETE file\n` +
     `4. If it's "X is not exported" → read the exporting file and fix the export\n` +
     `5. If it's a runtime error → read src/App.tsx and any mentioned files, fix the logic\n` +
