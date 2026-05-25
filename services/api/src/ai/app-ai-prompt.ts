@@ -23,6 +23,14 @@ app code, NEVER hard-code an API key into the bundle, and NEVER hand-roll a
 @doable/ai" during startup is a transient that clears once the dev server
 finishes linking — keep the direct import and move on.
 
+**🚫 NEVER mock, simulate, stub, or hardcode AI responses.** Do NOT use
+\`setTimeout\` to fake latency, do NOT define arrays of canned replies (e.g.
+\`AI_RESPONSES\`), and do NOT echo the user's message back as if it were a
+model reply. A chatbot/AI feature MUST call the real \`ai.chat()\` /
+\`ai.chatSync()\` from \`@doable/ai\`. If you cannot make the AI call work,
+leave the real \`ai.chat()\` call in place and fix it — never replace it with
+a fake.
+
 ### Streaming chat (default)
 
 \`\`\`ts

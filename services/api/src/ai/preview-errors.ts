@@ -29,8 +29,8 @@ export interface PreviewErrorInfo {
  * caller can re-verify resolution and drop the error if it has already cleared.
  */
 export function isDoableResolveTransient(raw: string): boolean {
-  return /(?:failed to resolve import|cannot resolve|could not resolve)[^\n]*@doable\/(?:data|sdk)/i.test(raw)
-    || /@doable\/(?:data|sdk)[^\n]*(?:is not (?:installed|resolved|exported)|cannot be resolved)/i.test(raw);
+  return /(?:failed to resolve import|cannot resolve|could not resolve)[^\n]*@doable\/(?:data|sdk|ai)/i.test(raw)
+    || /@doable\/(?:data|sdk|ai)[^\n]*(?:is not (?:installed|resolved|exported)|cannot be resolved)/i.test(raw);
 }
 
 /**
@@ -179,14 +179,18 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
  */
 export function buildAutoFixPrompt(error: string): string {
   const doableNote = isDoableResolveTransient(error)
-    ? `\n⚠️ This error mentions @doable/data or @doable/sdk. These are PRE-LINKED platform ` +
+    ? `\n⚠️ This error mentions @doable/data, @doable/sdk, or @doable/ai. These are PRE-LINKED platform ` +
       `packages (NOT on npm). DO NOT install_package them, DO NOT create a local db.ts / stub / ` +
       `.d.ts / wrapper, and DO NOT hand-roll a fetch client or invent an API URL (there is no ` +
       `"api.doable.dev"). The ONLY correct usage is \`import { db } from "@doable/data"\` then ` +
       `\`await db.query(sql, params)\`. This resolve error is almost always a transient that clears ` +
       `once the dev server finishes linking — re-save src/App.tsx UNCHANGED (keep the @doable/data ` +
       `import) and stop. If you already created a local db wrapper/stub, DELETE it and import ` +
-      `@doable/data directly.\n`
+      `@doable/data directly.\n` +
+      `For @doable/ai: NEVER remove the \`ai.chat()\` / \`ai.chatSync()\` call or replace it with a ` +
+      `mock / setTimeout / canned-responses array to clear the error. These are pre-linked platform ` +
+      `packages (not on npm); keep the real \`import { ai } from "@doable/ai"\` plus the real call and ` +
+      `fix the actual usage instead.\n`
     : "";
   return (
     `URGENT: The live preview has an error that users can see. You MUST fix this now.\n\n` +
@@ -199,7 +203,8 @@ export function buildAutoFixPrompt(error: string): string {
     `4. If it's "X is not exported" → read the exporting file and fix the export\n` +
     `5. If it's a runtime error → read src/App.tsx and any mentioned files, fix the logic\n` +
     `6. If it's "You cannot render a <Router> inside another <Router>" → there are TWO Router wrappers. REMOVE the Router from src/main.tsx (main.tsx must only have ErrorBoundary + StrictMode + <App />). Keep the Router ONLY in src/App.tsx.\n` +
-    `7. After fixing, verify by reading the file again\n\n` +
+    `7. After fixing, verify by reading the file again\n` +
+    `8. PRESERVE the feature's intent — never delete, disable, or fake a real feature/integration (e.g. an AI chat, a DB query, an API call) just to make the preview render. Fix the real code path.\n\n` +
     `Fix it now. Do NOT explain — just fix.`
   );
 }
