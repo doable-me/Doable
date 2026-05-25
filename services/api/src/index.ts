@@ -282,7 +282,23 @@ app.use(
     origin: (origin, c) => resolveAllowedCorsOrigin(c as any, origin),
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "x-doable-project-id"],
+    // hono/cors synthesizes the OPTIONS preflight response itself and short-
+    // circuits before any route-level OPTIONS handler runs, so this global
+    // allow-list — NOT the per-router options() handlers — is what the browser
+    // sees for cross-origin preflights. The per-app-DB data plane requires
+    // `x-doable-data-api` on EVERY call (and the settings-UI Database tab adds
+    // `x-doable-surface`); the AI proxy + data plane forward `x-doable-app-user`.
+    // Omitting them here made cross-origin (dev.doable.me → dev-api.doable.me)
+    // data calls fail the preflight → browser "Failed to fetch" on the Database
+    // tab. Same-origin preview-iframe calls were unaffected (no preflight).
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-doable-project-id",
+      "x-doable-data-api",
+      "x-doable-app-user",
+      "x-doable-surface",
+    ],
     maxAge: 86400,
   })
 );
