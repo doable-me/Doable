@@ -41,6 +41,7 @@ import { resolveUserDisplay, saveUserMessage, preInsertAssistantMessage } from "
 import { handleAutoContinue, handleEmptyResponseRetry } from "./stream-recovery.js";
 import { handleAutoFixPreview, handleVersionAndMemory, handleFinalCleanup, handleStreamError } from "./post-processing.js";
 import { writeStreamBuffer, shouldBufferType, type BufferedEvent, type StreamBuffer } from "./stream-buffer.js";
+import { getRateLimitState } from "../../ai/rate-limit-state.js";
 
 /**
  * BUG-TRACE-002 instrumentation helper. Wraps a post-stream phase so the
@@ -444,8 +445,19 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
             else msg = "Almost done \u2014 finalizing your presentation deck\u2026";
           } else if (realSilence < 15_000) msg = state.friendlyLastTool ? `Working on ${state.friendlyLastTool}\u2026` : "Thinking\u2026";
           else if (realSilence < 30_000) msg = state.friendlyLastTool ? `Still working on ${state.friendlyLastTool}\u2026` : "Still thinking\u2026";
-          else if (realSilence < 60_000) msg = state.friendlyLastTool ? `Still working on ${state.friendlyLastTool}\u2026` : "Generating content \u2014 complex requests take a moment\u2026";
-          else msg = state.friendlyLastTool ? `Finishing up ${state.friendlyLastTool}\u2026` : "Almost there \u2014 crafting something detailed\u2026";
+          else {
+            // Check if the proxy is actively rate-limited — show the RAW provider error + countdown
+            const rlState = getRateLimitState();
+            if (rlState && Date.now() < rlState.nextRetryAt + 5_000) {
+              const secsLeft = Math.max(0, Math.ceil((rlState.nextRetryAt - Date.now()) / 1000));
+              const rawSnippet = rlState.rawError.slice(0, 200);
+              msg = `⚠️ Provider error (${rlState.statusCode}): ${rawSnippet}\n\nRetrying in ${secsLeft}s\u2026 (attempt ${rlState.attempt}/${rlState.maxRetries})`;
+            } else if (realSilence < 60_000) {
+              msg = state.friendlyLastTool ? `Still working on ${state.friendlyLastTool}\u2026` : "Generating content \u2014 complex requests take a moment\u2026";
+            } else {
+              msg = "Waiting for AI provider response\u2026";
+            }
+          }
           try {
             await stream.writeSSE({ data: JSON.stringify({ type: "status", data: { phase: "thinking", message: msg } }) });
             state.lastSseEmitAt = Date.now();

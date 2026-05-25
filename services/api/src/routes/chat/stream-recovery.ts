@@ -277,11 +277,27 @@ export async function handleEmptyResponseRetry(
 ): Promise<void> {
   if (state.assistantContent || state.assistantThinking || state.hadToolCalls) return;
 
+  // If we already have a deferred error that indicates rate limiting,
+  // surface it immediately — retrying would just hit the same limit.
+  if (state.deferredError) {
+    const deferredLower = state.deferredError.toLowerCase();
+    const isRateLimit = deferredLower.includes("rate limit") || deferredLower.includes("429") || deferredLower.includes("quota") || deferredLower.includes("too many requests");
+    if (isRateLimit) {
+      console.warn(`[Chat][${projectId.slice(0, 8)}] empty response with rate limit error — skipping retry, surfacing error`);
+      await stream.writeSSE({
+        data: JSON.stringify({ type: "error", data: state.deferredError }),
+      });
+      state.deferredError = undefined; // consumed — don't emit again in send-handler
+      return;
+    }
+  }
+
   console.warn(`[Chat][${projectId.slice(0, 8)}] empty response — auto-retrying once`);
   await stream.writeSSE({
     data: JSON.stringify({ type: "status", data: { phase: "retrying", message: "Model returned empty — retrying..." } }),
   });
 
+  let retryErrorMsg = "";
   try {
     const retryRouter = new ChannelTokenRouter();
     await engine.sendMessage(
@@ -292,6 +308,10 @@ export async function handleEmptyResponseRetry(
         const rType = (retryEvent as Record<string, unknown>).type as string;
         if (state.usageCollector) state.usageCollector.onUsageEvent(retryEvent);
         const retrySseData = mapEventToSSE(retryEvent);
+        // Capture error events from retry attempt
+        if (retrySseData?.type === "error" && typeof retrySseData.data === "string") {
+          retryErrorMsg = retrySseData.data;
+        }
         if (retrySseData?.type === "text_delta") {
           state.lastRealEventAt = Date.now();
           const rawDelta = typeof retrySseData.data === "string" ? retrySseData.data : "";
@@ -313,7 +333,7 @@ export async function handleEmptyResponseRetry(
           const td = typeof retrySseData.data === "string" ? retrySseData.data : "";
           state.assistantThinking += td;
           stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(td) }) }).catch(() => {});
-        } else if (retrySseData && retrySseData.type !== "done") {
+        } else if (retrySseData && retrySseData.type !== "done" && retrySseData.type !== "error") {
           state.lastRealEventAt = Date.now();
           if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") state.hadToolCalls = true;
           stream.writeSSE({ data: JSON.stringify(retrySseData) }).catch(() => {});
@@ -335,16 +355,21 @@ export async function handleEmptyResponseRetry(
     }
     console.log(`[Chat][${projectId.slice(0, 8)}] retry result — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
   } catch (retryErr) {
-    console.warn(`[Chat][${projectId.slice(0, 8)}] retry failed:`, retryErr instanceof Error ? retryErr.message : String(retryErr));
+    const errDetail = retryErr instanceof Error ? retryErr.message : String(retryErr);
+    console.warn(`[Chat][${projectId.slice(0, 8)}] retry failed:`, errDetail);
+    if (!retryErrorMsg) retryErrorMsg = errDetail;
   }
 
-  // If STILL empty, inform the user
+  // If STILL empty, inform the user with the actual error details
   if (!state.assistantContent && !state.assistantThinking && !state.hadToolCalls) {
+    // Prefer: deferred error from event-processor > error from retry > generic fallback
+    const actualError = state.deferredError || retryErrorMsg || "";
+    const errorMessage = actualError
+      ? `AI provider error: ${actualError}`
+      : "The AI model returned an empty response. This may be a temporary provider issue — try again in a moment, or switch to a different model in AI Settings.";
     await stream.writeSSE({
-      data: JSON.stringify({
-        type: "error",
-        data: "The AI model returned an empty response after retrying. This is usually a rate limiting issue. Try again in a moment, or switch to a different model in AI Settings.",
-      }),
+      data: JSON.stringify({ type: "error", data: errorMessage }),
     });
+    if (state.deferredError) state.deferredError = undefined; // consumed
   }
 }

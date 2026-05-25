@@ -198,7 +198,8 @@ export function buildAutoFixPrompt(error: string): string {
     `3. If it's a syntax error → read the file, find the exact issue, rewrite the COMPLETE file\n` +
     `4. If it's "X is not exported" → read the exporting file and fix the export\n` +
     `5. If it's a runtime error → read src/App.tsx and any mentioned files, fix the logic\n` +
-    `6. After fixing, verify by reading the file again\n\n` +
+    `6. If it's "You cannot render a <Router> inside another <Router>" → there are TWO Router wrappers. REMOVE the Router from src/main.tsx (main.tsx must only have ErrorBoundary + StrictMode + <App />). Keep the Router ONLY in src/App.tsx.\n` +
+    `7. After fixing, verify by reading the file again\n\n` +
     `Fix it now. Do NOT explain — just fix.`
   );
 }

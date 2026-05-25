@@ -15,6 +15,7 @@
  */
 
 import { Hono } from "hono";
+import { setRateLimitState, clearRateLimitState } from "../ai/rate-limit-state.js";
 
 export const geminiProxyRoutes = new Hono({ strict: false });
 
@@ -153,9 +154,14 @@ geminiProxyRoutes.post("/*", async (c) => {
   const isStreaming = body.stream === true;
   const bodyJson = JSON.stringify(body);
 
-  // Retry logic for 429 rate limiting with exponential backoff
-  const MAX_RETRIES = 5;
-  const BASE_DELAY_MS = 1000;
+  // Retry logic for 429/503 rate limiting with exponential backoff.
+  // Gemini free tier has low RPM limits (30/min). A single app generation
+  // triggers 10-20+ API calls, so hitting rate limits mid-generation is
+  // normal. We retry patiently (up to ~2.5 min) to ride through the rate
+  // limit window rather than failing.
+  const MAX_RETRIES = 12;
+  const BASE_DELAY_MS = 2000;
+  const MAX_DELAY_MS = 20_000; // cap individual wait at 20s
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -165,30 +171,51 @@ geminiProxyRoutes.post("/*", async (c) => {
         body: bodyJson,
       });
 
-      // If rate limited, retry with backoff
-      if (resp.status === 429 && attempt < MAX_RETRIES) {
+      // If rate limited (429) or overloaded (503), retry with backoff
+      if ((resp.status === 429 || resp.status === 503) && attempt < MAX_RETRIES) {
+        // Read the raw error body from the provider
+        let rawBody = "";
+        try { rawBody = await resp.text(); } catch {}
         const retryAfter = resp.headers.get("retry-after");
+        const expDelay = BASE_DELAY_MS * Math.pow(2, attempt);
         const delayMs = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : BASE_DELAY_MS * Math.pow(2, attempt);
-        console.warn(`[GeminiProxy] 429 rate limited, retry ${attempt + 1}/${MAX_RETRIES} after ${delayMs}ms`);
+          ? Math.min(parseInt(retryAfter, 10) * 1000, 60_000) // respect retry-after but cap at 60s
+          : Math.min(expDelay, MAX_DELAY_MS);
+
+        // Broadcast rate limit state so the chat heartbeat can show it to the user
+        setRateLimitState({
+          rawError: rawBody.slice(0, 500) || `HTTP ${resp.status} from Gemini API`,
+          statusCode: resp.status,
+          hitAt: Date.now(),
+          nextRetryAt: Date.now() + delayMs,
+          attempt: attempt + 1,
+          maxRetries: MAX_RETRIES,
+        });
+
+        console.warn(`[GeminiProxy] ${resp.status} rate limited, retry ${attempt + 1}/${MAX_RETRIES} after ${delayMs}ms. Raw: ${rawBody.slice(0, 200)}`);
         await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }
 
-      // After all retries exhausted for 429, return 503 (non-retryable) so
-      // the SDK surfaces the error to the user instead of retrying forever.
-      if (resp.status === 429) {
-        console.error(`[GeminiProxy] 429 rate limit exhausted after ${MAX_RETRIES} retries.`);
+      // Success or non-rate-limit response — clear the rate limit state
+      clearRateLimitState();
+
+      // After all retries exhausted for 429/503, return a non-retryable error
+      // so the SDK surfaces the error to the user.
+      if (resp.status === 429 || resp.status === 503) {
+        let rawBody = "";
+        try { rawBody = await resp.text(); } catch {}
+        console.error(`[GeminiProxy] ${resp.status} rate limit exhausted after ${MAX_RETRIES} retries (~2.5 min) — returning 400. Raw: ${rawBody.slice(0, 300)}`);
+        clearRateLimitState();
         return c.json(
           {
             error: {
-              message: "Rate limit exceeded on AI provider (Gemini). The model is receiving too many requests. Please wait a minute and try again, or switch to a different model.",
+              message: `Rate limit exceeded on AI provider (Gemini). Retried for over 2 minutes. Provider response: ${rawBody.slice(0, 300) || `HTTP ${resp.status}`}`,
               type: "rate_limit_exceeded",
               code: "rate_limit",
             },
           },
-          503,
+          400,
         );
       }
 
@@ -221,7 +248,7 @@ geminiProxyRoutes.post("/*", async (c) => {
       });
     } catch (err) {
       if (attempt < MAX_RETRIES) {
-        const delayMs = BASE_DELAY_MS * Math.pow(2, attempt);
+        const delayMs = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
         console.warn(`[GeminiProxy] Fetch error, retry ${attempt + 1}/${MAX_RETRIES} after ${delayMs}ms:`, err instanceof Error ? err.message : String(err));
         await new Promise((r) => setTimeout(r, delayMs));
         continue;
