@@ -93,7 +93,7 @@ Everything Doable ships in the box — skills that run inside the AI builder, MC
 <sub><b><code>business-card-maker</code></b> · <i>skill</i><br/>Design print-ready and digital business cards with full layout control, typography, brand colors, bleed/DPI/CMYK print specs, QR code support, and double-sided export. Trigger with: <em>business card, visiting card, name card, brand card.</em></sub>
 </td>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/ecommerce-website.png"><img src="docs/assets/screenshots/features/ecommerce-website.png" alt="ecommerce-website" /></a><br/>
+<a href="screenshots/ecommerce.png"><img src="screenshots/ecommerce.png" alt="ecommerce-website" /></a><br/>
 <sub><b><code>ecommerce-website</code></b> · <i>skill</i><br/>Build conversion-focused, accessible ecommerce stores with product listing, product detail, cart, and checkout flows — Core Web Vitals optimized, WCAG 2.2 compliant, and PCI-safe payment integration. Trigger with: <em>online store, storefront, product page, checkout.</em></sub>
 </td>
 </tr>
