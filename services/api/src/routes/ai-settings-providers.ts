@@ -8,6 +8,7 @@ import { providerDiscovery, type ProviderConfig } from "../ai/provider-discovery
 import type { WorkspaceRole } from "@doable/shared";
 import { PROVIDER_BY_ID } from "@doable/shared/ai/provider-catalog.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
+import { hasWorkspaceReadAccessViaProject } from "./projects/helpers.js";
 
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const workspaces = workspaceQueries(sql);
@@ -64,12 +65,20 @@ async function authorizeProviderMutation(
 //
 // Returns the workspace-shared providers plus the caller's personal ones.
 // Other members' personal providers are never disclosed.
+//
+// READ-only. Workspace members are authorized as before. A project
+// collaborator (shared into a private project, not a workspace member) may
+// pass ?projectId=<their project in this workspace> to list providers needed
+// to run AI chat on that shared project. listProviders is scoped to
+// (workspaceId, userId), so the collaborator only sees workspace-shared
+// providers plus their OWN personal ones — never another member's.
 aiSettingsProviderRoutes.get("/:workspaceId/ai-settings/providers", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const userId = c.get("userId");
+  const projectId = c.req.query("projectId");
 
-  const err = await requireMember(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const allowed = await hasWorkspaceReadAccessViaProject(userId, workspaceId, projectId);
+  if (!allowed) return c.json({ error: "Not a member of this workspace" }, 403);
 
   const providers = await aiSettings.listProviders(workspaceId, userId);
   return c.json({ data: providers });

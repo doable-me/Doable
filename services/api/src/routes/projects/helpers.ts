@@ -189,3 +189,35 @@ export async function requireProjectAccess(
 
   return null;
 }
+
+// ─── Helper: READ access to a workspace-scoped resource ──────
+// Grants when the caller is a workspace member (preserves existing behavior
+// exactly) OR — least-privilege fallback for project collaborators — when the
+// caller has project access (requireProjectAccess) to a project that lives in
+// THIS workspace. The latter is intended only for READ endpoints the editor
+// needs to load (effective AI settings, providers list, skills manifest) so a
+// user shared into a private project can run AI chat on that shared project.
+//
+// It must NEVER be used to authorize writes or to expose other projects /
+// workspaces: it confirms project.workspace_id === workspaceId before granting,
+// so a collaborator cannot pivot to an unrelated workspace by passing a
+// projectId from a different one. Fails closed (returns false) on any mismatch
+// or missing access.
+export async function hasWorkspaceReadAccessViaProject(
+  userId: string,
+  workspaceId: string,
+  projectId: string | undefined,
+): Promise<boolean> {
+  // 1. Workspace member — unchanged path.
+  const wsRole = await workspacesQ.getMemberRole(workspaceId, userId);
+  if (wsRole) return true;
+
+  // 2. Project-collaborator fallback. Requires an explicit projectId scoping
+  //    the read to a single shared project.
+  if (!projectId || !isProjectIdValid(projectId)) return false;
+  const access = await requireProjectAccess(userId, projectId);
+  if (!access) return false;
+  // The project the caller can access MUST belong to the workspace in the
+  // path, otherwise this would leak another workspace's settings.
+  return access.project.workspace_id === workspaceId;
+}

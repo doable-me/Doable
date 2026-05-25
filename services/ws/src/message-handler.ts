@@ -8,36 +8,57 @@ import { sql } from "./db.js";
 const tracer = getTracer("doable-ws");
 
 /**
- * BUG-CORPUS-WS-001: verify the joining user is a member of the project's
- * workspace before granting access to the room. Previously `room:join`
- * accepted ANY UUID and emitted `room:joined` (with member list/presence)
- * — leaking cross-tenant project IDs and enabling presence/cursor probing.
+ * BUG-CORPUS-WS-001: verify the joining user is allowed into the project's
+ * room before granting access. Previously `room:join` accepted ANY UUID and
+ * emitted `room:joined` (with member list/presence) — leaking cross-tenant
+ * project IDs and enabling presence/cursor probing.
+ *
+ * Access is granted (mirroring the API-layer requireProjectAccess() and the
+ * `projects` RLS policy in migration 098) when ANY of:
+ *   - the user is a member of the project's workspace, OR
+ *   - the user is a row in `project_collaborators` for this project (the
+ *     Share-to-a-private-project mechanism — needed for presence/cursors on
+ *     shared private projects), OR
+ *   - the project is public (link-sharing on).
  *
  * Returns:
- *   - "ok"           → user is in workspace; allow join.
- *   - "forbidden"    → user is NOT in workspace OR project doesn't exist.
- *   - "db-error"     → DB query failed; we fail-closed (forbidden) but log.
+ *   - "ok"           → access granted; allow join.
+ *   - "forbidden"    → no grant OR project doesn't exist.
  *
  * We deliberately collapse "project not found" into "forbidden" so an
- * attacker cannot distinguish nonexistent project IDs from ones in other
- * workspaces (timing-channel mitigation aside, this avoids the namespace
- * probe.)
+ * attacker cannot distinguish nonexistent project IDs from ones they cannot
+ * access (this avoids the namespace probe). The check stays a single
+ * parameterized round-trip and remains fail-closed: an arbitrary UUID with no
+ * workspace membership / collaborator row / public flag still gets "forbidden".
  */
 async function checkProjectMembership(
   projectId: string,
   userId: string,
 ): Promise<"ok" | "forbidden"> {
   try {
-    // Single round-trip: join projects → workspace_members. NULL result if
-    // either the project is missing or the user is not a member of its
-    // workspace. `deleted_at IS NULL` mirrors the canonical project query
-    // helper so soft-deleted projects are treated as nonexistent.
+    // Single round-trip. The row exists (project not soft-deleted) AND at
+    // least one access grant holds:
+    //   - workspace_members  (LEFT JOIN, matched on this user)
+    //   - project_collaborators (LEFT JOIN, matched on this user)
+    //   - p.visibility = 'public'
+    // `deleted_at IS NULL` mirrors the canonical project query helper so
+    // soft-deleted projects are treated as nonexistent. Non-members joining
+    // a private project they have no collaborator row in select zero rows →
+    // "forbidden" (anti-probe preserved).
     const rows = await sql<{ ok: boolean }[]>`
       SELECT TRUE AS ok
       FROM projects p
-      INNER JOIN workspace_members wm
+      LEFT JOIN workspace_members wm
         ON wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}::uuid
-      WHERE p.id = ${projectId}::uuid AND p.deleted_at IS NULL
+      LEFT JOIN project_collaborators pc
+        ON pc.project_id = p.id AND pc.user_id = ${userId}::uuid
+      WHERE p.id = ${projectId}::uuid
+        AND p.deleted_at IS NULL
+        AND (
+          wm.user_id IS NOT NULL
+          OR pc.user_id IS NOT NULL
+          OR p.visibility = 'public'::project_visibility
+        )
       LIMIT 1
     `;
     return rows.length > 0 ? "ok" : "forbidden";

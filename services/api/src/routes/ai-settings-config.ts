@@ -6,6 +6,7 @@ import { aiSettingsQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import type { WorkspaceRole } from "@doable/shared";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
+import { hasWorkspaceReadAccessViaProject } from "./projects/helpers.js";
 
 const aiSettings = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const workspaces = workspaceQueries(sql);
@@ -400,12 +401,20 @@ aiSettingsConfigRoutes.delete("/:workspaceId/ai-settings/user-allocations/:targe
 // ─── Effective AI Config ─────────────────────────────────
 
 // GET /workspaces/:workspaceId/ai-settings/effective
+//
+// READ-only. Workspace members are authorized as before. A project
+// collaborator (shared into a private project, not a workspace member) may
+// pass ?projectId=<their project in this workspace> to load the EFFECTIVE
+// config needed to run AI chat on that shared project. getEffectiveAiConfig
+// is scoped to (workspaceId, userId) so the collaborator only ever sees their
+// OWN user-level prefs merged with workspace defaults — never another user's.
 aiSettingsConfigRoutes.get("/:workspaceId/ai-settings/effective", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const userId = c.get("userId");
+  const projectId = c.req.query("projectId");
 
-  const err = await requireMember(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const allowed = await hasWorkspaceReadAccessViaProject(userId, workspaceId, projectId);
+  if (!allowed) return c.json({ error: "Not a member of this workspace" }, 403);
 
   const config = await aiSettings.getEffectiveAiConfig(workspaceId, userId);
   return c.json({

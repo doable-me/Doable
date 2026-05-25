@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { sql } from "../db/index.js";
 import { skillsQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
+import { hasWorkspaceReadAccessViaProject } from "./projects/helpers.js";
 
 const skills = skillsQueries(sql);
 const workspaces = workspaceQueries(sql);
@@ -37,13 +38,18 @@ skillsRoutes.get("/:workspaceId/skills", async (c) => {
 });
 
 // GET /:workspaceId/skills/manifest — lightweight list for autocomplete
+//
+// READ-only. Workspace members are authorized as before. Project collaborators
+// (shared into a private project, not a workspace member) are authorized when
+// they pass the projectId of the project they collaborate on and that project
+// lives in this workspace — they need the manifest to run AI chat there.
 skillsRoutes.get("/:workspaceId/skills/manifest", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const userId = c.get("userId");
   const projectId = c.req.query("projectId");
 
-  const err = await requireMember(workspaceId, userId);
-  if (err) return c.json({ error: err }, 403);
+  const allowed = await hasWorkspaceReadAccessViaProject(userId, workspaceId, projectId);
+  if (!allowed) return c.json({ error: "Not a member of this workspace" }, 403);
 
   const data = await skills.listSkillManifest(workspaceId, projectId ?? undefined);
   return c.json({ data });
