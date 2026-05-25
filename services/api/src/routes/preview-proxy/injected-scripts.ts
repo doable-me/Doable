@@ -76,7 +76,21 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
       pid = meta ? meta.getAttribute("content") : null;
     }
     if (!pid) return;
-    fetch("/preview/" + pid + "/__doable/token", { method: "POST" })
+    // Per-app-DB identity (chatbot-infra): forward a platform access token when
+    // one is reachable so the minted connector-proxy JWT carries the viewer's
+    // userId (→ app.user_id → owner-RLS INSERT passes). Sources, in order:
+    //   1. window.__DOABLE_ACCESS_TOKEN — an app with its own Doable-session
+    //      bridge can set this before this snippet runs.
+    //   2. Same-origin cookies (credentials:"include") — harmless today (the API
+    //      is cookieless) but future-proofs a server-set session cookie.
+    // If neither is present the endpoint mints WITHOUT userId (anonymous
+    // preview keeps working), so this is purely additive.
+    var hdrs = {};
+    try {
+      var at = window.__DOABLE_ACCESS_TOKEN;
+      if (typeof at === "string" && at) hdrs["authorization"] = "Bearer " + at;
+    } catch (e) {}
+    fetch("/preview/" + pid + "/__doable/token", { method: "POST", credentials: "include", headers: hdrs })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { if (d && d.token) setToken(d.token); })
       .catch(function () {});

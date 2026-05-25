@@ -15,6 +15,8 @@ import { defaultRegistry } from "../../frameworks/registry.js";
 import type { FrameworkAdapter } from "../../frameworks/types.js";
 import { signProjectJwt } from "../../auth/project-jwt.js";
 import { PROJECT_JWT_SECRET } from "../../lib/secrets.js";
+import { verifyAccessToken } from "../../lib/jwt.js";
+import { requireProjectAccess } from "../projects/helpers.js";
 import {
   RETRY_HTML,
   getStorageNamespaceSnippet,
@@ -198,10 +200,37 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
     return c.json({ error: "Project not found" }, 404);
   }
 
+  // Per-app-DB identity (chatbot-infra): if the caller presents a valid
+  // platform access token AND has access to this project, stamp their userId
+  // into the connector-proxy JWT so the per-app-DB connection sets
+  // `app.user_id = <viewer uuid>`. That makes the self-stamping `created_by`
+  // DEFAULT resolve to the owner and the owner-RLS WITH CHECK pass on INSERT.
+  //
+  // Auth is OPTIONAL by design: an anonymous public preview (no/invalid token)
+  // falls back to the prior behavior — a token WITHOUT userId, so app.user_id
+  // stays empty and owner-RLS apps simply won't persist for anonymous viewers.
+  // We NEVER stamp a userId without verifying project access first, so a caller
+  // cannot mint a token claiming an identity for a project they can't reach.
+  let viewerUserId: string | undefined;
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const payload = await verifyAccessToken(authHeader.slice(7));
+      const candidate = payload.sub;
+      if (candidate && UUID_RE.test(candidate)) {
+        const access = await requireProjectAccess(candidate, projectId);
+        if (access) viewerUserId = candidate;
+      }
+    } catch {
+      // Invalid/expired platform token — fall through to anonymous mint.
+    }
+  }
+
   const token = await signProjectJwt(
     {
       projectId,
       workspaceId: row.workspace_id,
+      ...(viewerUserId ? { userId: viewerUserId } : {}),
       kind: "connector-proxy",
     },
     PROJECT_JWT_SECRET,
