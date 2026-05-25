@@ -184,7 +184,7 @@ Self-hosting on a VPS? See the [**full quickstart guide**](docs/QUICKSTART.md), 
 
 ### After first launch
 
-Open http://localhost:3000, sign up. The first account becomes the platform owner automatically. You'll be guided through a 5 step setup wizard, Welcome, Sign-in, AI provider, Cloudflare, Plans & billing. No SSH, no SQL, no editing .env files. (Building the first app belongs in the dashboard for end-users, not in the install flow.)
+Open http://localhost, sign up. The first account becomes the platform owner automatically. You'll be guided through a 5 step setup wizard, Welcome, Sign-in, AI provider, Cloudflare, Plans & billing. No SSH, no SQL, no editing .env files. (Building the first app belongs in the dashboard for end-users, not in the install flow.)
 
 ---
 
@@ -199,6 +199,129 @@ Doable ships with manifests for every major full-stack PaaS. Pick the one that m
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/doable-me/doable?quickstart=1)
 
 Self-hosting? [Coolify](deployment/docker/coolify.md), [Fly.io](deployment/platforms/fly/DEPLOY.md), and [Kubernetes](deployment/platforms/k8s/README.md) are supported too.
+
+---
+
+## Demo
+
+<table>
+<tr>
+<td width="50%">
+<img src="screenshots/Landingpage.png" alt="01 · Landing page" /><br/>
+<sub><b>Landing page</b> — describe what you want to build right from the home screen. Type a prompt and Doable routes you straight into the builder, no sign-up friction before your first idea.</sub>
+</td>
+<td width="50%">
+<img src="screenshots/dashboard.png" alt="02 · Project dashboard" /><br/>
+<sub><b>Project dashboard</b> — all your projects in one place. Create a new app, open an existing one, or start from a template. Each workspace is fully isolated with its own members and settings.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="screenshots/ai-chat.png" alt="03 · AI chat & build" /><br/>
+<sub><b>AI chat & build</b> — describe your app in plain language. The AI writes the code, scaffolds the UI, and wires up the backend in real time while you watch the output stream in.</sub>
+</td>
+<td width="50%">
+<img src="screenshots/live-preview.png" alt="04 · Live preview" /><br/>
+<sub><b>Live preview</b> — every change renders instantly in the sandboxed preview pane. Click any element on the live preview to describe a visual change directly — no digging through code.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="screenshots/Live-code-editor.png" alt="05 · Code editor" /><br/>
+<sub><b>Code editor</b> — full Monaco-powered editor with AI inline edits. Switch between chat and code freely. Export the entire project as a ZIP or push it to GitHub at any point.</sub>
+</td>
+<td width="50%">
+<img src="screenshots/ai-provider.png" alt="06 · AI provider setup" /><br/>
+<sub><b>AI provider setup</b> — BYOK at every layer. Pick from 53+ providers — Anthropic, OpenAI, Gemini, Groq, DeepSeek, Ollama, and more — and configure per-workspace model defaults from the admin panel.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="screenshots/workspace_settings.png" alt="07 · Workspace & team settings" /><br/>
+<sub><b>Workspace & team settings</b> — invite teammates, assign roles (owner / admin / member / viewer), set project and credit quotas, and manage integrations — all without touching the server.</sub>
+</td>
+<td width="50%">
+<img src="screenshots/deploy.png" alt="08 · One-click deploy" /><br/>
+<sub><b>One-click deploy</b> — publish to a live <code>*.doable.me</code> URL instantly, or point a custom domain. SSL, CDN, and sandbox isolation are all handled automatically on your own infrastructure.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="screenshots/personalization.png" alt="09 · Doable AI personalization" /><br/>
+<sub><b>Doable AI personalization</b> — tune the AI to match your workflow and style. Set workspace-wide defaults (thinking visibility, default system prompt) that apply to every new project, then layer personal overrides on top for your own preferences — all without touching config files or env vars.</sub>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+---
+
+## Features Demo
+
+Everything Doable ships in the box — skills that run inside the AI builder, MCP servers that extend the AI with real tools, and platform capabilities like PWA support. Each card below is a feature you can use today.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="screenshots/businesscard01.png"><img src="screenshots/businesscard01.png" alt="business-card-maker" /></a><br/>
+<sub><b><code>business-card-maker</code></b> · <i>skill</i><br/>Design print-ready and digital business cards with full layout control, typography, brand colors, bleed/DPI/CMYK print specs, QR code support, and double-sided export. Trigger with: <em>business card, visiting card, name card, brand card.</em></sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/ecommerce.png"><img src="screenshots/ecommerce.png" alt="ecommerce-website" /></a><br/>
+<sub><b><code>ecommerce-website</code></b> · <i>skill</i><br/>Build conversion-focused, accessible ecommerce stores with product listing, product detail, cart, and checkout flows — Core Web Vitals optimized, WCAG 2.2 compliant, and PCI-safe payment integration. Trigger with: <em>online store, storefront, product page, checkout.</em></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" /></a><br/>
+<sub><b><code>greeting-card</code></b> · <i>skill</i><br/>Design occasion-matched greeting cards and e-cards — front, inside, and back — with tone-matched typography, color palette, print specs, and export. Covers birthdays, anniversaries, weddings, holidays, and more. Trigger with: <em>birthday card, invitation, e-card, festival card.</em></sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="inbuilt-database" /></a><br/>
+<sub><b><code>inbuilt-database</code></b> · <i>skill</i><br/>Built-in per-project PGlite database — no external DB setup needed. The AI creates tables, runs migrations, and queries data directly inside your app. Trigger with: <em>database, persist data, store records, create/read/update/delete, relational data.</em></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="screenshots/magazine02.png"><img src="screenshots/magazine02.png" alt="magazine-flipbook" /></a><br/>
+<sub><b><code>magazine-flipbook</code></b> · <i>skill</i><br/>Build a realistic web magazine or flipbook reader with page-flip physics, page curl shadows, optional sound, and full keyboard and touch navigation. Trigger with: <em>flipbook, digital magazine, page flip, catalog viewer, brochure, ebook reader.</em></sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/resume.png"><img src="screenshots/resume.png" alt="resume-cv" /></a><br/>
+<sub><b><code>resume-cv</code></b> · <i>skill</i><br/>Full-lifecycle resume and CV builder. Create, rewrite, optimize, or tailor a resume for any industry, seniority level, or role — with ATS optimization, keyword mapping, achievement writing, and industry-specific formatting. Trigger with: <em>resume, CV, job application.</em></sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="screenshots/markdownfile.png"><img src="screenshots/markdownfile.png" alt="Markdown Builder MCP" /></a><br/>
+<sub><b>Markdown Builder</b> · <i>MCP server · built-in</i><br/>Let the AI generate structured Markdown documents — docs, runbooks, changelogs, READMEs — and write them directly to disk inside your project. Available to every project in the workspace automatically.</sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/pdf.png"><img src="screenshots/pdf.png" alt="PDF Builder MCP" /></a><br/>
+<sub><b>PDF Builder</b> · <i>MCP server · built-in</i><br/>Generate polished PDF reports, invoices, contracts, and documentation from chat. The AI composes the layout and the MCP server renders and exports the file directly into the project workspace.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="screenshots/presentation.png"><img src="screenshots/presentation.png" alt="Presentation Builder MCP" /></a><br/>
+<sub><b>Presentation Builder</b> · <i>MCP server · built-in</i><br/>Build full slide decks from a single prompt. The AI authors the content and structure; the MCP server renders and exports a ready-to-present file. Great for pitch decks, product walkthroughs, and team updates.</sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/spreadsheet.png"><img src="screenshots/spreadsheet.png" alt="Spreadsheet Builder MCP" /></a><br/>
+<sub><b>Spreadsheet Builder</b> · <i>MCP server · built-in</i><br/>Generate XLSX spreadsheets — financial models, data tables, trackers, and reports — directly from chat. The AI populates the data and formulas; the MCP server writes the file to the project workspace.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="screenshots/CRM.png"><img src="screenshots/CRM.png" alt="Doable Per-App Database MCP" /></a><br/>
+<sub><b>Doable Per-App Database</b> · <i>MCP server · built-in</i><br/>Workspace-scoped database access available to all projects. The AI can create schemas, query records, and manage migrations through the MCP protocol — no external database configuration required.</sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" /></a><br/>
+<sub><b>PWA — Progressive Web App</b> · <i>platform feature</i><br/>Every app Doable builds can be shipped as a fully installable Progressive Web App. Service worker, offline support, app manifest, and home-screen install — generated automatically so your users get a native-feeling experience without an app store.</sub>
+</td>
+</tr>
+</table>
 
 ---
 
