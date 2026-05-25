@@ -222,7 +222,15 @@ async function handle(c: Context, op: DataOp): Promise<Response> {
     const resp = await exec(workerReq);
 
     if (!resp.ok) {
-      const httpStatus = resp.error.code === "TIMEOUT" ? 408 : resp.error.code === "FORBIDDEN_STMT" || resp.error.code === "SYNTAX" ? 400 : 503;
+      // RLS_VIOLATION is an authorization failure (the row's owner check rejected
+      // the write/read), NOT a server outage — surface 403 so clients can handle
+      // it sensibly and it is not confused with a worker-unavailable 503. Genuine
+      // infra failures (WORKER_CRASHED, INTERNAL, DISK_FULL, …) stay 503.
+      const httpStatus =
+        resp.error.code === "TIMEOUT" ? 408
+          : resp.error.code === "RLS_VIOLATION" ? 403
+          : resp.error.code === "FORBIDDEN_STMT" || resp.error.code === "SYNTAX" ? 400
+          : 503;
       await audit({ projectId: auth.projectId, op, userId: auth.userId, sqlText: parsed.sql, params: parsed.params, status: "error", errorCode: resp.error.code, durationMs: Date.now() - started });
       return c.json({ ok: false, error: { code: resp.error.code, message: resp.error.message }, elapsed_ms: Date.now() - started }, httpStatus as 400);
     }
