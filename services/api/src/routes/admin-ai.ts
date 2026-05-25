@@ -534,3 +534,72 @@ adminAiRoutes.post("/platform-ai-defaults/apply-to-existing", async (c) => {
   console.log(`[Admin] Applied platform AI defaults for plan=${plan} to ${updated}/${workspaces.length} workspaces`);
   return c.json({ data: { plan, total: workspaces.length, updated } });
 });
+
+// ─── GET /admin/ai/abuse-flags — Phase 3 abuse analytics ─────────────────
+//
+// Returns ai_usage_log rows where is_flagged_abuse = true, newest first.
+// Used by the Vigil admin dashboard to surface anomalous runtime AI requests.
+//
+// Query params:
+//   limit    — rows to return, 1–200, default 50.
+//   offset   — pagination, default 0.
+//   resolved — "true" / "false" / omit → return all.  (future: let admin
+//              mark a flag resolved; for now every flagged row is surfaced.)
+
+adminAiRoutes.get("/abuse-flags", async (c) => {
+  const rawLimit  = parseInt(c.req.query("limit")  ?? "50", 10);
+  const rawOffset = parseInt(c.req.query("offset") ?? "0",  10);
+  const limit  = Math.min(200, Math.max(1, isNaN(rawLimit)  ? 50  : rawLimit));
+  const offset = Math.max(0,              isNaN(rawOffset)  ? 0   : rawOffset);
+
+  const rows = await sql<Array<{
+    id:                  string;
+    project_id:          string;
+    workspace_id:        string | null;
+    user_id:             string | null;
+    app_user_id:         string | null;
+    mode:                string | null;
+    model:               string | null;
+    total_tokens:        number | null;
+    estimated_cost_usd:  string | number | null;
+    duration_ms:         number | null;
+    created_at:          string;
+  }>>`
+    SELECT
+      id, project_id, workspace_id, user_id, app_user_id,
+      mode, model,
+      total_tokens, estimated_cost_usd, duration_ms, created_at
+    FROM ai_usage_log
+    WHERE is_flagged_abuse = true
+    ORDER BY created_at DESC
+    LIMIT  ${limit}
+    OFFSET ${offset}
+  `;
+
+  const [{ total }] = await sql<[{ total: string | number }]>`
+    SELECT COUNT(*)::bigint AS total
+    FROM ai_usage_log
+    WHERE is_flagged_abuse = true
+  `;
+
+  return c.json({
+    data: rows.map((r) => ({
+      id:               r.id,
+      projectId:        r.project_id,
+      workspaceId:      r.workspace_id,
+      userId:           r.user_id,
+      appUserId:        r.app_user_id,
+      mode:             r.mode,
+      model:            r.model,
+      totalTokens:      r.total_tokens,
+      estimatedCostUsd: r.estimated_cost_usd === null ? null : Number(r.estimated_cost_usd),
+      durationMs:       r.duration_ms,
+      createdAt:        r.created_at,
+    })),
+    meta: {
+      total: Number(total),
+      limit,
+      offset,
+    },
+  });
+});

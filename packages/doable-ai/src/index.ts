@@ -31,6 +31,16 @@ export interface ChatOptions {
   max_tokens?: number;
   /** Called on each streamed text token. Alternative to the async-iterator. */
   onToken?: (token: string) => void;
+  /**
+   * Called when the project/per-user token budget is exhausted (HTTP 402
+   * BUDGET_EXCEEDED). When provided, the generator returns gracefully rather
+   * than throwing, so callers can show a friendly inline message without a
+   * try/catch.
+   *
+   * @param message Human-readable message from the server (e.g. "Project
+   *   token budget exceeded").
+   */
+  onQuotaExceeded?: (message: string) => void;
 }
 
 export interface ChatUsage {
@@ -42,6 +52,12 @@ export interface ChatResult {
   content: string;
   usage?: ChatUsage;
   elapsed_ms: number;
+  /**
+   * True when the server returned 402 BUDGET_EXCEEDED and
+   * `opts.onQuotaExceeded` was provided. The generator returned early
+   * without throwing so the caller can render a friendly message.
+   */
+  quotaExceeded?: boolean;
 }
 
 export interface EmbedResult {
@@ -110,8 +126,19 @@ export class DoableAiClient {
     if (!res.ok || !res.body) {
       let parsed: { error?: { code: string; message: string } } = {};
       try { parsed = await res.json() as typeof parsed; } catch { /* not JSON */ }
-      const err = new Error(parsed.error?.message ?? res.statusText) as AiError;
-      err.code = parsed.error?.code ?? "NETWORK_ERROR";
+      const code = parsed.error?.code ?? "NETWORK_ERROR";
+      const message = parsed.error?.message ?? res.statusText;
+
+      // Phase 3 quota UX: 402 BUDGET_EXCEEDED → call onQuotaExceeded and
+      // return gracefully instead of throwing, so the generated app can
+      // render a friendly inline message without a try/catch.
+      if (res.status === 402 && code === "BUDGET_EXCEEDED" && opts.onQuotaExceeded) {
+        opts.onQuotaExceeded(message);
+        return { content: "", elapsed_ms: 0, quotaExceeded: true };
+      }
+
+      const err = new Error(message) as AiError;
+      err.code = code;
       err.status = res.status;
       throw err;
     }

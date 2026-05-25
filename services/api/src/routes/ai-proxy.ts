@@ -407,6 +407,54 @@ async function recordUsage(opts: {
   }
 }
 
+/**
+ * Phase 3 abuse analytics (PRD ch08 §phase3).
+ *
+ * Fire-and-forget: updates the most recently inserted ai_usage_log row for
+ * this project if its total_tokens is ≥ ABUSE_MULTIPLIER × the 30-day
+ * rolling mean for the project. Anomalous rows surface in the admin
+ * abuse-flags endpoint (/admin/ai/abuse-flags).
+ *
+ * Intentionally non-blocking — a DB hiccup here must never fail a chat
+ * request. Called with void so the caller does not await it.
+ */
+const ABUSE_MULTIPLIER = 10; // flag if cost is ≥ 10× project rolling mean
+
+function flagAbuseAsync(projectId: string, totalTokens: number): void {
+  // Run in background; never reject to the caller.
+  Promise.resolve().then(async () => {
+    try {
+      if (totalTokens <= 0) return;
+      // Compute 30-day mean excluding already-flagged rows so a run of
+      // flagged rows doesn't normalise the mean upward.
+      const [mean] = await sql<Array<{ avg_tokens: string | number | null }>>`
+        SELECT AVG(total_tokens)::numeric(14,2) AS avg_tokens
+        FROM ai_usage_log
+        WHERE project_id    = ${projectId}
+          AND is_runtime     = true
+          AND is_flagged_abuse = false
+          AND created_at    >= now() - interval '30 days'
+      `;
+      const avgTokens = Number(mean?.avg_tokens ?? 0);
+      if (avgTokens <= 0) return; // not enough history to flag
+      if (totalTokens < avgTokens * ABUSE_MULTIPLIER) return;
+
+      // Mark the most recent row(s) for this project created in the last
+      // 2 seconds that match the token count and are not yet flagged.
+      await sql`
+        UPDATE ai_usage_log
+        SET    is_flagged_abuse = true
+        WHERE  project_id        = ${projectId}
+          AND  total_tokens      = ${totalTokens}
+          AND  is_flagged_abuse  = false
+          AND  created_at       >= now() - interval '2 seconds'
+      `;
+    } catch (err) {
+      console.error("[ai-proxy] flagAbuseAsync failed:", err);
+    }
+  }).catch(() => { /* swallow */ });
+}
+
 // ── Default executors (real provider calls) ───────────────────────────────
 
 /**
@@ -774,6 +822,7 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
       promptTokens, completionTokens,
       durationMs, appUserId: endUser,
     });
+    flagAbuseAsync(auth.projectId, promptTokens + completionTokens);
     await audit({ projectId: auth.projectId, op: "chat", userId: auth.userId, status: "ok", durationMs });
     return c.json({
       ok: true,
@@ -840,6 +889,7 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
       promptTokens, completionTokens,
       durationMs, appUserId: endUser,
     });
+    flagAbuseAsync(auth.projectId, promptTokens + completionTokens);
     await audit({ projectId: auth.projectId, op: "chat", userId: auth.userId, status: "ok", durationMs });
     await stream.writeSSE({
       data: JSON.stringify({
@@ -931,6 +981,7 @@ aiProxyRoutes.post("/__doable/ai/embed", async (c) => {
       durationMs, appUserId: endUser,
       embedDims: result.dimensions,
     });
+    flagAbuseAsync(auth.projectId, result.prompt_tokens || estimated);
     await audit({ projectId: auth.projectId, op: "embed", userId: auth.userId, status: "ok", durationMs });
     return c.json({
       ok: true,
