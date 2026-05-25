@@ -201,6 +201,28 @@ export async function acquireWorker(projectId: string, opts: AcquireOpts = {}): 
   return startPromise;
 }
 
+/**
+ * chown a path to `uid:apiGid` via `sudo -n chown -R` (the same NOPASSWD wrapper
+ * dev-server-start uses). The API runs unprivileged (euid 5000), so it cannot
+ * chown to a sandbox uid directly — it must shell out through sudo, which the
+ * v3 sudoers allowlist permits ONLY for `chown -R <num>:<num> .../projects/*`
+ * (the `-R` and the numeric `uid:gid` shape are part of the sudoers pattern —
+ * a non-recursive `chown` is rejected, so we always pass `-R`; it is harmless
+ * on a single file/socket). Best-effort: resolves regardless of outcome
+ * (off-Linux / wrapper-absent dev hosts run the worker as the API uid and never
+ * need this).
+ */
+async function chownForWorker(targetPath: string, uid: number, apiGid: number, useSudo: boolean): Promise<void> {
+  const ownerArg = `${uid}:${apiGid}`;
+  const cmd = useSudo ? "sudo" : "chown";
+  const args = useSudo ? ["-n", "chown", "-R", ownerArg, targetPath] : ["-R", ownerArg, targetPath];
+  await new Promise<void>((resolve) => {
+    const ch = spawn(cmd, args, { stdio: "ignore" });
+    ch.on("exit", () => resolve());
+    ch.on("error", () => resolve());
+  });
+}
+
 async function spawnWorker(projectId: string, opts: AcquireOpts): Promise<WorkerHandle> {
   const spawnT0 = Date.now();
   evictIfAtCap();
@@ -209,14 +231,10 @@ async function spawnWorker(projectId: string, opts: AcquireOpts): Promise<Worker
   await mkdir(dataDir, { recursive: true });
   const endpoint = opts.endpoint ?? defaultEndpoint(projectId, dataDir);
 
-  // Restrict the data dir (0700) and its .doable parent (0750) on POSIX (PRD 02
-  // on-disk layout / 04 §3 layer 8). No-op on Windows (NTFS ACLs / pipe SDDL).
-  if (process.platform !== "win32") {
-    await chmod(dataDir, 0o700).catch(() => {});
-    await chmod(path.dirname(dataDir), 0o750).catch(() => {});
-  }
-
   // Per-project uid (same identity as vite-jail). null off-Linux/dev.
+  // Resolved BEFORE the data-dir/socket permission setup because the worker
+  // runs as this uid (uid-drop), so the on-disk PGlite store and the IPC
+  // socket must be owned/accessible by it, not by the API uid.
   let uid: number | null = null;
   let useWrapper = false;
   try {
@@ -225,6 +243,33 @@ async function spawnWorker(projectId: string, opts: AcquireOpts): Promise<Worker
     useWrapper = m.isSandboxWrapperAvailable();
   } catch {
     uid = null;
+  }
+
+  // Data-dir ownership / permissions (POSIX; no-op on Windows — NTFS ACLs).
+  // The worker process opens PGlite *as the dropped uid*, so when a uid drop is
+  // in effect the data dir (and its .doable parent) must be owned by that uid —
+  // otherwise PGlite.create() gets EACCES and the worker dies before "ready"
+  // (surfaced upstream as WORKER_UNAVAILABLE). Group stays the API gid so the
+  // API keeps group access. When uid is null (off-Linux / dev / no wrapper) the
+  // worker runs as the API uid, so the original owner-only 0700/0750 is correct.
+  if (process.platform !== "win32") {
+    if (typeof uid === "number") {
+      const apiGid = process.getegid?.() ?? uid;
+      // chmod 0770 FIRST (the API still owns the dir here, so it may chmod; once
+      // we chown to the worker uid the API loses chmod rights on it). 0770 keeps
+      // API-gid access; the worker (owner) gets full access. Then chown
+      // recursively to the worker uid (group = API gid) so PGlite, running as the
+      // dropped uid, can open the store. `chown -R` on the data dir also covers
+      // anything beneath it; the .doable parent is chowned too so the dropped uid
+      // can traverse into app.db. Both go through the same sudo path.
+      await chmod(dataDir, 0o770).catch(() => {});
+      await chmod(path.dirname(dataDir), 0o770).catch(() => {});
+      await chownForWorker(dataDir, uid, apiGid, useWrapper).catch(() => {});
+      await chownForWorker(path.dirname(dataDir), uid, apiGid, useWrapper).catch(() => {});
+    } else {
+      await chmod(dataDir, 0o700).catch(() => {});
+      await chmod(path.dirname(dataDir), 0o750).catch(() => {});
+    }
   }
 
   // Listener up BEFORE spawn so the worker can connect immediately.
@@ -239,10 +284,25 @@ async function spawnWorker(projectId: string, opts: AcquireOpts): Promise<Worker
     }
   });
 
-  // Tighten the IPC socket to owner-only (0600) on POSIX so no sibling uid can
-  // connect (PRD 03 §IPC / 04 §3 layer 8). Windows named pipes use SDDL instead.
+  // Tighten the IPC socket so no sibling uid can connect (PRD 03 §IPC / 04 §3
+  // layer 8). Windows named pipes use SDDL instead. When the worker drops to a
+  // per-project uid it must be able to *connect* to the socket — a 0600 socket
+  // owned by the API uid would reject the worker's connect() with EACCES (the
+  // worker then exits 2 with no "ready", surfaced as WORKER_UNAVAILABLE). So we
+  // hand the socket to the worker uid (group = API gid, mode 0660: worker owner
+  // + API group, still closed to all other sandbox uids).
   if (process.platform !== "win32") {
-    await chmod(endpoint, 0o600).catch(() => {});
+    if (typeof uid === "number") {
+      const apiGid = process.getegid?.() ?? uid;
+      // chmod FIRST (API still owns the socket), THEN chown to the worker uid so
+      // the dropped worker can connect() (a 0600 socket owned by the API uid
+      // rejects the worker's connect with EACCES). 0660 = worker owner + API
+      // group, still closed to all other sandbox uids.
+      await chmod(endpoint, 0o660).catch(() => {});
+      await chownForWorker(endpoint, uid, apiGid, useWrapper).catch(() => {});
+    } else {
+      await chmod(endpoint, 0o600).catch(() => {});
+    }
   }
 
   const workerArgs = [
