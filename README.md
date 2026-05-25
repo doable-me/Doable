@@ -47,7 +47,7 @@
 <sub><b>AI chat & build</b> — describe your app in plain language. The AI writes the code, scaffolds the UI, and wires up the backend in real time while you watch the output stream in.</sub>
 </td>
 <td width="50%">
-<img src="docs/assets/screenshots/04-live-preview.png" alt="04 · Live preview" /><br/>
+<img src="screenshots/live-preview.png" alt="04 · Live preview" /><br/>
 <sub><b>Live preview</b> — every change renders instantly in the sandboxed preview pane. Click any element on the live preview to describe a visual change directly — no digging through code.</sub>
 </td>
 </tr>
@@ -89,7 +89,7 @@ Everything Doable ships in the box — skills that run inside the AI builder, MC
 <table>
 <tr>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/business-card-maker.png"><img src="docs/assets/screenshots/features/business-card-maker.png" alt="business-card-maker" /></a><br/>
+<a href="screenshots/businesscard01.png"><img src="screenshots/businesscard01.png" alt="business-card-maker" /></a><br/>
 <sub><b><code>business-card-maker</code></b> · <i>skill</i><br/>Design print-ready and digital business cards with full layout control, typography, brand colors, bleed/DPI/CMYK print specs, QR code support, and double-sided export. Trigger with: <em>business card, visiting card, name card, brand card.</em></sub>
 </td>
 <td width="50%" valign="top">
@@ -99,51 +99,51 @@ Everything Doable ships in the box — skills that run inside the AI builder, MC
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/greeting-card.png"><img src="docs/assets/screenshots/features/greeting-card.png" alt="greeting-card" /></a><br/>
+<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" /></a><br/>
 <sub><b><code>greeting-card</code></b> · <i>skill</i><br/>Design occasion-matched greeting cards and e-cards — front, inside, and back — with tone-matched typography, color palette, print specs, and export. Covers birthdays, anniversaries, weddings, holidays, and more. Trigger with: <em>birthday card, invitation, e-card, festival card.</em></sub>
 </td>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/inbuilt-database.png"><img src="docs/assets/screenshots/features/inbuilt-database.png" alt="inbuilt-database" /></a><br/>
+<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="inbuilt-database" /></a><br/>
 <sub><b><code>inbuilt-database</code></b> · <i>skill</i><br/>Built-in per-project PGlite database — no external DB setup needed. The AI creates tables, runs migrations, and queries data directly inside your app. Trigger with: <em>database, persist data, store records, create/read/update/delete, relational data.</em></sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/magazine01.png"><img src="screenshots/magazine01.png" alt="magazine-flipbook" /></a><br/>
+<a href="screenshots/magazine02.png"><img src="screenshots/magazine02.png" alt="magazine-flipbook" /></a><br/>
 <sub><b><code>magazine-flipbook</code></b> · <i>skill</i><br/>Build a realistic web magazine or flipbook reader with page-flip physics, page curl shadows, optional sound, and full keyboard and touch navigation. Trigger with: <em>flipbook, digital magazine, page flip, catalog viewer, brochure, ebook reader.</em></sub>
 </td>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/resume-cv.png"><img src="docs/assets/screenshots/features/resume-cv.png" alt="resume-cv" /></a><br/>
+<a href="screenshots/resume.png"><img src="screenshots/resume.png" alt="resume-cv" /></a><br/>
 <sub><b><code>resume-cv</code></b> · <i>skill</i><br/>Full-lifecycle resume and CV builder. Create, rewrite, optimize, or tailor a resume for any industry, seniority level, or role — with ATS optimization, keyword mapping, achievement writing, and industry-specific formatting. Trigger with: <em>resume, CV, job application.</em></sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/mcp-markdown-builder.png"><img src="docs/assets/screenshots/features/mcp-markdown-builder.png" alt="Markdown Builder MCP" /></a><br/>
+<a href="screenshots/markdownfile.png"><img src="screenshots/markdownfile.png" alt="Markdown Builder MCP" /></a><br/>
 <sub><b>Markdown Builder</b> · <i>MCP server · built-in</i><br/>Let the AI generate structured Markdown documents — docs, runbooks, changelogs, READMEs — and write them directly to disk inside your project. Available to every project in the workspace automatically.</sub>
 </td>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/mcp-pdf-builder.png"><img src="docs/assets/screenshots/features/mcp-pdf-builder.png" alt="PDF Builder MCP" /></a><br/>
+<a href="screenshots/pdf.png"><img src="screenshots/pdf.png" alt="PDF Builder MCP" /></a><br/>
 <sub><b>PDF Builder</b> · <i>MCP server · built-in</i><br/>Generate polished PDF reports, invoices, contracts, and documentation from chat. The AI composes the layout and the MCP server renders and exports the file directly into the project workspace.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/mcp-presentation-builder.png"><img src="docs/assets/screenshots/features/mcp-presentation-builder.png" alt="Presentation Builder MCP" /></a><br/>
+<a href="screenshots/presentation.png"><img src="screenshots/presentation.png" alt="Presentation Builder MCP" /></a><br/>
 <sub><b>Presentation Builder</b> · <i>MCP server · built-in</i><br/>Build full slide decks from a single prompt. The AI authors the content and structure; the MCP server renders and exports a ready-to-present file. Great for pitch decks, product walkthroughs, and team updates.</sub>
 </td>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/mcp-spreadsheet-builder.png"><img src="docs/assets/screenshots/features/mcp-spreadsheet-builder.png" alt="Spreadsheet Builder MCP" /></a><br/>
+<a href="screenshots/spreadsheet.png"><img src="screenshots/spreadsheet.png" alt="Spreadsheet Builder MCP" /></a><br/>
 <sub><b>Spreadsheet Builder</b> · <i>MCP server · built-in</i><br/>Generate XLSX spreadsheets — financial models, data tables, trackers, and reports — directly from chat. The AI populates the data and formulas; the MCP server writes the file to the project workspace.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/mcp-per-app-database.png"><img src="docs/assets/screenshots/features/mcp-per-app-database.png" alt="Doable Per-App Database MCP" /></a><br/>
+<a href="screenshots/CRM.png"><img src="screenshots/CRM.png" alt="Doable Per-App Database MCP" /></a><br/>
 <sub><b>Doable Per-App Database</b> · <i>MCP server · built-in</i><br/>Workspace-scoped database access available to all projects. The AI can create schemas, query records, and manage migrations through the MCP protocol — no external database configuration required.</sub>
 </td>
 <td width="50%" valign="top">
-<a href="docs/assets/screenshots/features/pwa-builder.png"><img src="docs/assets/screenshots/features/pwa-builder.png" alt="PWA — Progressive Web App" /></a><br/>
+<a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" /></a><br/>
 <sub><b>PWA — Progressive Web App</b> · <i>platform feature</i><br/>Every app Doable builds can be shipped as a fully installable Progressive Web App. Service worker, offline support, app manifest, and home-screen install — generated automatically so your users get a native-feeling experience without an app store.</sub>
 </td>
 </tr>
