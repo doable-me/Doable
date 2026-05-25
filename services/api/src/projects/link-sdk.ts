@@ -114,5 +114,9 @@ export async function linkDoableSdk(projectPath: string): Promise<void> {
   // they never reach the Vite bundle. Reuses the same project-scoped token
   // injected by the CONNECTOR_BRIDGE_SNIPPET (preview) and the index.html
   // snippet baked in by deploy/auto-api-key.ts:injectDataToken (published).
-  await linkWorkspacePackage(projectPath, "doable-ai", ["index.ts"]);
+  // index.ts re-exports the thinking-tag helpers from "./thinking.js", so
+  // thinking.ts MUST be copied too — otherwise Vite's dep pre-bundle fails to
+  // resolve that re-export and the WHOLE module errors with "does not provide
+  // an export named 'ai'", white-screening any generated app that imports it.
+  await linkWorkspacePackage(projectPath, "doable-ai", ["index.ts", "thinking.ts"]);
 }
