@@ -67,7 +67,10 @@ impl Default for InstallConfig {
             ssh_key_path: PathBuf::new(),
             ssh_password: String::new(),
             env_name: String::new(),
-            doable_domain: "doable.me".to_string(),
+            // No hardcoded domain — each self-hoster supplies their own. Empty
+            // is dropped by to_env_vars() so setup-server-v3.sh's own default
+            // (localhost / interactive prompt) takes over for OOB installs.
+            doable_domain: String::new(),
             create_admin: true,
             admin_email: String::new(),
             admin_display_name: String::new(),
