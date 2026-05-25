@@ -1994,6 +1994,13 @@ function EditorPageInner() {
   // Track which long user messages are expanded in the chat
   const [expandedUserMsgs, setExpandedUserMsgs] = useState<Set<string>>(new Set());
   const previewRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Dedicated timer for the end-of-turn FULL iframe reload. Kept separate from
+  // previewRefreshTimer (the per-file-op debounce) so a chained turn's
+  // debounced soft-refresh cannot clearTimeout the load-bearing full reload.
+  // With HMR over the preview-proxy unreliable, this guaranteed full reload is
+  // what re-fetches the freshly-compiled Tailwind CSS so newly-introduced
+  // utility classes (e.g. w-7/w-14 on lucide icons) actually take effect.
+  const finalReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2484,6 +2491,9 @@ function EditorPageInner() {
       }
       if (previewRefreshTimer.current) {
         clearTimeout(previewRefreshTimer.current);
+      }
+      if (finalReloadTimer.current) {
+        clearTimeout(finalReloadTimer.current);
       }
       // Abort any in-flight AI stream so reader.read() throws AbortError
       // (signal.aborted → true) rather than BodyStreamBuffer was aborted
@@ -3459,9 +3469,9 @@ function EditorPageInner() {
                 delete fileContentsCache.current[selectedFile];
                 loadFileContent(selectedFile);
               }
-              if (previewRefreshTimer.current) clearTimeout(previewRefreshTimer.current);
-              previewRefreshTimer.current = setTimeout(() => {
-                previewRefreshTimer.current = null;
+              if (finalReloadTimer.current) clearTimeout(finalReloadTimer.current);
+              finalReloadTimer.current = setTimeout(() => {
+                finalReloadTimer.current = null;
                 if (iframeRef.current && previewUrl) {
                   iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
                 }
@@ -3963,11 +3973,17 @@ function EditorPageInner() {
           // the user sees the latest build output (HMR can silently fail).
           // BUT skip if we're currently showing an HTML web-slides artifact —
           // that URL must be preserved.
+          // Also cancel any pending per-file-op debounce so the two don't
+          // race; the full reload below supersedes it.
           if (previewRefreshTimer.current) {
             clearTimeout(previewRefreshTimer.current);
-          }
-          previewRefreshTimer.current = setTimeout(() => {
             previewRefreshTimer.current = null;
+          }
+          if (finalReloadTimer.current) {
+            clearTimeout(finalReloadTimer.current);
+          }
+          finalReloadTimer.current = setTimeout(() => {
+            finalReloadTimer.current = null;
             if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
               iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
             }
