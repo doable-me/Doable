@@ -1811,7 +1811,7 @@ function EditorPageInner() {
         let providerOpts: ModelOption[] = [];
         if (workspaceId) {
           try {
-            const provRes = await apiListAiProviders(workspaceId);
+            const provRes = await apiListAiProviders(workspaceId, resolvedProjectId);
             if (!cancelled) {
               const providers: ApiAiProvider[] = provRes.data ?? [];
               for (const p of providers) {
@@ -2147,10 +2147,10 @@ function EditorPageInner() {
   // ─── Fetch effective AI config for enforcement + user prefs ─
   useEffect(() => {
     if (!workspaceId) return;
-    apiGetEffectiveAiConfig(workspaceId)
+    apiGetEffectiveAiConfig(workspaceId, resolvedProjectId)
       .then((res) => setEffectiveAiConfig(res.data))
       .catch(console.error);
-  }, [workspaceId]);
+  }, [workspaceId, resolvedProjectId]);
 
   // ─── Apply AI enforcement or server-side user preferences ──
   useEffect(() => {

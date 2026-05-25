@@ -198,8 +198,15 @@ export async function apiValidateCopilotAccount(
   });
 }
 
-export async function apiListAiProviders(workspaceId: string): Promise<{ data: ApiAiProvider[] }> {
-  return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers`);
+export async function apiListAiProviders(
+  workspaceId: string,
+  projectId?: string
+): Promise<{ data: ApiAiProvider[] }> {
+  // When called from a project context (editor), pass ?projectId so a project
+  // collaborator (not a workspace member) is authorized via project access.
+  // Workspace members work either way — projectId is optional/ignored for them.
+  const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+  return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers${query}`);
 }
 
 export async function apiAddAiProvider(
@@ -348,9 +355,16 @@ export async function apiResetUserAllocation(
   });
 }
 
-export async function apiGetEffectiveAiConfig(workspaceId: string): Promise<{ data: ApiEffectiveAiConfig }> {
+export async function apiGetEffectiveAiConfig(
+  workspaceId: string,
+  projectId?: string
+): Promise<{ data: ApiEffectiveAiConfig }> {
+  // When called from a project context (editor), pass ?projectId so a project
+  // collaborator (not a workspace member) is authorized via project access.
+  // Workspace members work either way — projectId is optional/ignored for them.
+  const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
   return apiFetch<{ data: ApiEffectiveAiConfig }>(
-    `/workspaces/${workspaceId}/ai-settings/effective`
+    `/workspaces/${workspaceId}/ai-settings/effective${query}`
   );
 }
 
