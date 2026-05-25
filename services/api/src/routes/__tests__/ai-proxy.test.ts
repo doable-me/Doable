@@ -46,7 +46,8 @@ function settings(overrides: Partial<ProjectAiSettings> = {}): ProjectAiSettings
     systemPrompt: null,
     embeddingModel: null,
     embeddingProviderId: null,
-    thinkingVisibility: "auto",
+    // OOB default mirrors production: unset thinking visibility resolves to "hide".
+    thinkingVisibility: "hide",
     systemPromptOverride: null,
     chatModelOverride: null,
     embeddingModelOverride: null,
@@ -315,6 +316,27 @@ test("thinking_visibility=hide strips <think> blocks server-side (non-stream)", 
   assert.equal(j.content.includes("<think>"), false);
   assert.equal(j.content.includes("answer carefully"), false);
   assert.match(j.content, /The answer is 42/);
+});
+
+test("UNSET thinking_visibility defaults to hide and strips <think> (OOB)", async () => {
+  // No thinkingVisibility override — exercises the OOB default. The product
+  // default is now "hide", so generated apps never leak raw reasoning.
+  __setSettingsResolverForTest(async () => settings({ defaultModel: "x" }));
+  __setEngineResolverForTest(async () => ({ model: "x" }));
+  __setChatExecutorForTest(async function* () {
+    yield { type: "text_delta", data: "<think>internal chain of thought</think>" };
+    yield { type: "text_delta", data: "Visible answer." };
+    yield { type: "done", data: { usage: { prompt_tokens: 1, completion_tokens: 2 } } };
+  });
+  const res = await req("/__doable/ai/chat", {
+    messages: [{ role: "user", content: "x" }],
+    stream: false,
+  });
+  assert.equal(res.status, 200);
+  const j = (await res.json()) as { content: string };
+  assert.equal(j.content.includes("<think>"), false);
+  assert.equal(j.content.includes("chain of thought"), false);
+  assert.match(j.content, /Visible answer\./);
 });
 
 test("thinking_visibility=auto passes <think> through to the SDK", async () => {

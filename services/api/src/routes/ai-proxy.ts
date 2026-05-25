@@ -222,9 +222,12 @@ export async function getProjectAiSettings(projectId: string): Promise<ProjectAi
       LIMIT 1
     `;
     if (!row) return defaultProjectAiSettings();
-    const tv = (row.thinking_visibility as string | null) ?? "auto";
+    // OOB default is "hide" so generated apps never leak raw <think> reasoning
+    // unless an admin explicitly opts into "auto"/"always-show". Explicit
+    // stored values (including explicit "auto") are preserved.
+    const tv = (row.thinking_visibility as string | null) ?? "hide";
     const tvValid: "auto" | "always-show" | "hide" =
-      tv === "always-show" || tv === "hide" ? tv : "auto";
+      tv === "auto" || tv === "always-show" ? tv : "hide";
     return {
       enabled: (row.enabled as boolean | null) ?? true,
       defaultModel: (row.default_model as string | null) ?? null,
@@ -262,7 +265,7 @@ function defaultProjectAiSettings(): ProjectAiSettings {
     systemPrompt: null,
     embeddingModel: null,
     embeddingProviderId: null,
-    thinkingVisibility: "auto",
+    thinkingVisibility: "hide",
     systemPromptOverride: null,
     chatModelOverride: null,
     embeddingModelOverride: null,
@@ -780,10 +783,12 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
   const githubToken = aiConfig?.githubToken;
   // thinking-visibility = "hide" → strip <think>…</think> server-side using
   // the same util the SDK ships, so the app never sees the reasoning even in
-  // DevTools. "auto" and "always-show" pass through unchanged; the app is
-  // expected to render thinking inside a <details> disclosure (default) or
-  // inline. Hidden mode is also what enforces the spec's "ask again →
-  // thinking section is gone entirely" expectation.
+  // DevTools. "hide" is the OOB DEFAULT: generated chatbot apps never leak the
+  // model's raw reasoning to end users unless an admin explicitly opts into the
+  // in-app disclosure by setting "auto" or "always-show". "auto" and
+  // "always-show" pass through unchanged; the app is then expected to render
+  // thinking inside a <details> disclosure or inline. Hidden mode also enforces
+  // the spec's "ask again → thinking section is gone entirely" expectation.
   const hideThinking = settings.thinkingVisibility === "hide";
 
   if (!shouldStream) {

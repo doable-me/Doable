@@ -65,7 +65,7 @@ workspaceAiExtrasRoutes.get("/:workspaceId/ai-extras", async (c) => {
   `;
   return c.json({
     data: {
-      defaultThinkingVisibility: (row?.default_thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "auto",
+      defaultThinkingVisibility: (row?.default_thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "hide",
       defaultSystemPrompt: row?.default_system_prompt ?? null,
       defaultEmbeddingProviderId: row?.default_embedding_provider_id ?? null,
       defaultEmbeddingModel: row?.default_embedding_model ?? null,
@@ -91,7 +91,7 @@ workspaceAiExtrasRoutes.put("/:workspaceId/ai-extras", async (c) => {
   // setting is written; create it if missing.
   await sql`
     INSERT INTO workspace_ai_settings (workspace_id, updated_by, default_thinking_visibility, default_system_prompt)
-    VALUES (${workspaceId}, ${userId}, ${v.defaultThinkingVisibility ?? "auto"}, ${v.defaultSystemPrompt ?? null})
+    VALUES (${workspaceId}, ${userId}, ${v.defaultThinkingVisibility ?? "hide"}, ${v.defaultSystemPrompt ?? null})
     ON CONFLICT (workspace_id) DO UPDATE SET
       default_thinking_visibility = COALESCE(${v.defaultThinkingVisibility ?? null}, workspace_ai_settings.default_thinking_visibility),
       default_system_prompt       = ${v.defaultSystemPrompt ?? null},
@@ -110,7 +110,7 @@ workspaceAiExtrasRoutes.put("/:workspaceId/ai-extras", async (c) => {
   `;
   return c.json({
     data: {
-      defaultThinkingVisibility: (row?.default_thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "auto",
+      defaultThinkingVisibility: (row?.default_thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "hide",
       defaultSystemPrompt: row?.default_system_prompt ?? null,
     },
   });
@@ -159,7 +159,7 @@ workspaceAiExtrasRoutes.get("/:workspaceId/personal-ai-extras", async (c) => {
   `;
   return c.json({
     data: {
-      thinkingVisibility: (row?.thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "auto",
+      thinkingVisibility: (row?.thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "hide",
       systemPromptOverride: row?.system_prompt_override ?? null,
     },
   });
@@ -185,7 +185,7 @@ workspaceAiExtrasRoutes.put("/:workspaceId/personal-ai-extras", async (c) => {
       workspace_id, user_id, source, thinking_visibility, system_prompt_override
     ) VALUES (
       ${workspaceId}, ${userId}, 'copilot',
-      ${v.thinkingVisibility ?? "auto"}, ${v.systemPromptOverride ?? null}
+      ${v.thinkingVisibility ?? "hide"}, ${v.systemPromptOverride ?? null}
     )
     ON CONFLICT (workspace_id, user_id) DO UPDATE SET
       thinking_visibility    = COALESCE(${v.thinkingVisibility ?? null}, user_ai_preferences.thinking_visibility),
@@ -203,7 +203,7 @@ workspaceAiExtrasRoutes.put("/:workspaceId/personal-ai-extras", async (c) => {
   `;
   return c.json({
     data: {
-      thinkingVisibility: (row?.thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "auto",
+      thinkingVisibility: (row?.thinking_visibility as "auto" | "always-show" | "hide" | null) ?? "hide",
       systemPromptOverride: row?.system_prompt_override ?? null,
     },
   });
