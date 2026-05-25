@@ -14,6 +14,7 @@ Every Doable project has a built-in PGlite (PostgreSQL-compatible) database that
 3. **`@doable/data` is PRE-LINKED, not missing.** It is deliberately absent from `package.json` yet fully resolvable — the platform links it into `node_modules` of every project. Just `import { db } from "@doable/data"`. NEVER add it to `package.json` and NEVER run install_package for it. Its absence from the dependency list does NOT mean it is unavailable, and is NOT a reason to fall back to localStorage.
 4. **Never suggest an external database.** You do not need Supabase or any third-party DB — the inbuilt one is already there.
 5. **Always check `data.schema` first** before writing app code that references a table. Never invent table or column names without verification.
+6. **⛔ SCHEMA-FIRST HARD GATE.** Create every table with `data.migrate` (use `CREATE TABLE IF NOT EXISTS`) BEFORE writing the app code that queries it. The runtime `db.query` path only accepts `SELECT/INSERT/UPDATE/DELETE` — it rejects `CREATE TABLE`, and `db.exec` throws in app code. A table you reference from `db.query` but never migrated does not exist, so every query fails silently and the app shows no data. Order: (1) `data.migrate` → (2) `data.schema` to verify → (3) write app code.
 
 ---
 
