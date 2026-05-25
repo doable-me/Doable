@@ -401,6 +401,11 @@ fi
 # libasound2 is a noble-vs-jammy split — handle both individually so
 # one missing package doesn't abort the rest.
 PUPPETEER_DEPS=(
+  # `unzip` is required by puppeteer's postinstall to extract chrome-headless-shell
+  # (distributed as a .zip; tar can't open it). It is NOT preinstalled on fresh
+  # Ubuntu 24.04 / Debian 12, and without it `pnpm install` aborts under
+  # `set -euo pipefail`, breaking the whole bare-metal install. Keep it first.
+  unzip
   libatk1.0-0 libatk-bridge2.0-0 libcups2 libatspi2.0-0
   libxcomposite1 libxdamage1 libxfixes3 libxrandr2
   libgbm1 libcairo2 libpango-1.0-0
@@ -1185,6 +1190,12 @@ chown doable:doable "${INSTALL_DIR}/apps/web/.env.local" 2>/dev/null || true
 info "Step 9/13: Installing dependencies..."
 
 cd "$INSTALL_DIR"
+# Clear any stale/incomplete puppeteer browser cache from a prior failed run.
+# A half-extracted chrome-headless-shell dir (folder present, executable
+# missing) makes puppeteer's postinstall believe the browser is installed and
+# refuse to re-download — which then aborts `pnpm install` under pipefail.
+# Safe to wipe: the real runtime cache (PUPPETEER_CACHE_DIR) is populated later.
+rm -rf "${HOME}/.cache/puppeteer" 2>/dev/null || true
 pnpm install
 
 info "Running database migrations..."
