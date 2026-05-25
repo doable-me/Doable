@@ -192,9 +192,10 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
   }
   bucket.count++;
 
-  // Look up the project's workspace
-  const [row] = await sql<{ workspace_id: string }[]>`
-    SELECT workspace_id FROM projects WHERE id = ${projectId} LIMIT 1
+  // Look up the project's workspace + visibility (the latter gates the
+  // owner-identity fallback below).
+  const [row] = await sql<{ workspace_id: string; visibility: string }[]>`
+    SELECT workspace_id, visibility FROM projects WHERE id = ${projectId} LIMIT 1
   `;
   if (!row) {
     return c.json({ error: "Project not found" }, 404);
@@ -223,6 +224,34 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
       }
     } catch {
       // Invalid/expired platform token — fall through to anonymous mint.
+    }
+  }
+
+  // OOB persistence fallback (per-app-db): the standalone own-tab preview
+  // (window.parent === window) cannot postMessage a userId-stamped token like
+  // the editor iframe does, and the API is cookieless + cross-origin, so a
+  // top-level navigation never carries an Authorization header. Without an
+  // identity, app.user_id stays empty, the self-stamping `created_by` DEFAULT
+  // resolves to NULL, and every INSERT into an owner-RLS table is rejected
+  // (RLS_VIOLATION → 403) — generated CRUD apps persist nothing.
+  //
+  // For a NON-public project (restricted/private), the only people who can
+  // reach the preview are the workspace owner / members, so binding an
+  // otherwise-anonymous preview write to the workspace OWNER is both correct
+  // (the developer testing their own app) and safe (no public exposure). This
+  // is the resilient, no-cookie, no-CORS fix that works OOB on docker, bare
+  // metal, and the CLI alike. We deliberately DO NOT do this for `public`
+  // projects: there real end-users may hit the preview, and stamping the owner
+  // for everyone would break per-user isolation / let a visitor act as owner.
+  if (!viewerUserId && row.visibility !== "public") {
+    const [ownerRow] = await sql<{ user_id: string }[]>`
+      SELECT user_id FROM workspace_members
+      WHERE workspace_id = ${row.workspace_id} AND role = 'owner'
+      ORDER BY joined_at ASC
+      LIMIT 1
+    `;
+    if (ownerRow?.user_id && UUID_RE.test(ownerRow.user_id)) {
+      viewerUserId = ownerRow.user_id;
     }
   }
 
