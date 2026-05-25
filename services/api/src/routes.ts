@@ -63,8 +63,12 @@ import { aiSettingsRoutes as projectAiSettingsRoutes } from "./routes/projects/a
 import { embeddingsRoutes as projectEmbeddingsRoutes } from "./routes/projects/embeddings.js";
 import { workspaceAiExtrasRoutes } from "./routes/workspaces/ai-extras.js";
 import { DOABLE_APP_AI_ENABLED } from "./ai/runtime-config.js";
+import { geminiProxyRoutes } from "./routes/gemini-proxy.js";
 
 export function mountRoutes(app: Hono): void {
+// Gemini OpenAI-compat proxy — strips unsupported params from copilot SDK
+// requests. Must be early (no auth) since the CLI sends Gemini's API key directly.
+app.route("/__gemini-proxy", geminiProxyRoutes);
 app.route("/health", healthRoutes);
 app.route("/artifacts", artifactsRoutes);
 app.route("/internal", internalRoutes);

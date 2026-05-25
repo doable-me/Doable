@@ -172,6 +172,14 @@ export async function resolveAiEngine(
     }
   }
 
+  // BUG-GEMINI-400: Gemini's OpenAI-compat endpoint rejects parameters the
+  // Copilot SDK sends (parallel_tool_calls, frequency_penalty, etc.) with a
+  // 400 and empty body on multi-turn tool calls. Route through the local
+  // proxy that strips those unsupported fields before forwarding to Google.
+  if (resolvedProvider && isGeminiProvider(resolvedProvider.baseUrl)) {
+    resolvedProvider = rewriteGeminiBaseUrl(resolvedProvider);
+  }
+
   if (selectedCopilotAccountId) {
     try {
       githubToken = (await aiSettingsDb.getCopilotAccountToken(selectedCopilotAccountId)) ?? undefined;
@@ -188,4 +196,25 @@ export async function resolveAiEngine(
     modelSource,
     providerSource,
   };
+}
+
+// ─── Gemini proxy helpers ──────────────────────────────────────────────────
+
+const GEMINI_HOST_PATTERN = /generativelanguage\.googleapis\.com/i;
+
+/** True when the baseUrl points to Google's Gemini API. */
+function isGeminiProvider(baseUrl: string): boolean {
+  return GEMINI_HOST_PATTERN.test(baseUrl);
+}
+
+/**
+ * Rewrite a Gemini provider's baseUrl to route through the local proxy.
+ * Example: `https://generativelanguage.googleapis.com/v1beta/openai/`
+ *       → `http://127.0.0.1:${PORT}/__gemini-proxy/v1beta/openai/`
+ */
+function rewriteGeminiBaseUrl(provider: ByokProviderConfig): ByokProviderConfig {
+  const port = process.env.PORT ?? "4000";
+  const url = new URL(provider.baseUrl);
+  const proxyBase = `http://127.0.0.1:${port}/__gemini-proxy${url.pathname}`;
+  return { ...provider, baseUrl: proxyBase };
 }

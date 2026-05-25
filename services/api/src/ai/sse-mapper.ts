@@ -284,8 +284,8 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         userMsg = "The AI model is unavailable (404). Check your model ID and provider settings.";
       } else if (statusCode === 401 || rawMsg.includes("unauthorized") || rawMsg.includes("not authorized")) {
         userMsg = "Authentication failed with the AI provider. Check your API key.";
-      } else if (statusCode === 429 || rawMsg.includes("rate limit")) {
-        userMsg = "Rate limit reached. Please wait and try again.";
+      } else if (statusCode === 429 || statusCode === 503 || rawMsg.includes("rate limit") || rawMsg.includes("rate_limit") || rawMsg.includes("quota")) {
+        userMsg = `⚠️ Rate limit exceeded — the AI provider is rejecting requests due to too many calls. Please wait a minute before trying again, or switch to a different model in AI Settings. (Provider error: ${rawMsg.slice(0, 200)})`;
       } else {
         userMsg = sanitizeText(rawMsg);
       }

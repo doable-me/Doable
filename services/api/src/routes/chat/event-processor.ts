@@ -93,14 +93,23 @@ export function createProcessEvent(
     // For session.error, defer the error instead of sending it immediately.
     // Auto-continue may recover from timeouts — the deferred error is emitted
     // later only if recovery fails (see send-handler.ts).
+    // EXCEPTION: Rate limit errors are sent immediately — they are not
+    // transient and the user needs to know why generation stopped.
     const sseData = mapEventToSSE(event);
     if (sseData) {
       if (evtType === "session.error" && sseData.type === "error") {
-        state.deferredError = typeof sseData.data === "string" ? sseData.data : "Unknown error";
-        // Send a status event so the frontend knows something happened
-        stream.writeSSE({
-          data: JSON.stringify({ type: "status", data: { phase: "retrying", message: "AI paused — checking if more work is needed\u2026" } }),
-        }).catch(() => {});
+        const errMsg = typeof sseData.data === "string" ? sseData.data : "Unknown error";
+        const isRateLimit = errMsg.toLowerCase().includes("rate limit") || errMsg.includes("429") || errMsg.toLowerCase().includes("quota");
+        if (isRateLimit) {
+          // Rate limit errors are non-recoverable — surface immediately
+          routeSseEvent(stream, state, channelRouter, sseData, evtData, projectId, userId, messageId);
+        } else {
+          state.deferredError = errMsg;
+          // Send a status event so the frontend knows something happened
+          stream.writeSSE({
+            data: JSON.stringify({ type: "status", data: { phase: "retrying", message: "AI paused — checking if more work is needed\u2026" } }),
+          }).catch(() => {});
+        }
       } else {
         routeSseEvent(stream, state, channelRouter, sseData, evtData, projectId, userId, messageId);
       }
