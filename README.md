@@ -143,11 +143,11 @@ Everything Doable ships in the box — AI-powered app generation with built-in c
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" height="420" style="object-fit:cover;width:100%" /></a><br/>
+<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" width="100%" /></a><br/>
 <sub><b><code>greeting-card</code></b> · <i>skill</i><br/>Design occasion-matched greeting cards and e-cards — front, inside, and back — with tone-matched typography, color palette, print specs, and export. Covers birthdays, anniversaries, weddings, holidays, and more. Trigger with: <em>birthday card, invitation, e-card, festival card.</em></sub>
 </td>
 <td width="50%" valign="top">
-<a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" height="420" style="object-fit:cover;width:100%" /></a><br/>
+<a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" width="100%" /></a><br/>
 <sub><b>PWA — Progressive Web App</b> · <i>platform feature</i><br/>Every app Doable builds can be shipped as a fully installable Progressive Web App. Service worker, offline support, app manifest, and home-screen install — generated automatically so your users get a native-feeling experience without an app store.</sub>
 </td>
 </tr>
