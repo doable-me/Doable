@@ -173,6 +173,17 @@ function loadDevSecrets(): Record<string, string> {
 }
 
 /**
+ * Reject the placeholder secrets shipped in deployment/docker/.env.example
+ * (e.g. "change-me-run-openssl-rand-hex-32"). A naive operator who copies
+ * .env.example to .env and boots WITHOUT running setup.sh would otherwise run
+ * on a publicly-known, predictable secret. Treated exactly like a missing
+ * secret: FATAL in production, stable generated dev secret otherwise.
+ */
+function isPlaceholderSecret(value: string): boolean {
+  return /^change[-_ ]?me/i.test(value.trim());
+}
+
+/**
  * Resolve a required secret. See module docs for full precedence.
  *
  * @param name        env var name (e.g. "JWT_SECRET").
@@ -180,14 +191,22 @@ function loadDevSecrets(): Record<string, string> {
  */
 export function resolveSecret(name: string, serviceName?: string): string {
   const fromEnv = process.env[name];
-  if (fromEnv) return fromEnv;
+  if (fromEnv && !isPlaceholderSecret(fromEnv)) return fromEnv;
+
+  const reason = fromEnv ? "is set to a placeholder value" : "is not set";
 
   if (IS_PRODUCTION) {
     const where = serviceName ? ` Cannot start ${serviceName} in production.` : "";
     console.error(
-      `[FATAL] ${name} is not set.${where} Set a strong secret before starting in production.`,
+      `[FATAL] ${name} ${reason}.${where} Set a strong secret (e.g. \`openssl rand -hex 32\`) before starting in production.`,
     );
     process.exit(1);
+  }
+
+  if (fromEnv) {
+    console.warn(
+      `[SECURITY] ${name} is set to a placeholder value — ignoring it and using a stable generated dev secret instead. Set a real secret for production.`,
+    );
   }
 
   const devSecrets = loadDevSecrets();
