@@ -84,50 +84,43 @@ Self-hosting? [Coolify](deployment/docker/coolify.md), [Fly.io](deployment/platf
 <table>
 <tr>
 <td width="50%">
-<img src="screenshots/Landingpage.png" alt="01 · Landing page" /><br/>
-<sub><b>Landing page</b> — describe the app you want — including AI chatbots — right from the home screen. Doable routes you straight into the builder and starts generating. No sign-up friction, no infrastructure decisions before your first idea.</sub>
+<img src="screenshots/onlylandingpage.png" alt="01 · Landing & dashboard" /><br/>
+<sub><b>Landing & dashboard</b> — describe the app you want from the home screen and Doable routes you straight into your dashboard where all your generated apps live, each with its own in-process backend and Doable AI already wired in.</sub>
 </td>
 <td width="50%">
-<img src="screenshots/dashboard.png" alt="02 · Project dashboard" /><br/>
-<sub><b>Project dashboard</b> — all your generated apps in one place. Every app comes with its own in-process backend and Doable AI already wired in. Create, open, or template — each workspace is fully isolated with its own members and settings.</sub>
-</td>
-</tr>
-<tr>
-<td width="50%">
-<img src="screenshots/ai-chat.png" alt="03 · AI chat & build" /><br/>
+<img src="screenshots/ai-chat.png" alt="02 · AI chat & build" /><br/>
 <sub><b>AI chat & build</b> — describe what you want and Doable generates a fully working app — frontend, in-process backend, and database — in real time. Ask for a chatbot and it's wired up automatically, powered by Doable AI. No boilerplate, no backend setup, no model config.</sub>
 </td>
+</tr>
+<tr>
 <td width="50%">
-<img src="screenshots/live-preview.png" alt="04 · Live preview" /><br/>
+<img src="screenshots/live-preview.png" alt="03 · Live preview" /><br/>
 <sub><b>Live preview</b> — see your generated app running instantly, including any AI chatbots inside it. The in-process backend and Doable AI are live in the preview — interact with the chatbot, test data flow, and refine with follow-up prompts, all without leaving the builder.</sub>
 </td>
-</tr>
-<tr>
 <td width="50%">
-<img src="screenshots/Live-code-editor.png" alt="05 · Code editor" /><br/>
+<img src="screenshots/Live-code-editor.png" alt="04 · Code editor" /><br/>
 <sub><b>Code editor</b> — full Monaco-powered editor with AI inline edits. Every generated app includes its in-process backend and Doable AI integration in the source — readable, editable, and exportable as a ZIP or pushed to GitHub at any point.</sub>
 </td>
+</tr>
+<tr>
 <td width="50%">
-<img src="screenshots/ai-provider.png" alt="06 · AI provider setup" /><br/>
+<img src="screenshots/ai-provider.png" alt="05 · AI provider setup" /><br/>
 <sub><b>AI provider setup</b> — BYOK at every layer. Pick from 53+ providers — Anthropic, OpenAI, Gemini, Groq, DeepSeek, Ollama, and more — and configure per-workspace model defaults from the admin panel.</sub>
 </td>
-</tr>
-<tr>
 <td width="50%">
-<img src="screenshots/workspace_settings.png" alt="07 · Workspace & team settings" /><br/>
+<img src="screenshots/workspace_settings.png" alt="06 · Workspace & team settings" /><br/>
 <sub><b>Workspace & team settings</b> — invite teammates, assign roles (owner / admin / member / viewer), set project and credit quotas, and manage integrations — all without touching the server.</sub>
 </td>
-<td width="50%">
-<img src="screenshots/deploy.png" alt="08 · One-click deploy" /><br/>
-<sub><b>One-click deploy</b> — publish to a live <code>*.doable.me</code> URL instantly, or point a custom domain. SSL, CDN, and sandbox isolation are all handled automatically on your own infrastructure.</sub>
-</td>
 </tr>
 <tr>
 <td width="50%">
-<img src="screenshots/personalization.png" alt="09 · Doable AI personalization" /><br/>
+<img src="screenshots/deploy.png" alt="07 · One-click deploy" /><br/>
+<sub><b>One-click deploy</b> — publish to a live <code>*.yourdomain</code> URL instantly, or point a custom domain. SSL, CDN, and sandbox isolation are all handled automatically on your own infrastructure.</sub>
+</td>
+<td width="50%">
+<img src="screenshots/personalization.png" alt="08 · Doable AI personalization" /><br/>
 <sub><b>Doable AI personalization</b> — tune the AI to match your workflow and style. Set workspace-wide defaults (thinking visibility, default system prompt) that apply to every new project, then layer personal overrides on top for your own preferences — all without touching config files or env vars.</sub>
 </td>
-<td width="50%"></td>
 </tr>
 </table>
 
@@ -140,32 +133,22 @@ Everything Doable ships in the box — AI-powered app generation with built-in c
 <table>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/ai-chatbot-generated.png"><img src="screenshots/ai-chatbot-generated.png" alt="AI Chatbot Generation" /></a><br/>
-<sub><b>AI Chatbot Generation</b> · <i>platform feature</i><br/>Describe the chatbot you need — customer support, onboarding assistant, internal knowledge bot — and Doable generates the complete app. Doable AI powers the conversation, the in-process backend stores the data with RLS, and you get a live, working chatbot with zero model wiring, zero backend code, and zero infrastructure setup.</sub>
+<a href="screenshots/chatbotidoableai.png"><img src="screenshots/chatbotidoableai.png" alt="Doable AI — AI Chatbot Generation" /></a><br/>
+<sub><b>Doable AI — AI Chatbot Generation</b> · <i>platform feature</i><br/>Describe the chatbot you need and Doable generates the complete app — powered by Doable AI. It handles the model, context, conversation memory, and RAG pipeline automatically. No API keys, no model config, no backend wiring. Just describe it and get a live, working chatbot with the in-process backend storing all data securely with RLS.</sub>
 </td>
 <td width="50%" valign="top">
-<a href="screenshots/doable-ai-chatbot.png"><img src="screenshots/doable-ai-chatbot.png" alt="Doable AI — In-app Chatbot" /></a><br/>
-<sub><b>Doable AI</b> · <i>platform feature</i><br/>The AI engine that powers every chatbot Doable generates. It handles the model, the context, the conversation memory, and the RAG pipeline — all automatically. You never touch a model config or an API key. Just describe the chatbot you want and Doable AI takes care of everything inside the generated app.</sub>
+<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="In-Process Backend with RLS" /></a><br/>
+<sub><b>In-Process Backend with RLS</b> · <i>platform feature</i><br/>Every generated app gets a real in-process backend with Row Level Security and a per-project PGlite database built in. No server to provision, no database to configure, no auth layer to wire up — the AI creates tables, runs migrations, and isolates user data automatically from the first prompt.</sub>
 </td>
 </tr>
 <tr>
-<td width="50%" valign="top">
-<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="In-Process Backend with RLS" /></a><br/>
-<sub><b>In-Process Backend with RLS</b> · <i>platform feature</i><br/>Every generated app gets a real backend built in — in-process, with Row Level Security enforced automatically. No server to provision, no database to configure, no auth layer to wire up. Your chatbot stores conversation history, your SaaS app isolates user data, your CRUD app persists records — all from the first prompt, zero backend work.</sub>
-</td>
 <td width="50%" valign="top">
 <a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" /></a><br/>
 <sub><b>PWA — Progressive Web App</b> · <i>platform feature</i><br/>Every app Doable builds can be shipped as a fully installable Progressive Web App. Service worker, offline support, app manifest, and home-screen install — generated automatically so your users get a native-feeling experience without an app store.</sub>
 </td>
-</tr>
-<tr>
 <td width="50%" valign="top">
 <a href="screenshots/ecommerce.png"><img src="screenshots/ecommerce.png" alt="ecommerce-website" /></a><br/>
 <sub><b><code>ecommerce-website</code></b> · <i>skill</i><br/>Build conversion-focused, accessible ecommerce stores with product listing, product detail, cart, and checkout flows — Core Web Vitals optimized, WCAG 2.2 compliant, and PCI-safe payment integration. Trigger with: <em>online store, storefront, product page, checkout.</em></sub>
-</td>
-<td width="50%" valign="top">
-<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="inbuilt-database" /></a><br/>
-<sub><b><code>inbuilt-database</code></b> · <i>skill</i><br/>Built-in per-project PGlite database — no external DB setup needed. The AI creates tables, runs migrations, and queries data directly inside your app. Trigger with: <em>database, persist data, store records, create/read/update/delete, relational data.</em></sub>
 </td>
 </tr>
 <tr>
@@ -316,7 +299,7 @@ Uses self signed SSL. All services stay on `127.0.0.1`. Point it at Ollama, LM S
 
 ### Publishing and Hosting
 
-- **Instant publishing** to a live `*.doable.me` URL with one click
+- **Instant publishing** to a live `*.yourdomain` URL with one click
 - **Custom domains** supported
 - **MCP compatible** and extensible via [Model Context Protocol](https://modelcontextprotocol.io) servers
 - **Self hostable** with MIT license. Run it on your own infrastructure with full control
