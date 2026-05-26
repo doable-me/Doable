@@ -100,7 +100,32 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
     const CANDIDATE_FILES = ["src/main.tsx", "src/App.tsx", "index.html", "src/index.tsx", "src/main.ts"];
     const projectFiles = await listFiles(projectId).catch(() => [] as string[]);
     const projectFileSet = new Set(projectFiles.map((f) => f.replace(/\\/g, "/")));
-    const filesToCheck = CANDIDATE_FILES.filter((f) => projectFileSet.has(f));
+
+    // MCP doc-builders (markdown, presentation) emit a self-contained index.html
+    // that does NOT load a /src module entry. The React scaffold's src/*.tsx are
+    // left orphaned (and may be stale/broken — e.g. a model-written App.tsx with
+    // a JSX typo) but are NEVER served, so probing them yields false "preview
+    // errors" the auto-fix loop can't resolve (it tries to repair code the live
+    // page doesn't use). Only a real Vite/React app's index.html references
+    // /src/main.tsx — when it does not, treat the project as a standalone
+    // document and skip all src probing (still check index.html + the page).
+    let isStandaloneDoc = false;
+    if (projectFileSet.has("index.html")) {
+      try {
+        const r = await fetch(`${base}/index.html`, { headers: { Accept: "text/html" }, signal: AbortSignal.timeout(5000) });
+        if (r.ok) {
+          const html = await r.text();
+          isStandaloneDoc = !/src=["']\/?src\/(?:main|index)\.[tj]sx?["']/i.test(html);
+        }
+      } catch {
+        // dev server may be restarting — fall through to the normal checks
+      }
+    }
+
+    const filesToCheck = (isStandaloneDoc
+      ? CANDIDATE_FILES.filter((f) => f === "index.html")
+      : CANDIDATE_FILES
+    ).filter((f) => projectFileSet.has(f));
 
     for (const file of filesToCheck) {
       try {
@@ -144,7 +169,7 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
     // error. Type-only imports are elided by the transform, so a wrong `import
     // type` path never false-positives here — only real (value) resolve/syntax
     // errors 500.
-    {
+    if (!isStandaloneDoc) {
       const SOURCE_RE = /\.(tsx?|jsx?|mjs)$/;
       const deepFiles = projectFiles
         .map((f) => f.replace(/\\/g, "/"))
