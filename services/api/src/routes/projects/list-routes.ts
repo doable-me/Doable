@@ -11,11 +11,11 @@ import {
   SLUG_REGEX,
   SLUG_MIN_LENGTH,
   SLUG_MAX_LENGTH,
-  PLAN_LIMITS,
   type WorkspacePlan,
 } from "@doable/shared";
 import { projects, workspacesQ, getUserWorkspaceId, getUserWorkspaceIdWithMinRole, validateUuidQueryParam } from "./helpers.js";
 import { getEnabledFrameworkIds } from "../../frameworks/init.js";
+import { getEffectivePlanLimits } from "../admin-plan-limits.js";
 
 const stars = starQueries(sql);
 const projectViews = projectViewQueries(sql);
@@ -289,7 +289,8 @@ projectListRoutes.post("/", async (c) => {
   // Enforce plan project limit (with per-workspace override)
   const workspace = await workspacesQ.findById(workspaceId);
   if (workspace) {
-    const limits = PLAN_LIMITS[workspace.plan as WorkspacePlan] ?? PLAN_LIMITS.free;
+    const effectiveLimits = await getEffectivePlanLimits();
+    const limits = effectiveLimits[workspace.plan as WorkspacePlan] ?? effectiveLimits.free;
     const maxProjects = workspace.max_projects_override ?? limits.maxProjects;
     const { total } = await projects.listByWorkspace(workspaceId, { page: 1, pageSize: 1 });
     if (total >= maxProjects) {

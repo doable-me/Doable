@@ -5,7 +5,8 @@ import { workspaceQueries, userQueries, environmentQueries } from "@doable/db";
 import { type AuthEnv } from "../middleware/auth.js";
 import { authMiddlewareWithRls } from "../middleware/rls.js";
 import { requireRole } from "../middleware/workspace-role.js";
-import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH, PLAN_LIMITS, type WorkspacePlan } from "@doable/shared";
+import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH, type WorkspacePlan } from "@doable/shared";
+import { getEffectivePlanLimits } from "./admin-plan-limits.js";
 import { sendTemplatedEmail } from "../lib/email.js";
 import { ensureBuiltinConnectorsForWorkspace } from "../mcp/builtin-connectors.js";
 
@@ -342,7 +343,8 @@ async function inviteMemberHandler(c: Context<AuthEnv>) {
   // Enforce plan member limit
   const workspace = await workspaces.findById(workspaceId);
   if (workspace) {
-    const limits = PLAN_LIMITS[workspace.plan as WorkspacePlan] ?? PLAN_LIMITS.free;
+    const effectiveLimits = await getEffectivePlanLimits();
+    const limits = effectiveLimits[workspace.plan as WorkspacePlan] ?? effectiveLimits.free;
     const members = await workspaces.listMembers(workspaceId);
     if (members.length >= limits.maxMembers) {
       return c.json({
