@@ -26,6 +26,7 @@ import {
 import { recordAdminAction } from "../admin/audit-log.js";
 import { sql } from "../db/index.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
+import { DOABLE_APP_AI_DEFAULT_EMBED_DIMS } from "../ai/runtime-config.js";
 
 export const setupRoutes = new Hono<AuthEnv>({ strict: false });
 
@@ -421,15 +422,31 @@ async function probeEmbeddingEndpoint(
 ): Promise<{ ok: true; dims: number } | { ok: false; error: string }> {
   try {
     const url = `${baseUrl.replace(/\/$/, "")}/embeddings`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ model, input: "doable embedding self-test" }),
-      signal: AbortSignal.timeout(10_000),
-    });
+    // Mirror defaultEmbedExecutor (ai-proxy.ts): request a capped output
+    // dimensionality so the probe validates the SAME vector size the runtime
+    // will actually store. Keeps generated apps' pgvector ivfflat/hnsw
+    // indexes (2000-dim limit) valid even when a model defaults higher
+    // (e.g. gemini-embedding-001 → 3072). Retry without the param for models
+    // that don't support output-dimension reduction.
+    const requestedDims = DOABLE_APP_AI_DEFAULT_EMBED_DIMS;
+    const probe = (includeDims: boolean) =>
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(
+          includeDims && requestedDims > 0
+            ? { model, input: "doable embedding self-test", dimensions: requestedDims }
+            : { model, input: "doable embedding self-test" },
+        ),
+        signal: AbortSignal.timeout(10_000),
+      });
+    let res = await probe(true);
+    if (!res.ok && (res.status === 400 || res.status === 422) && requestedDims > 0) {
+      res = await probe(false);
+    }
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       return { ok: false, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
