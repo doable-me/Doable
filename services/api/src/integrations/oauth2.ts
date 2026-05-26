@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import { getIntegration } from "./registry/index.js";
 import { credentialVault, oauthApps } from "./credential-vault.js";
 import type { IntegrationConnection, OAuth2TokenData } from "./types.js";
+import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.PUBLIC_URL ?? "http://localhost:3000";
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
@@ -33,7 +34,7 @@ const OAUTH_REDIRECT_URI =
 // OAuth state parameter carries the integration context through the flow.
 // Encrypted so users can't tamper with it.
 
-const STATE_KEY = process.env.ENCRYPTION_KEY ?? process.env.CREDENTIALS_ENCRYPTION_KEY ?? "doable-dev-key";
+const STATE_KEY = process.env.CREDENTIALS_ENCRYPTION_KEY ?? ENCRYPTION_KEY;
 
 function encryptState(data: Record<string, unknown>): string {
   const json = JSON.stringify(data);

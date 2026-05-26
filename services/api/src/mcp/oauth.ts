@@ -15,9 +15,10 @@
 
 import * as crypto from "node:crypto";
 import { getKVStore } from "@doable/shared/kv-store.js";
+import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
-const STATE_KEY = process.env.ENCRYPTION_KEY ?? process.env.CREDENTIALS_ENCRYPTION_KEY ?? "doable-dev-key";
+const STATE_KEY = process.env.CREDENTIALS_ENCRYPTION_KEY ?? ENCRYPTION_KEY;
 const CODE_VERIFIER_TTL_MS = 10 * 60 * 1000; // 10 minutes (longer than integrations since user may take time)
 
 // ─── State Encryption (same pattern as integrations/oauth2.ts) ─────────
