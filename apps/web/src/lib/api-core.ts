@@ -20,12 +20,48 @@ const REFRESH_KEY = "doable_refresh_token";
 // the cookie — there's no XSS hardening loss vs. the existing setup, and we
 // can't use HttpOnly without a server-side login route. Path=/ + SameSite=Lax
 // keeps it scoped to the app and avoids CSRF on cross-site GET.
+//
+// Cross-subdomain scope (per-app-DB preview auth): the standalone preview is
+// served by the API on a SIBLING subdomain (e.g. web=dev.doable.me,
+// api=dev-api.doable.me). The preview's /__doable/token mint validates this
+// cookie to confirm the requester is a logged-in owner/member before issuing a
+// DB-capable token — but a host-only cookie set on the web host is NOT sent to
+// the api subdomain. So when the API lives on a sibling host that shares a
+// registrable parent domain with the web host, we scope the cookie to that
+// parent (Domain=.doable.me) so it reaches both. Single-host installs
+// (localhost / docker / bare metal where web+api share a host) keep the
+// host-only cookie — same host, already delivered, no parent to compute.
+function cookieParentDomain(): string | null {
+  if (typeof window === "undefined") return null;
+  let apiHost: string;
+  try { apiHost = new URL(API_URL, window.location.origin).hostname; } catch { return null; }
+  const webHost = window.location.hostname;
+  if (!apiHost || apiHost === webHost) return null; // same host → host-only cookie
+  // Never scope to an apex of <=1 label or to a raw IP / localhost.
+  const isIpOrLocal = (h: string) => /^[0-9.]+$/.test(h) || h === "localhost" || !h.includes(".");
+  if (isIpOrLocal(apiHost) || isIpOrLocal(webHost)) return null;
+  // Longest shared suffix of >=2 labels that BOTH hosts end on (the common
+  // registrable parent, e.g. dev.doable.me + dev-api.doable.me → doable.me).
+  const wl = webHost.split("."), al = apiHost.split(".");
+  const shared: string[] = [];
+  for (let i = 1; i <= Math.min(wl.length, al.length); i++) {
+    const w = wl[wl.length - i], a = al[al.length - i];
+    if (w !== undefined && w === a) shared.unshift(w); else break;
+  }
+  if (shared.length < 2) return null; // no common registrable parent
+  return "." + shared.join(".");
+}
+
 function mirrorTokenCookie(value: string | null): void {
   if (typeof document === "undefined") return;
+  const parent = cookieParentDomain();
+  const domainAttr = parent ? `; Domain=${parent}` : "";
   if (value) {
     // 7 days to match refresh-token longevity; middleware re-verifies anyway.
-    document.cookie = `${TOKEN_KEY}=${encodeURIComponent(value)}; Path=/; Max-Age=604800; SameSite=Lax`;
+    document.cookie = `${TOKEN_KEY}=${encodeURIComponent(value)}; Path=/; Max-Age=604800; SameSite=Lax${domainAttr}`;
   } else {
+    document.cookie = `${TOKEN_KEY}=; Path=/; Max-Age=0; SameSite=Lax${domainAttr}`;
+    // Also clear any host-only variant set before this change shipped.
     document.cookie = `${TOKEN_KEY}=; Path=/; Max-Age=0; SameSite=Lax`;
   }
 }

@@ -10,7 +10,8 @@ import {
 import { isProjectScaffolded, ensureDependencies } from "../../projects/file-manager.js";
 import { VISUAL_EDIT_BRIDGE_INLINE } from "../../visual-edit-bridge-inline.js";
 import { getTrackingScript } from "../../analytics/tracker.js";
-import { sql } from "../../db/index.js";
+import type postgres from "postgres";
+import { sql, txAls } from "../../db/index.js";
 import { defaultRegistry } from "../../frameworks/registry.js";
 import type { FrameworkAdapter } from "../../frameworks/types.js";
 import { signProjectJwt } from "../../auth/project-jwt.js";
@@ -192,68 +193,91 @@ previewRoutes.post("/preview/:projectId/__doable/token", async (c) => {
   }
   bucket.count++;
 
-  // Look up the project's workspace + visibility (the latter gates the
-  // owner-identity fallback below).
-  const [row] = await sql<{ workspace_id: string; visibility: string }[]>`
-    SELECT workspace_id, visibility FROM projects WHERE id = ${projectId} LIMIT 1
+  // Look up the project's workspace.
+  const [row] = await sql<{ workspace_id: string }[]>`
+    SELECT workspace_id FROM projects WHERE id = ${projectId} LIMIT 1
   `;
   if (!row) {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  // Per-app-DB identity (chatbot-infra): if the caller presents a valid
-  // platform access token AND has access to this project, stamp their userId
-  // into the connector-proxy JWT so the per-app-DB connection sets
-  // `app.user_id = <viewer uuid>`. That makes the self-stamping `created_by`
-  // DEFAULT resolve to the owner and the owner-RLS WITH CHECK pass on INSERT.
+  // Per-app-DB identity (chatbot-infra): stamp the REQUESTER's userId into the
+  // connector-proxy JWT so the per-app-DB connection sets `app.user_id =
+  // <viewer uuid>`. That makes the self-stamping `created_by` DEFAULT resolve
+  // to the viewer and the owner-RLS WITH CHECK pass on INSERT.
   //
-  // Auth is OPTIONAL by design: an anonymous public preview (no/invalid token)
-  // falls back to the prior behavior — a token WITHOUT userId, so app.user_id
-  // stays empty and owner-RLS apps simply won't persist for anonymous viewers.
-  // We NEVER stamp a userId without verifying project access first, so a caller
-  // cannot mint a token claiming an identity for a project they can't reach.
+  // Identity is established ONLY by proving a real Doable session AND that the
+  // session user has access to THIS project (requireProjectAccess). We NEVER
+  // default to the workspace owner for an unauthenticated caller: the
+  // standalone preview URL (/preview/<uuid>) serves to any URL-holder, so
+  // binding their token to the owner would let a leaked restricted-project URL
+  // read/write that app's data AS the owner. Fail closed instead — see below.
+  //
+  // Two equally-trusted sources for the requester's platform access token, in
+  // order. Both are validated with verifyAccessToken (HS256, JWT_SECRET):
+  //   1. Authorization: Bearer <access-token> — the editor iframe path forwards
+  //      this via window.__DOABLE_ACCESS_TOKEN; also any caller that can attach
+  //      the header explicitly.
+  //   2. The `doable_access_token` cookie — fetchTokenDirect() POSTs this
+  //      endpoint with credentials:"include" SAME-ORIGIN to the preview host,
+  //      so a logged-in owner's session cookie rides along (web mirrors the
+  //      cookie to the registrable parent domain, e.g. .doable.me, so it
+  //      reaches dev-api.doable.me; single-host installs share the host so the
+  //      host-only cookie already arrives). This is what lets the OWNER's own
+  //      standalone preview persist while NOT exposing data to anonymous
+  //      URL-holders.
   let viewerUserId: string | undefined;
+  let sessionToken: string | undefined;
   const authHeader = c.req.header("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
+    sessionToken = authHeader.slice(7).trim();
+  }
+  if (!sessionToken) {
+    const cookieHeader = c.req.header("Cookie") ?? "";
+    const m = cookieHeader.match(/(?:^|;\s*)doable_access_token=([^;]+)/);
+    if (m?.[1]) {
+      try { sessionToken = decodeURIComponent(m[1]); } catch { sessionToken = m[1]; }
+    }
+  }
+  if (sessionToken) {
     try {
-      const payload = await verifyAccessToken(authHeader.slice(7));
+      const payload = await verifyAccessToken(sessionToken);
       const candidate = payload.sub;
       if (candidate && UUID_RE.test(candidate)) {
-        const access = await requireProjectAccess(candidate, projectId);
+        // `projects` and `workspace_members` are FORCE-RLS in the main DB and
+        // the API connects as a non-superuser role, so requireProjectAccess()
+        // returns nothing unless it runs inside an RLS context for the user
+        // being checked. This router is NOT mounted behind authMiddlewareWithRls
+        // (auth is optional here), so we set the RLS GUC ourselves — scoped to
+        // the *validated* candidate, never the body — exactly as that middleware
+        // does (SET LOCAL "doable.current_user_id" + txAls so the global `sql`
+        // proxy dispatches into this tx). A caller can only ever assert their
+        // own verified identity, so this cannot be used to probe another user's
+        // access.
+        const escaped = candidate.replace(/'/g, "''");
+        const access = await sql.begin(async (tx) => {
+          await tx.unsafe(`SET LOCAL "doable.current_user_id" = '${escaped}'`);
+          return txAls.run(tx as unknown as postgres.Sql, () =>
+            requireProjectAccess(candidate, projectId),
+          );
+        });
         if (access) viewerUserId = candidate;
       }
     } catch {
-      // Invalid/expired platform token — fall through to anonymous mint.
+      // Invalid/expired platform token — fall through to a fail-closed mint.
     }
   }
 
-  // OOB persistence fallback (per-app-db): the standalone own-tab preview
-  // (window.parent === window) cannot postMessage a userId-stamped token like
-  // the editor iframe does, and the API is cookieless + cross-origin, so a
-  // top-level navigation never carries an Authorization header. Without an
-  // identity, app.user_id stays empty, the self-stamping `created_by` DEFAULT
-  // resolves to NULL, and every INSERT into an owner-RLS table is rejected
-  // (RLS_VIOLATION → 403) — generated CRUD apps persist nothing.
-  //
-  // For a NON-public project (restricted/private), the only people who can
-  // reach the preview are the workspace owner / members, so binding an
-  // otherwise-anonymous preview write to the workspace OWNER is both correct
-  // (the developer testing their own app) and safe (no public exposure). This
-  // is the resilient, no-cookie, no-CORS fix that works OOB on docker, bare
-  // metal, and the CLI alike. We deliberately DO NOT do this for `public`
-  // projects: there real end-users may hit the preview, and stamping the owner
-  // for everyone would break per-user isolation / let a visitor act as owner.
-  if (!viewerUserId && row.visibility !== "public") {
-    const [ownerRow] = await sql<{ user_id: string }[]>`
-      SELECT user_id FROM workspace_members
-      WHERE workspace_id = ${row.workspace_id} AND role = 'owner'
-      ORDER BY joined_at ASC
-      LIMIT 1
-    `;
-    if (ownerRow?.user_id && UUID_RE.test(ownerRow.user_id)) {
-      viewerUserId = ownerRow.user_id;
-    }
-  }
+  // Fail-closed posture for NON-public projects: if we could not authenticate
+  // the requester as someone with access to this project, mint a token with NO
+  // userId. The app shell still loads (the SDK gets a token), but every
+  // /__doable/data/* call runs with app.user_id='' so owner-RLS INSERTs are
+  // rejected (RLS_VIOLATION → 403) and owner-scoped SELECTs return zero rows —
+  // no data is exposed to an anonymous URL-holder. PUBLIC projects keep the
+  // anonymous mint unchanged so public apps work for everyone (their RLS, if
+  // any, is the app author's responsibility, not gated on platform identity).
+  // This is GENERAL (any project/table) and PERMANENT (platform source; works
+  // on docker, bare metal, and the CLI alike).
 
   const token = await signProjectJwt(
     {
