@@ -143,8 +143,8 @@ Everything Doable ships in the box — AI-powered app generation with built-in c
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="In-Process Backend with RLS" /></a><br/>
-<sub><b>In-Process Backend with RLS</b> · <i>platform feature</i><br/>Every generated app gets a real in-process backend with Row Level Security and a per-project PGlite database built in. No server to provision, no database to configure, no auth layer to wire up — the AI creates tables, runs migrations, and isolates user data automatically from the first prompt.</sub>
+<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" /></a><br/>
+<sub><b><code>greeting-card</code></b> · <i>skill</i><br/>Design occasion-matched greeting cards and e-cards — front, inside, and back — with tone-matched typography, color palette, print specs, and export. Covers birthdays, anniversaries, weddings, holidays, and more. Trigger with: <em>birthday card, invitation, e-card, festival card.</em></sub>
 </td>
 <td width="50%" valign="top">
 <a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" /></a><br/>
@@ -167,8 +167,8 @@ Everything Doable ships in the box — AI-powered app generation with built-in c
 <sub><b><code>business-card-maker</code></b> · <i>skill</i><br/>Design print-ready and digital business cards with full layout control, typography, brand colors, bleed/DPI/CMYK print specs, QR code support, and double-sided export. Trigger with: <em>business card, visiting card, name card, brand card.</em></sub>
 </td>
 <td width="50%" valign="top">
-<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" /></a><br/>
-<sub><b><code>greeting-card</code></b> · <i>skill</i><br/>Design occasion-matched greeting cards and e-cards — front, inside, and back — with tone-matched typography, color palette, print specs, and export. Covers birthdays, anniversaries, weddings, holidays, and more. Trigger with: <em>birthday card, invitation, e-card, festival card.</em></sub>
+<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="In-Process Backend with RLS" /></a><br/>
+<sub><b>In-Process Backend with RLS</b> · <i>platform feature</i><br/>Every generated app gets a real in-process backend with Row Level Security and a per-project PGlite database built in. No server to provision, no database to configure, no auth layer to wire up — the AI creates tables, runs migrations, and isolates user data automatically from the first prompt.</sub>
 </td>
 </tr>
 <tr>
