@@ -14,6 +14,7 @@ import {
   stripHtmlTags, issueTokens, ensureWorkspace, FRONTEND_URL,
 } from "./helpers.js";
 import { signMfaChallengeToken } from "../../lib/jwt.js";
+import { firstUserBootstrap } from "../../auth/firstUserBootstrap.js";
 
 const auth = authQueries(sql);
 const mfa = mfaQueries(sql);
@@ -147,6 +148,14 @@ oauthRoutes.get("/github/callback", async (c) => {
 
     // Auto-create personal workspace for new OAuth users
     await ensureWorkspace(user.id, user.display_name, user.email);
+    try {
+      await firstUserBootstrap(user.id, null, {
+        clientIp: c.req.header("x-real-ip") ?? c.req.header("x-forwarded-for") ?? null,
+        userAgent: c.req.header("user-agent") ?? null,
+      });
+    } catch (err) {
+      console.warn("[oauth/github] firstUserBootstrap error (non-fatal):", err);
+    }
 
     return c.redirect(await postOauthRedirect({
       userId: user.id,
@@ -212,6 +221,14 @@ oauthRoutes.get("/google/callback", async (c) => {
 
       // Auto-create personal workspace for new OAuth users
       await ensureWorkspace(userId, user.display_name, user.email);
+      try {
+        await firstUserBootstrap(userId, null, {
+          clientIp: c.req.header("x-real-ip") ?? c.req.header("x-forwarded-for") ?? null,
+          userAgent: c.req.header("user-agent") ?? null,
+        });
+      } catch (err) {
+        console.warn("[oauth/google] firstUserBootstrap error (non-fatal):", err);
+      }
     } catch (dbErr) {
       console.warn("[OAuth] DB unavailable, issuing token from Google profile:", dbErr);
       userId = `google-${googleUser.sub}`;
