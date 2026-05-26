@@ -634,11 +634,33 @@ async function defaultEmbedExecutor(ctx: {
   if (ctx.provider.apiKey) headers["authorization"] = `Bearer ${ctx.provider.apiKey}`;
   if (ctx.provider.bearerToken) headers["authorization"] = `Bearer ${ctx.provider.bearerToken}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ model: ctx.model, input: ctx.texts }),
-  });
+  // Cap the output dimensionality so generated apps' pgvector indexes stay
+  // valid. pgvector's ivfflat/hnsw indexes are limited to 2000 dimensions,
+  // but several current models exceed that natively (e.g. Gemini's
+  // gemini-embedding-001 → 3072, OpenAI text-embedding-3-large → 3072).
+  // Matryoshka-capable models (gemini-embedding-001, text-embedding-3-*)
+  // honor an OpenAI-style `dimensions` param to truncate the vector; models
+  // that don't support it reject the request (400/422), so we transparently
+  // retry without the param. DOABLE_APP_AI_DEFAULT_EMBED_DIMS (default 1536,
+  // matching the app-prompt's `vector(1536)` template) is the requested cap.
+  const requestedDims = DOABLE_APP_AI_DEFAULT_EMBED_DIMS;
+  const postEmbeddings = (includeDims: boolean) =>
+    fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(
+        includeDims && requestedDims > 0
+          ? { model: ctx.model, input: ctx.texts, dimensions: requestedDims }
+          : { model: ctx.model, input: ctx.texts },
+      ),
+    });
+
+  let res = await postEmbeddings(true);
+  if (!res.ok && (res.status === 400 || res.status === 422) && requestedDims > 0) {
+    // Provider/model doesn't support output-dimension reduction — fall back
+    // to its native dimensionality rather than failing the embed call.
+    res = await postEmbeddings(false);
+  }
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     throw new Error(`Provider HTTP ${res.status}: ${txt.slice(0, 200)}`);
