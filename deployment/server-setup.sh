@@ -218,8 +218,8 @@ else
   read -rp "GitHub repo (owner/repo) [doable-me/doable]: " REPO
   REPO="${REPO:-doable-me/doable}"
 
-  read -rp "Database password [doable]: " DB_PASS
-  DB_PASS="${DB_PASS:-doable}"
+  read -rp "Database password [auto-generate strong]: " DB_PASS
+  DB_PASS="${DB_PASS:-$(openssl rand -hex 16)}"
 
   echo ""
   echo "── Optional: OAuth credentials (press Enter to skip) ──"
