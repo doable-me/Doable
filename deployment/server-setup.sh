@@ -28,11 +28,28 @@ fi
 # self-signed cert on :443. Used for fresh-user installs on a bare IP
 # without any Cloudflare-managed domain.
 NO_TUNNEL="${NO_TUNNEL:-0}"
+# LETSENCRYPT=1 (NO_TUNNEL mode, public DOMAIN, ports 80/443 open to the
+# internet) makes Caddy auto-provision a real, browser-trusted Let's Encrypt
+# cert for HOST instead of a self-signed one — the baremetal equivalent of
+# docker/setup.sh's DOMAIN mode. This is the user "topology (b)": a remote box
+# with public 80/443 and no Cloudflare. Default 0 (self-signed) keeps zero
+# external dependency for pure-IP / private installs. Only valid when HOST is a
+# real domain (LE won't issue for a bare IP or localhost).
+LETSENCRYPT="${LETSENCRYPT:-0}"
+USE_LE=0
 if [ "$NO_TUNNEL" = "1" ]; then
   if [ -z "${HOST:-}" ]; then
     err "NO_TUNNEL=1 requires HOST=<ip-or-hostname> (e.g. HOST=203.0.113.10 NO_TUNNEL=1 ./server-setup.sh)"
   fi
-  info "NO_TUNNEL=1 — serving api/ws/web at https://${HOST} with a self-signed cert"
+  if [ "$LETSENCRYPT" = "1" ]; then
+    if echo "$HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || [ "$HOST" = "localhost" ]; then
+      err "LETSENCRYPT=1 requires HOST to be a public DNS domain (got '${HOST}'). Let's Encrypt cannot issue for a bare IP or localhost — drop LETSENCRYPT for a self-signed cert, or use a domain."
+    fi
+    USE_LE=1
+    info "NO_TUNNEL=1 + LETSENCRYPT=1 — Caddy will fetch a Let's Encrypt cert for https://${HOST} (ports 80+443 must be reachable from the internet)"
+  else
+    info "NO_TUNNEL=1 — serving api/ws/web at https://${HOST} with a self-signed cert"
+  fi
 fi
 
 # ─── Auto-tmux wrap (crash-safe forensics) ─────────────────────
@@ -1601,7 +1618,9 @@ if [ "$NO_TUNNEL" = "1" ]; then
     fi
   fi
 
-  if [ "$MKCERT_OK" = "true" ]; then
+  if [ "$USE_LE" = "1" ]; then
+    info "LETSENCRYPT=1 — skipping local cert; Caddy will obtain a Let's Encrypt cert for ${HOST}"
+  elif [ "$MKCERT_OK" = "true" ]; then
     : # mkcert handled it
   elif [ ! -f /etc/caddy/selfsigned.crt ] || [ ! -f /etc/caddy/selfsigned.key ]; then
     if echo "$HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -1748,8 +1767,26 @@ CERTDOC
     install_localhost_trust_baremetal
   fi
 
-  cat > /etc/caddy/Caddyfile << CADDYEOF
-{
+  # LE mode → named-site block: Caddy auto-provisions a public Let's Encrypt
+  # cert and auto-redirects :80→:443 (no `auto_https off`, no `tls` line, no
+  # explicit :80 block). Self-signed mode → fixed :443 with the local cert.
+  if [ "$USE_LE" = "1" ]; then
+    if [ -n "${EMAIL:-}" ]; then
+      CADDY_PREAMBLE="{
+    admin 127.0.0.1:2019
+    email ${EMAIL}
+}
+
+${HOST} {"
+    else
+      CADDY_PREAMBLE="{
+    admin 127.0.0.1:2019
+}
+
+${HOST} {"
+    fi
+  else
+    CADDY_PREAMBLE="{
     auto_https off
     admin 127.0.0.1:2019
 }
@@ -1759,7 +1796,10 @@ CERTDOC
 }
 
 :443 {
-    tls /etc/caddy/selfsigned.crt /etc/caddy/selfsigned.key
+    tls /etc/caddy/selfsigned.crt /etc/caddy/selfsigned.key"
+  fi
+  cat > /etc/caddy/Caddyfile << CADDYEOF
+${CADDY_PREAMBLE}
 
     # /api/otlp/* → Next.js OTLP proxy on web (127.0.0.1:3000). MUST come
     # before the generic /api/* block so Caddy's first-match-wins rule
@@ -1817,7 +1857,11 @@ CERTDOC
 }
 CADDYEOF
 
-  ok "Caddy configured for NO_TUNNEL=1 — :443 self-signed TLS fronting api/ws/web at https://${HOST}"
+  if [ "$USE_LE" = "1" ]; then
+    ok "Caddy configured for NO_TUNNEL=1 + LETSENCRYPT=1 — public Let's Encrypt TLS fronting api/ws/web at https://${HOST}"
+  else
+    ok "Caddy configured for NO_TUNNEL=1 — :443 self-signed TLS fronting api/ws/web at https://${HOST}"
+  fi
 else
   cat > /etc/caddy/Caddyfile << CADDYEOF
 {
