@@ -4,13 +4,16 @@
 # as `ExecStart=${INSTALL_DIR}/start.sh`. Idempotent: re-running while the
 # session already exists is a no-op (RemainAfterExit=yes keeps systemd happy).
 #
-# tmux is the supervisor for the three long-running services because:
-#   * api/ws use `tsx watch` (HMR) and web uses `next dev --turbopack` —
-#     three foreground processes that systemd would otherwise have to
-#     supervise individually with Type=forking glue.
-#   * `tmux a -t doable` gives the operator a live view of each pane on
-#     the running server, including startup errors that systemd's
-#     journal can swallow.
+# tmux is NOT a supervisor — if a pane's process exits the pane just dies and
+# nothing restarts it. To prevent the api (or web/ws) from staying down after
+# a crash, every send-keys command is wrapped in an infinite restart loop that
+# respawns the process within ~3 s. The systemd Restart=on-failure guard only
+# fires when the tmux SERVER exits (its Main PID), which does NOT happen when
+# a single pane dies — so per-pane looping is the only defence.
+# Incident 2026-05-27: api pane died (tsx-watch / transient .env read failure),
+# tmux server stayed alive, systemd never restarted, api was down ~6 min.
+# This loop closes that gap: a crashed service respawns within seconds so the
+# api never stays down.
 #
 # All three services bind to 127.0.0.1 — see CLAUDE.md.
 set -euo pipefail
@@ -39,9 +42,18 @@ for d in "$SCRIPT_DIR/apps/web/.next" "$SCRIPT_DIR/apps/web/.turbo"; do
       || echo "[start.sh] WARN: could not chown $d — web pane may EACCES"
   fi
 done
+# .env ownership self-heal: a root-side operation (e.g. setup-server.sh re-run)
+# can leave .env owned by root, making it unreadable to the `doable` user so
+# api/ws die on startup. Best-effort chown here keeps that from causing a pane
+# crash on every subsequent systemd start.
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  sudo -n /usr/bin/chown doable:doable "$SCRIPT_DIR/.env" 2>/dev/null \
+    || sudo -n /bin/chown doable:doable "$SCRIPT_DIR/.env" 2>/dev/null \
+    || echo "[start.sh] WARN: could not chown .env — api/ws may fail to read it"
+fi
 
 tmux new-session -d -s "$SESSION" -n api -x 200 -y 50
-tmux send-keys -t "${SESSION}:api" "pnpm --filter @doable/api dev" C-m
+tmux send-keys -t "${SESSION}:api" 'while true; do pnpm --filter @doable/api dev; rc=$?; echo "[start.sh] api pane exited (rc=$rc) — respawning in 3s"; sleep 3; done' C-m
 
 tmux new-window -t "$SESSION" -n web
 # Use the Next.js standalone production server, not `next dev --turbopack`.
@@ -56,9 +68,9 @@ tmux new-window -t "$SESSION" -n web
   echo "[start.sh] ERROR: apps/web/.next/standalone/apps/web/server.js missing — run setup-server.sh first (or 'env -u NODE_ENV NODE_ENV=production pnpm build' in $SCRIPT_DIR)" >&2
   exit 1
 }
-tmux send-keys -t "${SESSION}:web" "cd apps/web/.next/standalone && HOSTNAME=127.0.0.1 PORT=3000 NODE_ENV=production node apps/web/server.js" C-m
+tmux send-keys -t "${SESSION}:web" 'while true; do cd apps/web/.next/standalone && HOSTNAME=127.0.0.1 PORT=3000 NODE_ENV=production node apps/web/server.js; rc=$?; echo "[start.sh] web pane exited (rc=$rc) — respawning in 3s"; sleep 3; done' C-m
 
 tmux new-window -t "$SESSION" -n ws
-tmux send-keys -t "${SESSION}:ws" "pnpm --filter @doable/ws dev" C-m
+tmux send-keys -t "${SESSION}:ws" 'while true; do pnpm --filter @doable/ws dev; rc=$?; echo "[start.sh] ws pane exited (rc=$rc) — respawning in 3s"; sleep 3; done' C-m
 
 echo "[start.sh] doable tmux session started with 3 windows (api, web, ws). Attach: tmux a -t doable"
