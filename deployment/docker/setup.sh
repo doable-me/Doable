@@ -203,7 +203,15 @@ if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
   sleep 5
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq docker.io
+  # Install the apparmor USERSPACE package alongside docker.io. Debian's docker.io
+  # enables apparmor confinement whenever the kernel has apparmor (the default on
+  # Debian/Ubuntu), but it does NOT depend on the `apparmor` package — so on a
+  # fresh box `apparmor_parser` is missing, dockerd can't load the `docker-default`
+  # profile, and EVERY container (build + runtime) dies at init with:
+  #   "apparmor failed to apply profile: write /proc/self/attr/apparmor/exec:
+  #    no such file or directory"
+  # Pulling `apparmor` provides apparmor_parser so dockerd can load docker-default.
+  apt-get install -y -qq docker.io apparmor
   # Compose v2: Ubuntu packages the plugin as `docker-compose-v2`; Docker
   # Inc.'s official apt repo calls it `docker-compose-plugin`. Debian's stock
   # repos (bookworm) ship NEITHER — only the deprecated v1 `docker-compose`
@@ -234,6 +242,11 @@ if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
     fi
   fi
   systemctl enable --now docker
+  # docker.io's postinst may have started dockerd BEFORE apparmor_parser was
+  # configured in the same apt transaction (dpkg ordering is not guaranteed), so
+  # the docker-default profile wouldn't have loaded. Restart now that apparmor is
+  # present so the profile is loaded before we build/run any container.
+  systemctl restart docker 2>/dev/null || true
   if ! docker compose version >/dev/null 2>&1; then
     error "Could not install docker compose v2 (apt plugin packages absent and the official plugin-binary download failed)."
     error "Install it manually: https://docs.docker.com/compose/install/linux/  then re-run this script."
