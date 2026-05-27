@@ -24,10 +24,12 @@ const nextConfig: NextConfig = {
       const parts = host.split(".").filter(Boolean);
       return parts.length <= 2 ? host : parts.slice(-2).join(".");
     };
+    // Dev-only cross-origin allowlist. Derive from the install env; never
+    // hardcode our own domain so self-hosters don't carry `*.doable.me`.
     const host = fromUrl(process.env.NEXT_PUBLIC_APP_URL)
       || fromUrl(process.env.NEXT_PUBLIC_API_URL)
-      || "doable.me";
-    return [host, `*.${apex(host)}`, "doable.me", "*.doable.me", "localhost", "127.0.0.1"];
+      || "";
+    return [host, host ? `*.${apex(host)}` : "", "localhost", "127.0.0.1"].filter(Boolean);
   })(),
   experimental: {
     serverActions: {
@@ -87,14 +89,19 @@ const nextConfig: NextConfig = {
       if (parts.length <= 2) return host;
       return parts.slice(-2).join(".");
     };
+    // Do NOT hardcode our own domain as a fallback — a self-hoster whose
+    // NEXT_PUBLIC_* env isn't wired must never ship `*.doable.me` in their CSP.
+    // When the install host is unknown we omit the cross-origin apex-wildcard
+    // entirely; `'self'` (+ localhost) already covers single-host / path-based
+    // installs, and a subdomain-split install always preseeds NEXT_PUBLIC_APP_URL.
     const installHost =
       hostFromUrl(process.env.NEXT_PUBLIC_APP_URL) ||
       hostFromUrl(process.env.NEXT_PUBLIC_API_URL) ||
       hostFromUrl(process.env.NEXT_PUBLIC_WS_URL) ||
-      "doable.me";
-    const installApex = apexOf(installHost);
-    const apexAllow = `https://*.${installApex}`;
-    const apexAllowWs = `wss://*.${installApex}`;
+      "";
+    const installApex = installHost ? apexOf(installHost) : "";
+    const apexAllow = installApex ? `https://*.${installApex}` : "";
+    const apexAllowWs = installApex ? `wss://*.${installApex}` : "";
     // BUG-016: CSP was applying `unsafe-eval` + `unsafe-inline` to every
     // route, neutering XSS protection. The editor route legitimately needs
     // `unsafe-eval` (Monaco worker) and inline styles (Tailwind/Monaco),
