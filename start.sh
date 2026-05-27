@@ -68,7 +68,10 @@ tmux new-window -t "$SESSION" -n web
   echo "[start.sh] ERROR: apps/web/.next/standalone/apps/web/server.js missing — run setup-server.sh first (or 'env -u NODE_ENV NODE_ENV=production pnpm build' in $SCRIPT_DIR)" >&2
   exit 1
 }
-tmux send-keys -t "${SESSION}:web" 'while true; do cd apps/web/.next/standalone && HOSTNAME=127.0.0.1 PORT=3000 NODE_ENV=production node apps/web/server.js; rc=$?; echo "[start.sh] web pane exited (rc=$rc) — respawning in 3s"; sleep 3; done' C-m
+# NOTE: the `cd` runs in a subshell `( ... )` so the loop's CWD stays at
+# $SCRIPT_DIR every iteration — a bare relative `cd apps/web/.next/standalone`
+# would fail on the 2nd+ respawn (CWD already inside standalone) and fast-spin.
+tmux send-keys -t "${SESSION}:web" 'while true; do ( cd apps/web/.next/standalone && HOSTNAME=127.0.0.1 PORT=3000 NODE_ENV=production node apps/web/server.js ); rc=$?; echo "[start.sh] web pane exited (rc=$rc) — respawning in 3s"; sleep 3; done' C-m
 
 tmux new-window -t "$SESSION" -n ws
 tmux send-keys -t "${SESSION}:ws" 'while true; do pnpm --filter @doable/ws dev; rc=$?; echo "[start.sh] ws pane exited (rc=$rc) — respawning in 3s"; sleep 3; done' C-m
