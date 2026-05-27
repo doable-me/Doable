@@ -549,8 +549,19 @@ if true; then
     uid=$((10000 + i))
     user="doable-dev-$i"
     if ! id "$user" &>/dev/null; then
-      useradd --system --no-create-home --shell /usr/sbin/nologin \
-        --uid "$uid" --user-group "$user" 2>/dev/null || true
+      # Pin the matching group's GID to the UID (10000+i, well above the
+      # system range). Do NOT use `--system --user-group` here: that pins the
+      # UID (10001+) but lets useradd auto-allocate the per-user group's GID
+      # from the SYSTEM range (100-999, SYS_GID_MIN..MAX). That range holds
+      # only ~900 entries, so a 1000-iteration pool both fails partway AND
+      # EXHAUSTS the system GID range — after which every `groupadd --system`
+      # on the host (docker's postinst `addgroup --system docker`, postgres,
+      # any future service) fails with "No GID is available in the range
+      # 100-999" and its package install aborts. Pinning gid=uid (>999) keeps
+      # the entire system GID range free for real system services.
+      groupadd -g "$uid" "$user" 2>/dev/null || true
+      useradd --no-create-home --shell /usr/sbin/nologin \
+        --uid "$uid" --gid "$uid" "$user" 2>/dev/null || true
     fi
   done
 

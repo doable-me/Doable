@@ -203,17 +203,42 @@ if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
   sleep 5
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  # Ubuntu ships compose v2 as `docker-compose-v2`; Docker Inc.'s official
-  # repo (which ubuntu may have layered in) calls the same plugin
-  # `docker-compose-plugin`. Try both names — first match wins.
   apt-get install -y -qq docker.io
-  if ! apt-get install -y -qq docker-compose-v2 2>/dev/null; then
-    apt-get install -y -qq docker-compose-plugin 2>/dev/null || {
-      error "Could not install docker compose v2 (tried docker-compose-v2 + docker-compose-plugin). Install manually: https://docs.docker.com/compose/install/"
-      exit 1
-    }
+  # Compose v2: Ubuntu packages the plugin as `docker-compose-v2`; Docker
+  # Inc.'s official apt repo calls it `docker-compose-plugin`. Debian's stock
+  # repos (bookworm) ship NEITHER — only the deprecated v1 `docker-compose`
+  # python script — so on a fresh Debian box BOTH apt names miss and the
+  # one-liner used to hard-fail with "Could not install docker compose v2".
+  # Try the apt plugin names first (fast, distro-managed), then fall back to
+  # the official static plugin binary from github.com/docker/compose so
+  # `docker compose` works identically on Debian, Ubuntu, and derivatives
+  # without layering in Docker's apt repo.
+  if ! docker compose version >/dev/null 2>&1 \
+     && ! apt-get install -y -qq docker-compose-v2 2>/dev/null \
+     && ! apt-get install -y -qq docker-compose-plugin 2>/dev/null; then
+    warn "No compose v2 apt package on this distro — installing the official plugin binary."
+    COMPOSE_PLUGIN_DIR="/usr/local/lib/docker/cli-plugins"
+    mkdir -p "$COMPOSE_PLUGIN_DIR"
+    case "$(uname -m)" in
+      x86_64|amd64)  COMPOSE_ARCH=x86_64 ;;
+      aarch64|arm64) COMPOSE_ARCH=aarch64 ;;
+      armv7l)        COMPOSE_ARCH=armv7 ;;
+      *)             COMPOSE_ARCH=x86_64 ;;
+    esac
+    COMPOSE_VERSION="${DOABLE_COMPOSE_VERSION:-v2.29.7}"
+    COMPOSE_URL="https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}"
+    command -v curl >/dev/null 2>&1 || apt-get install -y -qq curl 2>/dev/null || true
+    if curl -fsSL "$COMPOSE_URL" -o "$COMPOSE_PLUGIN_DIR/docker-compose" 2>/dev/null \
+       || wget -qO "$COMPOSE_PLUGIN_DIR/docker-compose" "$COMPOSE_URL" 2>/dev/null; then
+      chmod +x "$COMPOSE_PLUGIN_DIR/docker-compose"
+    fi
   fi
   systemctl enable --now docker
+  if ! docker compose version >/dev/null 2>&1; then
+    error "Could not install docker compose v2 (apt plugin packages absent and the official plugin-binary download failed)."
+    error "Install it manually: https://docs.docker.com/compose/install/linux/  then re-run this script."
+    exit 1
+  fi
   ok "Docker $(docker --version 2>/dev/null || echo '?') + compose $(docker compose version 2>/dev/null | head -1 || echo '?') installed"
 fi
 
