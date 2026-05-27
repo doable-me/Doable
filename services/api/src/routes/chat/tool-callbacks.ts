@@ -156,7 +156,8 @@ function persistViewerToProject(
     else console.error(`[tool-callbacks] persistViewerToProject: presentation-builder missing html bytes — skipped`);
   } else if (resourceUri.includes("pdf-builder/build")) {
     const pdfUrl = urlByExt.get("pdf");
-    if (pdfUrl) writeIndex(buildPdfViewerHtml(pdfUrl), "pdf");
+    const htmlUrl = urlByExt.get("html");
+    if (pdfUrl) writeIndex(buildPdfViewerHtml({ pdfUrl, htmlUrl }), "pdf");
     else console.error(`[tool-callbacks] persistViewerToProject: pdf-builder missing pdf url — skipped`);
   } else if (resourceUri.includes("markdown-builder/build")) {
     const htmlBytes = bytesByExt.get("html");
@@ -170,11 +171,29 @@ function persistViewerToProject(
   }
 }
 
-/** Project-preview HTML for PDFs — renders pages via PDF.js (works inside a sandboxed iframe, unlike <embed>). */
-function buildPdfViewerHtml(pdfUrl: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Document preview</title><script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script><style>html,body{margin:0;padding:0;min-height:100%;background:#1a1a1a;color:#eaeaea;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}.bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#0f0f12;border-bottom:1px solid #27272a;position:sticky;top:0;z-index:10}.pages{display:flex;flex-direction:column;align-items:center;gap:14px;padding:14px}.pages canvas{max-width:100%;height:auto;background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.4)}.msg{padding:30px 16px;text-align:center;color:#a1a1aa;font-size:14px}.err{color:#f87171}@media (prefers-color-scheme:light){html,body{background:#f1f5f9;color:#0f172a}.bar{background:#fff;border-bottom-color:#e2e8f0;color:#0f172a}}</style></head><body><div class="bar"><span>📄 PDF preview</span></div><div id="pages" class="pages"><div class="msg">Loading PDF…</div></div><script>
+/**
+ * Project-preview HTML for PDFs — mirrors the spreadsheet viewer's contract so a
+ * PDF build surfaces a real, usable document in the editor preview (not the
+ * default scaffold splash). Two things matter and both used to be missing:
+ *
+ *   1. A visible "Download PDF" button (and the source .html when available).
+ *      The user's prompt explicitly asks for one; the spreadsheet viewer has
+ *      its ⬇ XLSX / ⬇ CSV bar links, the PDF viewer had none.
+ *   2. A render path that actually works inside a sandboxed Vite preview iframe.
+ *      The browser's native PDF plugin (an <iframe>/<object> pointed at the
+ *      artifact URL) is the reliable primary view — it does not depend on a
+ *      CDN script load. PDF.js stays as a progressive enhancement: when it
+ *      loads it paints crisp canvas pages on top; if the CDN is blocked or the
+ *      script fails, the native viewer underneath is already showing the doc.
+ */
+function buildPdfViewerHtml({ pdfUrl, htmlUrl }: { pdfUrl: string; htmlUrl?: string }): string {
+  const htmlLink = htmlUrl
+    ? `<a href="${htmlUrl}" download style="margin-left:12px">⬇ HTML</a>`
+    : "";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Document preview</title><script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script><style>html,body{margin:0;padding:0;min-height:100%;background:#1a1a1a;color:#eaeaea;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}.bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#0f0f12;border-bottom:1px solid #27272a;position:sticky;top:0;z-index:10}.bar a{color:#fff;text-decoration:none;font-weight:600}.bar a:hover{text-decoration:underline}.viewer{width:100%;height:calc(100vh - 44px);border:0;display:block;background:#525659}.pages{display:none;flex-direction:column;align-items:center;gap:14px;padding:14px}.pages canvas{max-width:100%;height:auto;background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.4)}.pages.active{display:flex}.viewer.hidden{display:none}.msg{padding:30px 16px;text-align:center;color:#a1a1aa;font-size:14px}.err{color:#f87171}@media (prefers-color-scheme:light){html,body{background:#f1f5f9;color:#0f172a}.bar{background:#fff;border-bottom-color:#e2e8f0;color:#0f172a}}</style></head><body><div class="bar"><span>📄 PDF preview</span><span><a href="${pdfUrl}" download>⬇ PDF</a>${htmlLink}</span></div><iframe id="native" class="viewer" title="PDF preview" src="${pdfUrl}"></iframe><div id="pages" class="pages"></div><script>
 (async () => {
   const wrap = document.getElementById("pages");
+  const native = document.getElementById("native");
   try {
     if (!window.pdfjsLib) throw new Error("pdf.js failed to load");
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
@@ -189,8 +208,14 @@ function buildPdfViewerHtml(pdfUrl: string): string {
       wrap.appendChild(canvas);
       await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
     }
+    // PDF.js succeeded — swap to the crisp canvas render and drop the native frame.
+    native.classList.add("hidden");
+    wrap.classList.add("active");
   } catch (e) {
-    wrap.innerHTML = '<div class="msg err">Failed to render PDF inline: ' + (e && e.message || e) + '<br><br>Use the download link in the chat to open the file directly.</div>';
+    // PDF.js unavailable (CDN blocked / script failed) — the native <iframe>
+    // above is already showing the document, so just leave it in place. The
+    // ⬇ PDF download button in the bar is always available regardless.
+    console.warn("[pdf-viewer] inline PDF.js render unavailable, using native viewer:", e && e.message || e);
   }
 })();
 </script></body></html>`;
