@@ -11,6 +11,6 @@ CREATE TABLE IF NOT EXISTS project_files (
   UNIQUE(project_id, file_path)
 );
 
-CREATE INDEX idx_project_files_project_id ON project_files(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
 
 GRANT ALL PRIVILEGES ON project_files TO doable;

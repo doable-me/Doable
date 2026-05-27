@@ -56,6 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_credit_usage_log_user_created
     ON credit_usage_log (user_id, created_at DESC);
 
 -- ─── Updated-at Trigger ──────────────────────────────────────
+DROP TRIGGER IF EXISTS trg_credit_balances_updated_at ON credit_balances;
 CREATE TRIGGER trg_credit_balances_updated_at
     BEFORE UPDATE ON credit_balances
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();

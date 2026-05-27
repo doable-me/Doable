@@ -26,6 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_uap_workspace ON user_ai_preferences(workspace_id
 CREATE INDEX IF NOT EXISTS idx_uap_user     ON user_ai_preferences(user_id);
 
 -- ─── Updated-at Trigger ───────────────────────────────────────
+DROP TRIGGER IF EXISTS trg_uap_updated ON user_ai_preferences;
 CREATE TRIGGER trg_uap_updated
     BEFORE UPDATE ON user_ai_preferences
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();

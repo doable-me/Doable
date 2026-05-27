@@ -1,16 +1,18 @@
 -- Custom domains for published projects (Pro+ feature)
 -- Integrates with Cloudflare for SaaS (Custom Hostnames API) for SSL and routing.
 
-CREATE TYPE custom_domain_status AS ENUM (
-  'pending',        -- domain added, waiting for DNS verification
-  'verifying',      -- DNS records detected, verification in progress
-  'ssl_pending',    -- domain verified, SSL certificate being provisioned
-  'active',         -- fully active, SSL valid, serving traffic
-  'failed',         -- verification or SSL provisioning failed
-  'removing'        -- removal in progress
-);
+DO $$ BEGIN
+  CREATE TYPE custom_domain_status AS ENUM (
+    'pending',        -- domain added, waiting for DNS verification
+    'verifying',      -- DNS records detected, verification in progress
+    'ssl_pending',    -- domain verified, SSL certificate being provisioned
+    'active',         -- fully active, SSL valid, serving traffic
+    'failed',         -- verification or SSL provisioning failed
+    'removing'        -- removal in progress
+  );
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE TABLE custom_domains (
+CREATE TABLE IF NOT EXISTS custom_domains (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id            uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   domain                text NOT NULL,
@@ -28,13 +30,13 @@ CREATE TABLE custom_domains (
 );
 
 -- Each domain is globally unique
-CREATE UNIQUE INDEX idx_custom_domains_domain ON custom_domains (domain);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_domains_domain ON custom_domains (domain);
 
 -- Fast lookup by project
-CREATE INDEX idx_custom_domains_project ON custom_domains (project_id);
+CREATE INDEX IF NOT EXISTS idx_custom_domains_project ON custom_domains (project_id);
 
 -- Find domains needing verification polling
-CREATE INDEX idx_custom_domains_pending ON custom_domains (status) WHERE status IN ('pending', 'verifying', 'ssl_pending');
+CREATE INDEX IF NOT EXISTS idx_custom_domains_pending ON custom_domains (status) WHERE status IN ('pending', 'verifying', 'ssl_pending');
 
 -- Trigger: auto-update updated_at
 CREATE OR REPLACE FUNCTION update_custom_domains_timestamp()
@@ -45,6 +47,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_custom_domains_updated ON custom_domains;
 CREATE TRIGGER trg_custom_domains_updated
   BEFORE UPDATE ON custom_domains
   FOR EACH ROW EXECUTE FUNCTION update_custom_domains_timestamp();
