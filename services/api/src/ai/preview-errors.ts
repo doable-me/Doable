@@ -34,6 +34,27 @@ export function isDoableResolveTransient(raw: string): boolean {
 }
 
 /**
+ * Vite's HMR client logs a websocket-connect failure (and may flash a transient
+ * "server connection lost" overlay) when its live-reload websocket cannot reach
+ * the dev server. In TUNNEL MODE the preview is served cross-origin through
+ * cloudflared → api :4000 → per-project Vite, and the HMR ws relay
+ * (wss://<domain>/preview/<id>/__hmr) can be momentarily unreachable during the
+ * sandboxed cross-origin handshake. This is a CONNECTIVITY/INFRA condition, not
+ * a code/render defect — the app is already mounted and rendering. Surfacing it
+ * to the self-heal loop is a false positive: the model correctly concludes
+ * "infrastructure issue, not a code issue", can't fix it, and burns all
+ * MAX_FIX_ATTEMPTS, then the editor shows the scary "Auto-fix paused" banner.
+ * Match the HMR-ws-connect shape so callers can drop it when the app is mounted.
+ */
+export const HMR_WS_CONNECT_RE =
+  /failed to connect to websocket|\[vite\][^\n]*websocket|server connection lost|websocket connection[^\n]*fail/i;
+
+/** True when `text` is (only) the benign Vite HMR websocket-connect failure. */
+export function isHmrWsConnectError(text: string): boolean {
+  return HMR_WS_CONNECT_RE.test(text);
+}
+
+/**
  * Detect if HTML contains Vite's error overlay markup.
  * Returns the extracted error message or null.
  */
@@ -267,6 +288,16 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
         const runtime = await probePreviewRuntime(`${base}/`);
         if (runtime) {
           if (isDoableResolveTransient(runtime.message) && (await doableImportNowResolves(base, runtime.message))) {
+            return null;
+          }
+          // TUNNEL-MODE FALSE POSITIVE: a client-injected overlay that is only the
+          // Vite HMR websocket-connect failure means HMR couldn't reach the dev
+          // server through the cross-origin tunnel — the app itself is mounted and
+          // rendering. probePreviewRuntime only returns kind:"overlay" when #root
+          // has content (the blank-root branch handles an empty root separately),
+          // so this is purely a connectivity warning. Do NOT treat it as a preview
+          // error or the self-heal loop burns MAX_FIX_ATTEMPTS on an infra issue.
+          if (runtime.kind === "overlay" && isHmrWsConnectError(runtime.message)) {
             return null;
           }
           return {

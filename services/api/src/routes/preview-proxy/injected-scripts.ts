@@ -348,8 +348,29 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
     }, '*');
   }
 
+  // TUNNEL-MODE FALSE POSITIVE: Vite's HMR client logs "[vite] failed to connect
+  // to websocket" (via console.error) and may flash a transient "server connection
+  // lost" overlay when its live-reload websocket can't reach the dev server. In
+  // tunnel mode the preview is served cross-origin (cloudflared -> api -> per-project
+  // Vite) and the HMR ws relay can be momentarily unreachable through the sandboxed
+  // cross-origin handshake. This is a connectivity/infra warning, NOT a code/render
+  // defect — the app is already mounted and rendering. Reporting it to the editor's
+  // auto-fix loop is a false positive: the model can't fix infra, so it burns all
+  // attempts and the user sees "Auto-fix paused ... after N attempts". Drop it when
+  // the app has actually mounted content (#root has children or the body has text).
+  var HMR_WS_RE = /failed to connect to websocket|\\[vite\\][^\\n]*websocket|server connection lost|websocket connection[^\\n]*fail/i;
+  function appMounted() {
+    try {
+      var root = document.getElementById('root');
+      if (root && root.children && root.children.length > 0) return true;
+      var bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
+      return bodyText.replace(/\\s+/g, '').length > 0;
+    } catch (e) { return false; }
+  }
+
   function captureError(msg, source, line, col, stack) {
     if (msg && (msg.includes('ResizeObserver') || msg.includes('Script error') && !source)) return;
+    if (msg && HMR_WS_RE.test(String(msg)) && appMounted()) return;
     errors.push({
       message: String(msg || 'Unknown error'),
       source: source || '',

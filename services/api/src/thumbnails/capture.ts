@@ -28,6 +28,18 @@ declare const document: {
 const THUMBNAILS_DIR = path.resolve("thumbnails");
 const VIEWPORT = { width: 1280, height: 720 };
 
+// TUNNEL-MODE FALSE POSITIVE: Vite's HMR client logs a websocket-connect failure
+// (and may flash a transient "server connection lost" overlay) when its live-reload
+// websocket can't reach the dev server. In tunnel mode the preview is served
+// cross-origin via cloudflared → api → per-project Vite, and the HMR ws relay can be
+// momentarily unreachable during the sandboxed cross-origin handshake. This is a
+// connectivity/infra condition, NOT a code/render defect — the app is already mounted
+// and rendering. We must ignore it so the self-heal loop doesn't burn MAX_FIX_ATTEMPTS
+// (and the thumbnail capture isn't skipped) for a benign HMR warning.
+// Defined locally to avoid importing from ai/preview-errors.ts (which imports this module).
+const HMR_WS_CONNECT_RE =
+  /failed to connect to websocket|\[vite\][^\n]*websocket|server connection lost|websocket connection[^\n]*fail/i;
+
 const BROWSER_LAUNCH_TIMEOUT_MS = 30_000;
 // Hard ceiling on a single capture (goto + settle + health-check + screenshot).
 // On timeout we force-close the page so headless Chrome can NEVER stick around.
@@ -115,6 +127,27 @@ function touchIdleTimer(): void {
 async function isPreviewHealthy(page: import("puppeteer").Page): Promise<boolean> {
   try {
     const hasError = await page.evaluate(() => {
+      // TUNNEL-MODE FALSE POSITIVE: a Vite error overlay whose text is ONLY the
+      // HMR websocket-connect failure is a connectivity/infra warning (the HMR
+      // ws couldn't reach the dev server through the cross-origin tunnel), not a
+      // render defect. If the app still mounted content, treat it as healthy.
+      const hmrWsRe = /failed to connect to websocket|\[vite\][^\n]*websocket|server connection lost|websocket connection[^\n]*fail/i;
+      const overlayEl = document.querySelector("vite-error-overlay") as unknown as {
+        shadowRoot?: { querySelector(s: string): { textContent: string | null } | null };
+        textContent?: string | null;
+      } | null;
+      if (overlayEl) {
+        const overlayText = (
+          overlayEl.shadowRoot?.querySelector(".message")?.textContent ??
+          overlayEl.textContent ??
+          ""
+        );
+        const rootEl = document.getElementById("root");
+        const mounted =
+          (rootEl?.children.length ?? 0) > 0 || (document.body?.innerText ?? "").trim().length > 0;
+        // Only this overlay AND the app is mounted → benign HMR warning, healthy.
+        if (hmrWsRe.test(overlayText) && mounted) return false;
+      }
       // Check for Vite error overlay custom element
       if (document.querySelector("vite-error-overlay")) return true;
       // Check for error overlay class patterns
@@ -310,7 +343,7 @@ export async function probePreviewRuntime(
     // Let React mount + any HMR error overlay get injected before inspecting.
     await new Promise((r) => setTimeout(r, 1200));
 
-    return await page.evaluate(() => {
+    const result = await page.evaluate(() => {
       // 1. Client-injected Vite error overlay (the import-analysis / transform
       //    case that the server-side fetch can't see). The overlay is a custom
       //    element whose error text lives inside its shadow DOM.
@@ -346,6 +379,17 @@ export async function probePreviewRuntime(
       }
       return null;
     });
+
+    // TUNNEL-MODE FALSE POSITIVE: an overlay that is ONLY the Vite HMR
+    // websocket-connect failure is a connectivity/infra warning, not a render
+    // defect. The blank-root branch above already handles a genuinely empty
+    // #root, so a kind:"overlay" result here means the app mounted with content.
+    // Treat the HMR-ws overlay as healthy (return null) so it never reaches the
+    // self-heal loop or skips a thumbnail.
+    if (result && result.kind === "overlay" && HMR_WS_CONNECT_RE.test(result.message)) {
+      return null;
+    }
+    return result;
   })();
 
   try {
