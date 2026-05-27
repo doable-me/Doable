@@ -32,8 +32,16 @@ for (const k of DB_ENV_KEYS) delete process.env[k];
 const cfg = await import("../config.js");
 
 describe("data-worker/config defaults", () => {
-  it("ENABLED defaults to false", () => {
-    assert.equal(cfg.DOABLE_APP_DB_ENABLED, false);
+  it("ENABLED defaults to true when unset (only explicit '0' disables)", () => {
+    assert.equal(cfg.DOABLE_APP_DB_ENABLED, true);
+  });
+
+  it("ENABLED is false only when explicitly set to '0'", async () => {
+    process.env.DOABLE_APP_DB_ENABLED = "0";
+    // Cache-busting query string forces a fresh module load so the env read re-runs.
+    const disabled = await import("../config.js?disabled");
+    assert.equal(disabled.DOABLE_APP_DB_ENABLED, false);
+    delete process.env.DOABLE_APP_DB_ENABLED;
   });
 
   it("IDLE_MS defaults to 600000", () => {

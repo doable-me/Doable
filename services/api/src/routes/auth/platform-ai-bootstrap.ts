@@ -215,18 +215,23 @@ export async function applyPlatformAiDefault(
   // admin only provisioned a custom provider. The wizard's "use as default
   // for every plan" checkbox already mirrors these — bootstrap should match.
   const source = defaults.source as "copilot" | "custom";
+  // Never persist a provider model without its provider id. cloneProvider can
+  // return null (e.g. source provider gone); writing the model alongside a null
+  // id would seed an orphaned model that later fails resolution. Skip the
+  // model columns whenever the cloned provider id is null.
+  const providerModel = localProviderId ? defaults.provider_model : null;
   await aiSettings.upsertSettings({
     workspaceId,
     defaultSource: source,
     defaultCopilotAccountId: localCopilotId,
     defaultCopilotModel: defaults.copilot_model,
     defaultProviderId: localProviderId,
-    defaultProviderModel: defaults.provider_model,
+    defaultProviderModel: providerModel,
     suggestionSource: source,
     suggestionCopilotAccountId: localCopilotId,
     suggestionCopilotModel: defaults.copilot_model,
     suggestionProviderId: localProviderId,
-    suggestionProviderModel: defaults.provider_model,
+    suggestionProviderModel: providerModel,
     updatedBy: ownerId,
   });
 

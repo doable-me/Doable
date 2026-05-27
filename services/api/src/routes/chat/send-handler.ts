@@ -121,6 +121,33 @@ async function assertToolCapableModel(providerId: string | undefined, modelId: s
   }
 }
 
+// modelSource values that mean a model was selected from a CUSTOM / BYOK /
+// workspace / personal / platform-default origin — i.e. NOT the gh-copilot/CLI
+// path. For these, an orphaned model (provider removed → provider_id nulled by
+// ON DELETE SET NULL) must FAIL LOUDLY rather than silently borrow the CLI path.
+const PROVIDER_BACKED_MODEL_SOURCES = new Set([
+  "user_preference",
+  "workspace_default",
+  "platform_default",
+  "admin_override",
+]);
+
+/**
+ * Sibling to assertToolCapableModel: enforces that a non-empty model resolved
+ * from a provider-backed source actually has a resolved provider. Guards the
+ * orphaned-model case (model string left behind after its provider was deleted)
+ * that assertToolCapableModel no-ops past because providerId is undefined.
+ */
+function assertModelHasProvider(
+  resolvedModel: string | undefined,
+  resolvedProvider: ByokProviderConfig | undefined,
+  modelSource: string,
+): void {
+  if (resolvedModel && !resolvedProvider && PROVIDER_BACKED_MODEL_SOURCES.has(modelSource)) {
+    throw new Error(`No AI provider configured for the selected model "${resolvedModel}". Open AI Settings and pick a model from a connected provider.`);
+  }
+}
+
 const sendMessageSchema = z.object({
   // BUG-AI-002: trim before length check so "   \n\t  " is rejected as empty
   // rather than silently passing validation, scaffolding, and burning a credit.
@@ -192,7 +219,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           if (created) {
             chatProject = await projectQueries(sql).findById(projectId);
             // US-011: register builtin doable.data MCP connector for the new project.
-            if (process.env.DOABLE_APP_DB_ENABLED === "1") {
+            if (process.env.DOABLE_APP_DB_ENABLED !== "0") {
               ensureDataConnectorForProject(projectId, wsId, userId).catch((err) => {
                 console.error("[builtin-data] Failed to provision data connector:", err);
               });
@@ -500,6 +527,11 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           const workspaceId: string | undefined = workspaceRow[0]?.workspace_id;
 
           await assertToolCapableModel(resolvedProviderId, resolvedModel);
+          // Sibling guard to assertToolCapableModel (which no-ops when
+          // providerId is undefined): a non-empty model from a provider-backed
+          // source MUST have a resolved provider. Catches the orphaned-model
+          // case regardless of any incidental github token state.
+          assertModelHasProvider(resolvedModel, resolvedProvider, modelSource);
 
           state.usageCollector = workspaceId ? createUsageCollector({ userId, workspaceId, projectId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", byokProviderId: providerId, mode }) : null;
           state.traceCollector = workspaceId ? createTraceCollector({ projectId, userId, workspaceId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", model: resolvedModel }) : null;
@@ -508,6 +540,18 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           state.traceCollector?.recordUserMessage(augmentedContent);
 
           if (!resolvedProvider && !resolvedGithubToken) {
+            // Fail loudly on an ORPHANED model: a model string resolved from a
+            // custom/BYOK/workspace/personal/platform-default source whose
+            // provider was removed (provider_id nulled by ON DELETE SET NULL).
+            // This must throw EVEN when CLI fallback would be available, so an
+            // orphaned custom model can never silently borrow the gh-CLI path.
+            // Only the genuine copilot/CLI source (modelSource NOT in the
+            // provider-backed set) is allowed to fall through to CLI fallback.
+            if (resolvedModel && PROVIDER_BACKED_MODEL_SOURCES.has(modelSource)) {
+              const orphanMsg = `No AI provider configured for the selected model "${resolvedModel}". Open AI Settings and pick a model from a connected provider.`;
+              state.traceCollector?.onError(orphanMsg, "AUTH", "orphaned_model_no_provider");
+              throw new Error(orphanMsg);
+            }
             // CLI fallback: only allow the workspace owner to use the local
             // `gh` CLI auth in dev mode. Other users must have a configured
             // provider (workspace default, platform default, or personal

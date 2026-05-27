@@ -9,9 +9,9 @@
 
 // ─── Feature flag ────────────────────────────────────────────
 
-/** Master switch — gates /__doable/ai/* mount and the AI prompt block. */
+/** Master switch — gates /__doable/ai/* mount and the AI prompt block. ON by default; set DOABLE_APP_AI_ENABLED=0 to disable. */
 export const DOABLE_APP_AI_ENABLED: boolean =
-  process.env.DOABLE_APP_AI_ENABLED === "1";
+  process.env.DOABLE_APP_AI_ENABLED !== "0";
 
 // ─── Token / payload limits (per call) ───────────────────────
 

@@ -359,6 +359,18 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
   // attempts and the user sees "Auto-fix paused ... after N attempts". Drop it when
   // the app has actually mounted content (#root has children or the body has text).
   var HMR_WS_RE = /failed to connect to websocket|\\[vite\\][^\\n]*websocket|server connection lost|websocket connection[^\\n]*fail/i;
+  // CONNECTOR-AUTH FALSE POSITIVE: @doable/data and @doable/ai authenticate with
+  // a connector JWT (globalThis.__DOABLE_DATA_TOKEN) that the bridge injects
+  // ASYNCHRONOUSLY. An app's on-mount call can fire before the token lands, so
+  // the first request gets HTTP 401 and the app logs it (e.g. console.error(
+  // r.error.message)) or @doable/ai throws. The SDKs wait/retry and the call
+  // succeeds once the token arrives — the app actually works. Reporting this
+  // transient auth-timing artifact (plus RATE_LIMITED / BUDGET_EXCEEDED quota
+  // surfaces, which are also not code defects) to the auto-fix loop is a false
+  // positive: the model can't fix an auth/quota timing issue, so it burns all
+  // attempts and the user sees "Auto-fix paused ... after N attempts". Scoped to
+  // connector-surface strings so generic app text is not over-matched.
+  var CONNECTOR_AUTH_RE = /unauthorized|missing authorization|invalid or expired token|__doable\\/(data|ai)|\\bRATE_LIMITED\\b|\\bBUDGET_EXCEEDED\\b/i;
   function appMounted() {
     try {
       var root = document.getElementById('root');
@@ -371,6 +383,7 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
   function captureError(msg, source, line, col, stack) {
     if (msg && (msg.includes('ResizeObserver') || msg.includes('Script error') && !source)) return;
     if (msg && HMR_WS_RE.test(String(msg)) && appMounted()) return;
+    if (msg && CONNECTOR_AUTH_RE.test(String(msg))) return;
     errors.push({
       message: String(msg || 'Unknown error'),
       source: source || '',

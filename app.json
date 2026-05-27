@@ -33,6 +33,14 @@
       "description": "ISO8601 UTC timestamp for token expiry (recommended: install time + 24h)",
       "value": ""
     },
+    "DOABLE_APP_DB_ENABLED": {
+      "description": "Per-app database (PGlite via /__doable/data/* + doable.data MCP). ON by default; set to 0 to disable.",
+      "value": "1"
+    },
+    "DOABLE_APP_AI_ENABLED": {
+      "description": "Per-app AI runtime (/__doable/ai/* + @doable/ai SDK). ON by default; set to 0 to disable.",
+      "value": "1"
+    },
     "ANTHROPIC_API_KEY": { "description": "Anthropic Claude API key (optional). Pre-configures the wizard's AI step.", "required": false },
     "OPENAI_API_KEY": { "description": "OpenAI API key (optional). Pre-configures the wizard's AI step.", "required": false },
     "GEMINI_API_KEY": { "description": "Google Gemini API key (optional).", "required": false },

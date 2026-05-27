@@ -70,8 +70,8 @@ export async function buildProjectContext(projectId: string): Promise<string> {
  */
 function preInstalledDepsLine(): string {
   const pre = ["@doable/sdk"];
-  if (process.env["DOABLE_APP_DB_ENABLED"] === "1") pre.push("@doable/data");
-  if (process.env["DOABLE_APP_AI_ENABLED"] === "1") pre.push("@doable/ai");
+  if (process.env["DOABLE_APP_DB_ENABLED"] !== "0") pre.push("@doable/data");
+  if (process.env["DOABLE_APP_AI_ENABLED"] !== "0") pre.push("@doable/ai");
   return `\nPre-installed (do NOT install, do NOT add to package.json): ${pre.join(", ")}`;
 }
 
@@ -205,7 +205,7 @@ export async function buildProjectContextForMode(
   // ── Per-app database prompt addendum ──
   // Injected right after the connected-integrations manifest so the AI sees
   // data.* tools in the same context block as other connectors.
-  if (process.env["DOABLE_APP_DB_ENABLED"] === "1") {
+  if (process.env["DOABLE_APP_DB_ENABLED"] !== "0") {
     const { buildAppDbContext } = await import("./app-db-prompt.js");
     const appDbBlock = buildAppDbContext();
     if (appDbBlock) {
@@ -218,7 +218,7 @@ export async function buildProjectContextForMode(
   // per-app DB pattern above. When DOABLE_APP_AI_ENABLED is on, the block is
   // appended after the DB block so the AI knows about both SDKs and can
   // emit RAG recipes that combine @doable/ai + @doable/data.
-  if (process.env["DOABLE_APP_AI_ENABLED"] === "1") {
+  if (process.env["DOABLE_APP_AI_ENABLED"] !== "0") {
     const { buildAppAiContext } = await import("./app-ai-prompt.js");
     const appAiBlock = buildAppAiContext();
     if (appAiBlock) {

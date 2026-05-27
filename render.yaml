@@ -33,6 +33,9 @@ services:
     envVars:
       - { key: DATABASE_URL, fromDatabase: { name: doable-db, property: connectionString } }
       - { key: NODE_ENV, value: production }
+      # Per-app database + AI runtime. ON by default; set to "0" to disable.
+      - { key: DOABLE_APP_DB_ENABLED, value: "1" }
+      - { key: DOABLE_APP_AI_ENABLED, value: "1" }
       - { key: API_PORT, value: "4000" }
       - { key: API_HOST, value: "0.0.0.0" }
       - { key: WS_PORT, value: "4001" }

@@ -102,7 +102,7 @@ async function loadMcpTools(
     // turn loads tools through — guarantees the connector exists whenever the
     // feature is on, no matter how the project was created. Idempotent and
     // gated by a cheap indexed lookup so it only writes once per project.
-    if (process.env.DOABLE_APP_DB_ENABLED === "1" && userId) {
+    if (process.env.DOABLE_APP_DB_ENABLED !== "0" && userId) {
       try {
         const [existing] = await sql<Array<{ one: number }>>`
           SELECT 1 AS one FROM mcp_connectors

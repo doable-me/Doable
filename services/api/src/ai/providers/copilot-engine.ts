@@ -154,7 +154,7 @@ function denyDataStoreMisuse(
   toolName: string,
   toolArgs: unknown,
 ): { permissionDecision: "deny"; permissionDecisionReason: string } | undefined {
-  if (process.env.DOABLE_APP_DB_ENABLED !== "1") return undefined;
+  if (process.env.DOABLE_APP_DB_ENABLED === "0") return undefined;
   if (!FILE_WRITE_TOOLS.has(toolName)) return undefined;
   const a = toolArgs as Record<string, unknown> | undefined;
   if (!a) return undefined;

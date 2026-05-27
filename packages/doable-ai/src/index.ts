@@ -87,6 +87,11 @@ export interface AiError extends Error {
 
 // ── Client ─────────────────────────────────────────────────────────────────
 
+/** Max time to wait for a runtime-injected token before giving up (ms). */
+const TOKEN_WAIT_MS = 5000;
+/** Poll interval while waiting for the token global to be populated (ms). */
+const TOKEN_POLL_MS = 50;
+
 export class DoableAiClient {
   private opts: AiClientOptions;
 
@@ -108,20 +113,38 @@ export class DoableAiClient {
     messages: ChatMessage[],
     opts: ChatOptions = {},
   ): AsyncGenerator<string, ChatResult, undefined> {
-    const token = this._resolveToken();
+    // Resolve token, awaiting a bounded window for the bridge to inject it so an
+    // on-mount call doesn't race the (async) token arrival and send an empty
+    // Bearer. No-op when a token is already present.
+    let token = await this._resolveToken();
     const url = `${this.opts.baseUrl ?? ""}/__doable/ai/chat`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        messages,
-        stream: true,
-        max_tokens: opts.max_tokens,
-      }),
-    });
+    const doFetch = (bearer: string) =>
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "authorization": `Bearer ${bearer}`,
+        },
+        body: JSON.stringify({
+          messages,
+          stream: true,
+          max_tokens: opts.max_tokens,
+        }),
+      });
+
+    let res = await doFetch(token);
+
+    // If we sent an empty token (token arrived after _resolveToken gave up) or
+    // the server rejected an in-flight/expired token with 401, re-resolve once
+    // and retry — by now the bridge has very likely populated the global. Only
+    // when the constructor token was empty (lazy global-bound client).
+    if ((res.status === 401 || token === "") && this.opts.token === "") {
+      const fresh = await this._resolveToken();
+      if (fresh && fresh !== token) {
+        token = fresh;
+        res = await doFetch(token);
+      }
+    }
 
     if (!res.ok || !res.body) {
       let parsed: { error?: { code: string; message: string } } = {};
@@ -216,18 +239,33 @@ export class DoableAiClient {
    * The embedding model is configured workspace-side; the app cannot pick it.
    */
   async embed(input: string | string[]): Promise<EmbedResult> {
-    const token = this._resolveToken();
+    // Resolve token, awaiting a bounded window for the bridge to inject it so an
+    // on-mount call doesn't race the (async) token arrival. No-op when present.
+    let token = await this._resolveToken();
     const texts = Array.isArray(input) ? input : [input];
 
     const url = `${this.opts.baseUrl ?? ""}/__doable/ai/embed`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify({ texts }),
-    });
+    const doFetch = (bearer: string) =>
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "authorization": `Bearer ${bearer}`,
+        },
+        body: JSON.stringify({ texts }),
+      });
+
+    let res = await doFetch(token);
+
+    // Re-resolve once and retry on a 401 (or empty initial token) when the
+    // constructor token was empty — by now the bridge has likely injected it.
+    if ((res.status === 401 || token === "") && this.opts.token === "") {
+      const fresh = await this._resolveToken();
+      if (fresh && fresh !== token) {
+        token = fresh;
+        res = await doFetch(token);
+      }
+    }
 
     let body: Partial<EmbedResult> & { error?: { code: string; message: string } } = {};
     try { body = await res.json() as typeof body; } catch { /* not JSON */ }
@@ -251,13 +289,31 @@ export class DoableAiClient {
    * for the entire data+ai plane. Token is injected at preview time by the
    * CONNECTOR_BRIDGE_SNIPPET in routes/preview-proxy/injected-scripts.ts and
    * baked into published apps by deploy/auto-api-key.ts:injectDataToken.
+   *
+   * The bridge delivers the token asynchronously, so an app's on-mount call can
+   * fire before the token lands. When that happens this method waits — bounded
+   * to TOKEN_WAIT_MS — for the global to appear instead of sending an empty
+   * Bearer (which the server rejects with 401). Fast path: when a token is
+   * already present it resolves immediately with zero added latency. SSR/no-
+   * window safe: if there is no global the loop simply times out and returns "".
    */
-  private _resolveToken(): string {
-    return (
-      this.opts.token ||
-      ((globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] as string) ||
-      ""
-    );
+  private async _resolveToken(): Promise<string> {
+    if (this.opts.token) return this.opts.token;
+
+    const readGlobal = (): string =>
+      ((globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] as string) || "";
+
+    const immediate = readGlobal();
+    if (immediate) return immediate;
+
+    // Token not here yet — bounded poll for the bridge to inject it.
+    const deadline = Date.now() + TOKEN_WAIT_MS;
+    while (Date.now() < deadline) {
+      await new Promise<void>((r) => setTimeout(r, TOKEN_POLL_MS));
+      const t = readGlobal();
+      if (t) return t;
+    }
+    return "";
   }
 }
 

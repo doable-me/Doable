@@ -40,9 +40,9 @@ describe("APP_DB_PROMPT_BLOCK content", () => {
 });
 
 describe("buildAppDbContext env gating", () => {
-  it("returns empty string when DOABLE_APP_DB_ENABLED is unset", () => {
+  it("returns the prompt block when DOABLE_APP_DB_ENABLED is unset (enabled by default)", () => {
     const result = buildAppDbContext({ env: {} });
-    assert.strictEqual(result, "");
+    assert.strictEqual(result, APP_DB_PROMPT_BLOCK);
   });
 
   it("returns empty string when DOABLE_APP_DB_ENABLED is '0'", () => {

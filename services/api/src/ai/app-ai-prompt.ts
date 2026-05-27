@@ -227,8 +227,8 @@ Extra rules:
  */
 export function buildAppAiContext(opts?: { env?: Record<string, string | undefined> }): string {
   const env = opts?.env ?? process.env;
-  if (env["DOABLE_APP_AI_ENABLED"] !== "1") return "";
-  if (env["DOABLE_APP_DB_ENABLED"] === "1") {
+  if (env["DOABLE_APP_AI_ENABLED"] === "0") return "";
+  if (env["DOABLE_APP_DB_ENABLED"] !== "0") {
     return APP_AI_PROMPT_BLOCK + "\n\n" + APP_AI_RAG_PROMPT_BLOCK;
   }
   return APP_AI_PROMPT_BLOCK;

@@ -47,6 +47,6 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
  */
 export function buildAppDbContext(opts?: { env?: Record<string, string | undefined> }): string {
   const env = opts?.env ?? process.env;
-  if (env["DOABLE_APP_DB_ENABLED"] !== "1") return "";
+  if (env["DOABLE_APP_DB_ENABLED"] === "0") return "";
   return APP_DB_PROMPT_BLOCK;
 }

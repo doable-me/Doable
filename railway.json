@@ -39,6 +39,8 @@
         "NEXT_PUBLIC_APP_URL": "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
         "CORS_ORIGINS": "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
         "NODE_ENV": "production",
+        "DOABLE_APP_DB_ENABLED": "1",
+        "DOABLE_APP_AI_ENABLED": "1",
         "ANTHROPIC_API_KEY": "",
         "OPENAI_API_KEY": "",
         "GEMINI_API_KEY": "",

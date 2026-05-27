@@ -51,9 +51,10 @@ describe("APP_AI_RAG_PROMPT_BLOCK content", () => {
 });
 
 describe("buildAppAiContext env gating", () => {
-  it("returns empty string when DOABLE_APP_AI_ENABLED is unset", () => {
+  it("returns the block when DOABLE_APP_AI_ENABLED is unset (enabled by default; DB also unset = on, so RAG appended)", () => {
     const r = buildAppAiContext({ env: {} });
-    assert.strictEqual(r, "");
+    assert.ok(r.startsWith(APP_AI_PROMPT_BLOCK), "AI block should come first");
+    assert.ok(r.includes(APP_AI_RAG_PROMPT_BLOCK), "RAG block should be appended");
   });
 
   it("returns empty string when DOABLE_APP_AI_ENABLED is '0'", () => {
@@ -62,7 +63,7 @@ describe("buildAppAiContext env gating", () => {
   });
 
   it("returns only the AI block when AI is on but DB is off", () => {
-    const r = buildAppAiContext({ env: { DOABLE_APP_AI_ENABLED: "1" } });
+    const r = buildAppAiContext({ env: { DOABLE_APP_AI_ENABLED: "1", DOABLE_APP_DB_ENABLED: "0" } });
     assert.strictEqual(r, APP_AI_PROMPT_BLOCK);
   });
 

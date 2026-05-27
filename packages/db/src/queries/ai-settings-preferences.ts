@@ -49,14 +49,24 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
       // This is load-bearing for the admin caller in services/api/src/routes/
       // admin.ts:472, which only sends a subset of fields and expects the rest
       // (including suggestion_*, source columns, etc.) to be untouched.
+      // Paired-write invariant: never persist a non-null *_provider_model with
+      // a null/empty *_provider_id. When the caller EXPLICITLY clears a
+      // provider id (null or ""), force-clear the matching model in the same
+      // write. `undefined` means "keep existing" and is left untouched so the
+      // happy path (provider + model both set) is unaffected.
+      const clearDefaultProvider = data.defaultProviderId === null || data.defaultProviderId === "";
+      const clearSuggestionProvider = data.suggestionProviderId === null || data.suggestionProviderId === "";
+      const defaultProviderModel = clearDefaultProvider ? null : data.defaultProviderModel;
+      const suggestionProviderModel = clearSuggestionProvider ? null : data.suggestionProviderModel;
+
       const keepDefaultCopilot = data.defaultCopilotAccountId === undefined;
       const keepDefaultCopilotModel = data.defaultCopilotModel === undefined;
       const keepDefaultProvider = data.defaultProviderId === undefined;
-      const keepDefaultProviderModel = data.defaultProviderModel === undefined;
+      const keepDefaultProviderModel = defaultProviderModel === undefined;
       const keepSuggestionCopilot = data.suggestionCopilotAccountId === undefined;
       const keepSuggestionCopilotModel = data.suggestionCopilotModel === undefined;
       const keepSuggestionProvider = data.suggestionProviderId === undefined;
-      const keepSuggestionProviderModel = data.suggestionProviderModel === undefined;
+      const keepSuggestionProviderModel = suggestionProviderModel === undefined;
       const keepDefaultFrameworkId = data.defaultFrameworkId === undefined;
 
       const [row] = await sql<WorkspaceAiSettingsRow[]>`
@@ -74,12 +84,12 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
           ${data.defaultCopilotAccountId ?? null},
           ${data.defaultCopilotModel ?? null},
           ${data.defaultProviderId ?? null},
-          ${data.defaultProviderModel ?? null},
+          ${defaultProviderModel ?? null},
           ${data.suggestionSource ?? "copilot"},
           ${data.suggestionCopilotAccountId ?? null},
           ${data.suggestionCopilotModel ?? null},
           ${data.suggestionProviderId ?? null},
-          ${data.suggestionProviderModel ?? null},
+          ${suggestionProviderModel ?? null},
           ${data.enforceAi ?? false},
           ${data.enforcedCopilotAccountId ?? null},
           ${data.enforcedProviderId ?? null},
@@ -103,7 +113,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
             : sql`${data.defaultProviderId ?? null}`},
           default_provider_model = ${keepDefaultProviderModel
             ? sql`workspace_ai_settings.default_provider_model`
-            : sql`${data.defaultProviderModel ?? null}`},
+            : sql`${defaultProviderModel ?? null}`},
           suggestion_source = ${data.suggestionSource !== undefined
             ? sql`${data.suggestionSource}`
             : sql`workspace_ai_settings.suggestion_source`},
@@ -118,7 +128,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
             : sql`${data.suggestionProviderId ?? null}`},
           suggestion_provider_model = ${keepSuggestionProviderModel
             ? sql`workspace_ai_settings.suggestion_provider_model`
-            : sql`${data.suggestionProviderModel ?? null}`},
+            : sql`${suggestionProviderModel ?? null}`},
           enforce_ai = EXCLUDED.enforce_ai,
           enforced_copilot_account_id = EXCLUDED.enforced_copilot_account_id,
           enforced_provider_id = EXCLUDED.enforced_provider_id,
@@ -165,14 +175,22 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
       // Same partial-update semantics as upsertSettings: undefined → keep,
       // null → clear. Both copilot and custom configs can be persisted at
       // once; the active side is selected via `source` / `suggestion_source`.
+      // Paired-write invariant (see upsertSettings): explicitly clearing a
+      // provider id (null/"") force-clears the matching model in the same
+      // write; `undefined` keeps the existing value so the happy path is intact.
+      const clearProvider = data.providerId === null || data.providerId === "";
+      const clearSuggestionProvider = data.suggestionProviderId === null || data.suggestionProviderId === "";
+      const providerModel = clearProvider ? null : data.providerModel;
+      const suggestionProviderModel = clearSuggestionProvider ? null : data.suggestionProviderModel;
+
       const keepCopilot = data.copilotAccountId === undefined;
       const keepCopilotModel = data.copilotModel === undefined;
       const keepProvider = data.providerId === undefined;
-      const keepProviderModel = data.providerModel === undefined;
+      const keepProviderModel = providerModel === undefined;
       const keepSuggestionCopilot = data.suggestionCopilotAccountId === undefined;
       const keepSuggestionCopilotModel = data.suggestionCopilotModel === undefined;
       const keepSuggestionProvider = data.suggestionProviderId === undefined;
-      const keepSuggestionProviderModel = data.suggestionProviderModel === undefined;
+      const keepSuggestionProviderModel = suggestionProviderModel === undefined;
 
       const [row] = await sql<UserAiPreferencesRow[]>`
         INSERT INTO user_ai_preferences (
@@ -188,12 +206,12 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
           ${data.copilotAccountId ?? null},
           ${data.copilotModel ?? null},
           ${data.providerId ?? null},
-          ${data.providerModel ?? null},
+          ${providerModel ?? null},
           ${data.suggestionSource ?? "copilot"},
           ${data.suggestionCopilotAccountId ?? null},
           ${data.suggestionCopilotModel ?? null},
           ${data.suggestionProviderId ?? null},
-          ${data.suggestionProviderModel ?? null}
+          ${suggestionProviderModel ?? null}
         )
         ON CONFLICT (workspace_id, user_id) DO UPDATE SET
           source = ${data.source !== undefined
@@ -210,7 +228,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
             : sql`${data.providerId ?? null}`},
           provider_model = ${keepProviderModel
             ? sql`user_ai_preferences.provider_model`
-            : sql`${data.providerModel ?? null}`},
+            : sql`${providerModel ?? null}`},
           suggestion_source = ${data.suggestionSource !== undefined
             ? sql`${data.suggestionSource}`
             : sql`user_ai_preferences.suggestion_source`},
@@ -225,7 +243,7 @@ export function aiSettingsPreferenceQueries(sql: postgres.Sql) {
             : sql`${data.suggestionProviderId ?? null}`},
           suggestion_provider_model = ${keepSuggestionProviderModel
             ? sql`user_ai_preferences.suggestion_provider_model`
-            : sql`${data.suggestionProviderModel ?? null}`},
+            : sql`${suggestionProviderModel ?? null}`},
           updated_at = now()
         RETURNING *
       `;

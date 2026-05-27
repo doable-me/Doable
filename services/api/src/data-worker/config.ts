@@ -9,9 +9,9 @@
 
 // ─── Feature flag ────────────────────────────────────────
 
-/** ch07 — Master switch. Set DOABLE_APP_DB_ENABLED=1 to enable. Default: false. */
+/** ch07 — Master switch. ON by default; set DOABLE_APP_DB_ENABLED=0 to disable. */
 export const DOABLE_APP_DB_ENABLED: boolean =
-  process.env.DOABLE_APP_DB_ENABLED === "1";
+  process.env.DOABLE_APP_DB_ENABLED !== "0";
 
 // ─── Lifecycle timers ────────────────────────────────────
 

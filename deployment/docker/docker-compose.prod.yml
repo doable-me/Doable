@@ -157,6 +157,10 @@ services:
       DOABLE_HARDENING: ${DOABLE_HARDENING:-off}
       DOABLE_HARDENING_LEVEL: ${DOABLE_HARDENING_LEVEL:-off}
       DOABLE_SANDBOX_INSTALL: ${DOABLE_SANDBOX_INSTALL:-0}
+      # Per-app database + AI runtime. ON by default; set DOABLE_APP_DB_ENABLED=0
+      # / DOABLE_APP_AI_ENABLED=0 in deployment/docker/.env to disable.
+      DOABLE_APP_DB_ENABLED: ${DOABLE_APP_DB_ENABLED:-1}
+      DOABLE_APP_AI_ENABLED: ${DOABLE_APP_AI_ENABLED:-1}
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails

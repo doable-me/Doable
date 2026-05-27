@@ -385,10 +385,50 @@ export function aiSettingsProviderQueries(sql: postgres.Sql, encryptionKey: stri
     },
 
     async deleteProvider(id: string): Promise<boolean> {
-      const result = await sql`
-        DELETE FROM ai_providers WHERE id = ${id}
-      `;
-      return result.count > 0;
+      // Provider deletion nulls dependent *_provider_id FKs via ON DELETE SET
+      // NULL, but leaves the paired *_provider_model TEXT columns orphaned
+      // (model string with no provider). Null those model columns in the SAME
+      // transaction BEFORE the delete so no orphaned model can survive and
+      // silently borrow the gh-CLI fallback path at resolve time.
+      return sql.begin(async (_tx) => {
+        const tx = _tx as unknown as postgres.Sql;
+
+        // workspace_ai_settings: default + suggestion + enforced model columns.
+        // NOTE: there is no `enforced_provider_model` column — the enforced
+        // model lives in `enforced_model` (migration 011), so we null that.
+        await tx`
+          UPDATE workspace_ai_settings
+          SET default_provider_model = NULL
+          WHERE default_provider_id = ${id}
+        `;
+        await tx`
+          UPDATE workspace_ai_settings
+          SET suggestion_provider_model = NULL
+          WHERE suggestion_provider_id = ${id}
+        `;
+        await tx`
+          UPDATE workspace_ai_settings
+          SET enforced_model = NULL
+          WHERE enforced_provider_id = ${id}
+        `;
+
+        // user_ai_preferences: primary + suggestion model columns.
+        await tx`
+          UPDATE user_ai_preferences
+          SET provider_model = NULL
+          WHERE provider_id = ${id}
+        `;
+        await tx`
+          UPDATE user_ai_preferences
+          SET suggestion_provider_model = NULL
+          WHERE suggestion_provider_id = ${id}
+        `;
+
+        const result = await tx`
+          DELETE FROM ai_providers WHERE id = ${id}
+        `;
+        return result.count > 0;
+      });
     },
   };
 }
