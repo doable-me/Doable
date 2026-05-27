@@ -41,3 +41,8 @@ tokio-postgres = { version = "0.7", features = ["with-uuid-0_8", "with-chrono-0_
 uuid = { version = "0.8", features = ["v4"] }
 chrono = "0.4"
 dotenvy = "0.15"
+
+# admin:reset-password / admin:create-owner — argon2id hashing matching
+# services/api/src/routes/auth/helpers.ts ARGON2_OPTS so the Node `argon2`
+# lib verifies CLI-set passwords. No rand crate needed: we feed our own salt.
+argon2 = "0.5"

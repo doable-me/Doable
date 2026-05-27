@@ -9,6 +9,7 @@
 //! See `installer/`, `admin/`, `tunnel`, `mode_picker` for the heavy lifting.
 
 mod admin;
+mod commands;
 mod file_picker;
 mod installer;
 mod mode_picker;
@@ -38,6 +39,33 @@ enum TopCmd {
     Install(InstallerArgs),
     /// Manage an existing Doable server (local or remote over SSH).
     Admin(AdminCli),
+
+    // ── Non-interactive ops (no TUI; print + exit). ──
+    /// Run OOB-readiness + security diagnostics on a Doable server.
+    Doctor(commands::CommonArgs),
+    /// Show service / port / database status.
+    Status(commands::CommonArgs),
+    /// Restart the Doable app (systemd or docker).
+    Restart(commands::CommonArgs),
+    /// Tail recent app logs.
+    Logs(commands::LogsArgs),
+    /// List generated secrets from .env (masked unless --reveal).
+    Secrets(commands::SecretsArgs),
+    /// Print just the postgres password to stdout.
+    #[command(name = "db:password")]
+    DbPassword(commands::CommonArgs),
+    /// Apply database migrations.
+    #[command(name = "db:migrate")]
+    DbMigrate(commands::CommonArgs),
+    /// Rotate app secrets: jwt | internal | encryption | all.
+    #[command(name = "rotate-secrets")]
+    RotateSecrets(commands::RotateSecretsArgs),
+    /// Reset an existing user's password.
+    #[command(name = "admin:reset-password")]
+    ResetPassword(commands::ResetPasswordArgs),
+    /// Create (or re-promote) a platform owner account.
+    #[command(name = "admin:create-owner")]
+    CreateOwner(commands::CreateOwnerArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -87,6 +115,22 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Non-interactive ops — these never touch the TUI, so handle them before
+    // any alt-screen/raw-mode setup and return their exit status directly.
+    match &cli.cmd {
+        Some(TopCmd::Doctor(a)) => return commands::run_doctor(a).await,
+        Some(TopCmd::Status(a)) => return commands::run_status(a).await,
+        Some(TopCmd::Restart(a)) => return commands::run_restart(a).await,
+        Some(TopCmd::Logs(a)) => return commands::run_logs(a).await,
+        Some(TopCmd::Secrets(a)) => return commands::run_secrets(a).await,
+        Some(TopCmd::DbPassword(a)) => return commands::run_db_password(a).await,
+        Some(TopCmd::DbMigrate(a)) => return commands::run_db_migrate(a).await,
+        Some(TopCmd::RotateSecrets(a)) => return commands::run_rotate_secrets(a).await,
+        Some(TopCmd::ResetPassword(a)) => return commands::run_reset_password(a).await,
+        Some(TopCmd::CreateOwner(a)) => return commands::run_create_owner(a).await,
+        _ => {}
+    }
+
     term::install_panic_hook();
     let mut terminal = term::setup().context("setup terminal")?;
 
@@ -102,6 +146,9 @@ async fn main() -> Result<()> {
             run_admin_mode(&mut terminal, args).await
         }
         None => run_interactive_top(&mut terminal).await,
+        // All other (non-interactive) subcommands were dispatched and returned
+        // above, before the terminal was set up.
+        _ => unreachable!("non-interactive subcommand reached TUI dispatch"),
     };
 
     term::restore(&mut terminal).ok();
