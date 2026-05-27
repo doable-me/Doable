@@ -69,9 +69,13 @@ artifacts.get("/:id{.+}", (c) => {
     "cache-control": "private, max-age=3600",
   };
   if (inline) {
+    // Derive the install's own apex from env (set by deploy to the operator's
+    // zone) so a self-hoster's web origin can frame its own artifacts. Falls
+    // back to doable.me only for source-tree dev runs with no env set.
+    const apex = process.env.DOABLE_DOMAIN || "doable.me";
     headers["x-frame-options"] = "ALLOWALL";
     headers["content-security-policy"] =
-      "frame-ancestors 'self' https://*.doable.me https://doable.me http://localhost:* http://127.0.0.1:*";
+      `frame-ancestors 'self' https://*.${apex} https://${apex} http://localhost:* http://127.0.0.1:*`;
   }
   return new Response(new Uint8Array(entry.bytes), { headers });
 });
