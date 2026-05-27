@@ -248,6 +248,41 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
       // Network error on page fetch — not a code error
     }
 
+    // Browser-runtime probe (REAL REACT APPS ONLY). The server-side fetches
+    // above cannot see two real failure modes: (1) a Vite HMR error overlay
+    // injected CLIENT-SIDE over the websocket (e.g. vite:import-analysis
+    // "Failed to resolve import './lib/utils'") which never appears in the
+    // server-rendered "/" HTML, and (2) a runtime throw during React mount that
+    // leaves #root empty with no overlay (a silent blank screen). Both are only
+    // observable after the bundle runs in a real browser. We gate this behind
+    // the SAME `isStandaloneDoc` flag used everywhere above: doc-artifacts
+    // (markdown/pdf/pptx static HTML with no /src entry) legitimately have an
+    // empty #root / no React mount and must NEVER be probed this way. The probe
+    // fails open (returns null) on any Chrome/launch/timeout error, so a missing
+    // browser can't manufacture a false "broken" verdict. It reuses the shared
+    // headless Chrome that thumbnail capture already manages.
+    if (!isStandaloneDoc) {
+      try {
+        const { probePreviewRuntime } = await import("../thumbnails/capture.js");
+        const runtime = await probePreviewRuntime(`${base}/`);
+        if (runtime) {
+          if (isDoableResolveTransient(runtime.message) && (await doableImportNowResolves(base, runtime.message))) {
+            return null;
+          }
+          return {
+            message:
+              runtime.kind === "overlay"
+                ? `Preview page shows error overlay: ${runtime.message}`
+                : runtime.message,
+            source: "preview page",
+            raw: runtime.message,
+          };
+        }
+      } catch {
+        // Probe unavailable (e.g. Chrome not installed) — fail open.
+      }
+    }
+
     return null;
   } catch {
     return null;

@@ -21,6 +21,7 @@ import { getTracer } from "../tracing/instrumentation.js";
 // Declare it here since the API tsconfig does not include the DOM lib.
 declare const document: {
   querySelector(selectors: string): unknown;
+  getElementById(id: string): { children: { length: number }; textContent: string | null } | null;
   body?: { innerText: string; children: { length: number } };
 };
 
@@ -257,6 +258,105 @@ export async function captureProjectThumbnail(
     }
   }
   return null;
+}
+
+/**
+ * Runtime preview probe for the self-heal loop. Two failure modes are invisible
+ * to the server-side `detectPreviewError` (which only does HTTP fetches in Node):
+ *
+ *   1. A Vite HMR error overlay (e.g. `[plugin:vite:import-analysis] Failed to
+ *      resolve import "./lib/utils"`) is injected CLIENT-SIDE over the HMR
+ *      websocket — it never appears in the server-rendered "/" HTML, so the
+ *      fetch-based overlay check cannot see it.
+ *   2. A runtime throw during React mount leaves `#root` with 0 children and NO
+ *      overlay (a silent blank screen). The server HTML always ships an empty
+ *      `<div id="root">`, so this is only observable AFTER the bundle executes
+ *      in a real browser.
+ *
+ * This reuses the same shared headless Chrome as thumbnail capture and the same
+ * lifecycle discipline (hard timeout, page always closed, fail-open). It returns
+ * a short error string for the auto-fix loop, or null if the preview looks
+ * healthy OR anything goes wrong (a missing/broken Chrome must NEVER produce a
+ * false "broken" verdict — fail-open is the safe default here).
+ *
+ * IMPORTANT: callers MUST only invoke this for real React apps (an index.html
+ * that loads /src/main.tsx). Standalone doc-artifacts (markdown/pdf/pptx that
+ * replace index.html with self-contained static HTML and have NO /src entry)
+ * legitimately have an empty `#root` / no React mount and would be falsely
+ * flagged — `detectPreviewError`'s `isStandaloneDoc` guard gates that out.
+ */
+export async function probePreviewRuntime(
+  previewUrl: string,
+): Promise<{ kind: "overlay" | "blank-root"; message: string } | null> {
+  let b: Browser;
+  try {
+    b = await getBrowser();
+  } catch {
+    return null; // no Chrome — fail open, never block completion
+  }
+  const page = await b.newPage();
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Preview runtime probe timed out after ${CAPTURE_TIMEOUT_MS}ms`)),
+      CAPTURE_TIMEOUT_MS,
+    );
+  });
+
+  const work = (async (): Promise<{ kind: "overlay" | "blank-root"; message: string } | null> => {
+    await page.setViewport(VIEWPORT);
+    await page.goto(previewUrl, { waitUntil: "networkidle0", timeout: 15000 });
+    // Let React mount + any HMR error overlay get injected before inspecting.
+    await new Promise((r) => setTimeout(r, 1200));
+
+    return await page.evaluate(() => {
+      // 1. Client-injected Vite error overlay (the import-analysis / transform
+      //    case that the server-side fetch can't see). The overlay is a custom
+      //    element whose error text lives inside its shadow DOM.
+      const overlay = document.querySelector("vite-error-overlay") as unknown as {
+        shadowRoot?: { querySelector(s: string): { textContent: string | null } | null };
+      } | null;
+      if (overlay) {
+        const inner = overlay.shadowRoot?.querySelector(".message")?.textContent
+          ?? overlay.shadowRoot?.querySelector(".message-body")?.textContent
+          ?? null;
+        const text = (inner ?? "Vite error overlay is visible in the preview").trim().slice(0, 800);
+        return { kind: "overlay" as const, message: text };
+      }
+
+      // 2. Mounted-but-blank: React threw during mount, so the root never
+      //    received children and there is no overlay. Only flag a genuinely
+      //    empty root with no visible text anywhere on the page (a loading
+      //    spinner, skeleton, or any async content all keep this from firing).
+      const root = document.getElementById("root");
+      if (root && root.children.length === 0) {
+        const bodyText = (document.body?.innerText ?? "").trim();
+        if (bodyText.length === 0) {
+          return {
+            kind: "blank-root" as const,
+            message:
+              "The app rendered a BLANK screen: React mounted but #root has 0 children and " +
+              "the page is empty, with no Vite error overlay. This is a runtime error thrown " +
+              "during render/mount (check the browser console). Read src/main.tsx and src/App.tsx, " +
+              "find the throw (a bad hook call, undefined access, or a crashing top-level component), " +
+              "and fix it so the app renders.",
+          };
+        }
+      }
+      return null;
+    });
+  })();
+
+  try {
+    return await Promise.race([work, timeout]);
+  } catch {
+    return null; // navigation/eval/timeout error — fail open
+  } finally {
+    if (timer) clearTimeout(timer);
+    await page.close().catch(() => {});
+    touchIdleTimer();
+  }
 }
 
 /**
