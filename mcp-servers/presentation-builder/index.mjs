@@ -259,7 +259,7 @@ function buildDeckPrompt(opts) {
     `  "Insight #1" or "key benefit" or any placeholder text.`,
     ``,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `DELIVERABLE — one tool call: build_deck({ topic, html, spec })`,
+    `DELIVERABLE — one tool call: build_deck({ topic, html, spec? })  (spec is OPTIONAL)`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `After narrating your process, make EXACTLY ONE tool call with:`,
     ``,
@@ -268,7 +268,11 @@ function buildDeckPrompt(opts) {
     `         inline CSS + JS, Google Fonts via <link>, no external assets,`,
     `         ${slideCount} slides (or close). This is your FREEFORM canvas — any`,
     `         layout, any composition, any motion. Make it unforgettable.`,
-    `  spec:  the SAME deck as a structured JSON object for PPTX rendering:`,
+    `  spec:  OPTIONAL — the SAME deck as a structured JSON object for PPTX export.`,
+    `         OMIT spec ENTIRELY if the deck is large or you cannot serialize it`,
+    `         compactly and reliably in one call — the html alone produces a fully`,
+    `         usable, previewable, downloadable deck (only the .pptx export is`,
+    `         skipped). When you DO include it, keep it <= 14 slides:`,
     `    {`,
     `      palette: {`,
     `        vars: { bg, panel, accent, accent2, accent3, text, sub, card?, border? }`,
@@ -344,8 +348,11 @@ const TOOLS = [
         spec: {
           type: "object",
           description:
-            "Compact deck spec for PPTX rendering. Same palette + content as the HTML, mapped " +
-            "to a constrained layout vocabulary the engine can render.",
+            "OPTIONAL compact deck spec for PPTX rendering. Same palette + content as the HTML, " +
+            "mapped to a constrained layout vocabulary the engine can render. OMIT this entirely " +
+            "if you cannot produce it compactly/reliably (e.g. many slides) — the deck still works " +
+            "as a previewable, downloadable HTML file; only the .pptx download is skipped. Keep it " +
+            "small (<= 14 slides) when you do include it.",
           properties: {
             palette: {
               type: "object",
@@ -368,7 +375,8 @@ const TOOLS = [
             },
             slides: {
               type: "array",
-              description: "Ordered slide list. ALWAYS start with `cover` and end with `closing`.",
+              maxItems: 14,
+              description: "Ordered slide list (max 14). ALWAYS start with `cover` and end with `closing`.",
               items: {
                 type: "object",
                 properties: {
@@ -392,7 +400,7 @@ const TOOLS = [
           description: "Optional base name (without extension) for the downloads.",
         },
       },
-      required: ["topic", "html", "spec"],
+      required: ["topic", "html"],
     },
   },
   {
@@ -1195,9 +1203,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (!/<html[\s>]/i.test(deckHtml) && !/<!doctype/i.test(deckHtml)) {
       return { isError: true, content: [{ type: "text", text: "Error: `html` does not look like a complete HTML document. Include `<!doctype html>` and `<html>`." }] };
     }
-    if (!spec || !Array.isArray(spec.slides) || spec.slides.length === 0) {
-      return { isError: true, content: [{ type: "text", text: "Error: `spec.slides` must be a non-empty array (the PPTX layout sequence)." }] };
-    }
+    // `spec` is OPTIONAL. Smaller models (e.g. MiniMax M2.7) frequently cannot
+    // emit BOTH the freeform HTML deck AND a redundant nested `spec` in a single
+    // tool-call argument — the oversized JSON truncates/duplicates, the call
+    // fails, and the model retries forever (BUG-DECK). So a missing/empty spec
+    // now DEGRADES GRACEFULLY to an HTML-only deck (still previewable +
+    // downloadable as .html) instead of hard-erroring. A valid spec still
+    // produces the downloadable .pptx.
+    const hasSpec = !!(spec && Array.isArray(spec.slides) && spec.slides.length > 0);
 
     const htmlBase64 = Buffer.from(deckHtml, "utf8").toString("base64");
     const htmlSizeBytes = Buffer.byteLength(deckHtml, "utf8");
@@ -1205,19 +1218,24 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     let pptxBase64 = null;
     let pptxSizeBytes = 0;
     let pptxError = null;
-    let renderedSlideCount = spec.slides.length;
-    try {
-      const { buffer, slideCount } = await buildPptxFromSpec({
-        topic,
-        palette: spec.palette && typeof spec.palette === "object" ? spec.palette : undefined,
-        slides: spec.slides,
-      });
-      pptxBase64 = Buffer.from(buffer).toString("base64");
-      pptxSizeBytes = buffer.length;
-      renderedSlideCount = slideCount;
-    } catch (err) {
-      pptxError = err instanceof Error ? err.message : String(err);
-      dlog(`build_deck: pptx render failed: ${pptxError}`);
+    let renderedSlideCount = hasSpec ? spec.slides.length : 0;
+    if (hasSpec) {
+      try {
+        const { buffer, slideCount } = await buildPptxFromSpec({
+          topic,
+          palette: spec.palette && typeof spec.palette === "object" ? spec.palette : undefined,
+          slides: spec.slides,
+        });
+        pptxBase64 = Buffer.from(buffer).toString("base64");
+        pptxSizeBytes = buffer.length;
+        renderedSlideCount = slideCount;
+      } catch (err) {
+        pptxError = err instanceof Error ? err.message : String(err);
+        dlog(`build_deck: pptx render failed: ${pptxError}`);
+      }
+    } else {
+      pptxError = "skipped: no spec provided (HTML-only deck)";
+      dlog("build_deck: no spec provided — producing HTML-only deck");
     }
 
     const cardHtml = unifiedDeckCardHtml({
@@ -1238,7 +1256,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     });
 
     const followupText = pptxError
-      ? `Deck ready: ${htmlFileName} (HTML preview + download). PPTX render failed — ${pptxError}. Acknowledge briefly, mention the PPTX issue, and stop.`
+      ? (hasSpec
+          ? `Deck ready: ${htmlFileName} (HTML preview + download). PPTX render failed — ${pptxError}. Acknowledge briefly, mention the PPTX issue, and stop.`
+          : `Deck ready: ${htmlFileName} (HTML preview + download). PPTX was skipped because no spec was provided — the HTML deck is fully usable. Acknowledge briefly and stop.`)
       : `Deck ready: ${htmlFileName} + ${pptxFileName} (${renderedSlideCount} slides). User can preview, fullscreen, or download either format from the card. Acknowledge briefly and stop.`;
     return {
       content: [
