@@ -160,9 +160,10 @@ function persistViewerToProject(
     if (pdfUrl) writeIndex(buildPdfViewerHtml({ pdfUrl, htmlUrl }), "pdf");
     else console.error(`[tool-callbacks] persistViewerToProject: pdf-builder missing pdf url — skipped`);
   } else if (resourceUri.includes("markdown-builder/build")) {
-    const htmlBytes = bytesByExt.get("html");
-    if (htmlBytes) writeIndex(htmlBytes.toString("utf-8"), "md");
-    else console.error(`[tool-callbacks] persistViewerToProject: markdown-builder missing html bytes — skipped`);
+    const htmlUrl = urlByExt.get("html");
+    const mdUrl = urlByExt.get("md");
+    if (htmlUrl) writeIndex(buildMarkdownViewerHtml({ htmlUrl, mdUrl }), "md");
+    else console.error(`[tool-callbacks] persistViewerToProject: markdown-builder missing html url — skipped`);
   } else if (resourceUri.includes("spreadsheet-builder/build")) {
     const xlsxUrl = urlByExt.get("xlsx");
     const csvUrl = urlByExt.get("csv");
@@ -219,6 +220,34 @@ function buildPdfViewerHtml({ pdfUrl, htmlUrl }: { pdfUrl: string; htmlUrl?: str
   }
 })();
 </script></body></html>`;
+}
+
+/**
+ * Project-preview HTML for Markdown docs — mirrors the spreadsheet/PDF viewer's
+ * contract so a markdown build surfaces a real, rendered document in the editor
+ * preview (not the default scaffold splash). Why a dedicated viewer instead of
+ * writing the rendered prose straight into index.html (the previous behavior):
+ *
+ *   1. A guaranteed-standalone page. The markdown-builder's rendered prose can
+ *      legitimately CONTAIN the string `src="/src/main.tsx"` (e.g. a quickstart
+ *      doc that documents the React scaffold). Persisting that prose AS
+ *      index.html trips isStandaloneDoc (ai/preview-errors.ts) into treating the
+ *      doc as a broken React app and sends the self-heal loop probing src/*.
+ *      This wrapper page never contains a /src module entry, so isStandaloneDoc
+ *      stays true and the doc-artifact guard keeps working.
+ *   2. A visible download bar (⬇ MD / ⬇ HTML), matching the spreadsheet viewer's
+ *      ⬇ XLSX / ⬇ CSV and the PDF viewer's ⬇ PDF — the downloadable artifact the
+ *      builder produced is preserved in the preview, not dropped.
+ *
+ * The rendered `.html` artifact is shown via an <iframe src> (URL-referenced,
+ * like the spreadsheet viewer fetches the .xlsx) so the page stays tiny and the
+ * heavy document bytes live in the artifact store, not inline in index.html.
+ */
+function buildMarkdownViewerHtml({ htmlUrl, mdUrl }: { htmlUrl: string; mdUrl?: string }): string {
+  const mdLink = mdUrl
+    ? `<a href="${mdUrl}" download style="margin-left:12px">⬇ MD</a>`
+    : "";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Document preview</title><style>html,body{margin:0;padding:0;min-height:100%;background:#fff;color:#0f172a;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}.bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#6d28d9;color:#fff;position:sticky;top:0;z-index:10}.bar a{color:#fff;text-decoration:none;font-weight:600}.bar a:hover{text-decoration:underline}.viewer{width:100%;height:calc(100vh - 44px);border:0;display:block;background:#fff}@media (prefers-color-scheme:dark){html,body{background:#111113;color:#e4e4e7}.viewer{background:#111113}}</style></head><body><div class="bar"><span>📝 Document preview</span><span><a href="${htmlUrl}" download>⬇ HTML</a>${mdLink}</span></div><iframe class="viewer" title="Document preview" src="${htmlUrl}"></iframe></body></html>`;
 }
 
 /** Project-preview HTML for spreadsheets — renders the workbook with SheetJS. */
