@@ -263,38 +263,6 @@ fn prompt_password(label: &str) -> Result<String> {
     Ok(line.trim_end_matches(['\n', '\r']).to_string())
 }
 
-/// Execute SQL against the target DB via `psql`, passing values as psql
-/// variables (`:'name'`) so they're quoted safely server-side — no shell or SQL
-/// injection from email/hash content. `psql` is present on baremetal Doable
-/// servers (postgresql package); on docker we exec into the postgres container.
-async fn psql_exec(
-    common: &CommonArgs,
-    db_url: &str,
-    sql: &str,
-    vars: &[(&str, &str)],
-) -> Result<String> {
-    let mut var_flags = String::new();
-    for (k, v) in vars {
-        var_flags.push_str(&format!(" -v {}={}", k, shq(v)));
-    }
-    // Prefer host psql (baremetal). If absent but a docker postgres container is
-    // running, route through it (values still passed as -v vars).
-    let script = format!(
-        r#"if command -v psql >/dev/null 2>&1; then
-  psql {url} -v ON_ERROR_STOP=1{vars} -c {sql}
-elif docker ps --format '{{{{.Names}}}}' 2>/dev/null | grep -q '^doable-postgres$'; then
-  docker exec -i doable-postgres psql "$(printf %s {url})" -v ON_ERROR_STOP=1{vars} -c {sql}
-else
-  echo "psql not found on host and no doable-postgres container running" >&2
-  exit 8
-fi"#,
-        url = shq(db_url),
-        vars = var_flags,
-        sql = shq(sql),
-    );
-    sh(common, &script).await
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Commands
 // ─────────────────────────────────────────────────────────────────────────────
@@ -607,19 +575,21 @@ pub async fn run_reset_password(args: &ResetPasswordArgs) -> Result<()> {
     let hash = argon2id_hash(&password, &salt_b64)?;
     let db_url = resolve_database_url(&args.common, &args.database_url).await?;
 
-    let out = psql_exec(
-        &args.common,
-        &db_url,
-        "UPDATE users SET password_hash = :'ph', updated_at = now() WHERE email = :'em'",
-        &[("ph", &hash), ("em", &args.email)],
-    )
-    .await?;
+    let client = crate::admin::db::connect(&db_url)
+        .await
+        .map_err(|e| anyhow!("connect db: {}", e))?;
+    let rows_affected = client
+        .execute(
+            "UPDATE users SET password_hash = $1, updated_at = now() WHERE email = $2",
+            &[&hash, &args.email],
+        )
+        .await
+        .map_err(|e| anyhow!("reset-password query failed: {}", e))?;
 
-    // psql prints "UPDATE 1" on success, "UPDATE 0" if no such user.
-    if out.contains("UPDATE 0") {
+    if rows_affected == 0 {
         return Err(anyhow!("no user with email {} (nothing changed)", args.email));
     }
-    println!("✅ password reset for {}", args.email);
+    println!("password reset for {}", args.email);
     Ok(())
 }
 
@@ -640,23 +610,29 @@ pub async fn run_create_owner(args: &CreateOwnerArgs) -> Result<()> {
     let hash = argon2id_hash(&password, &salt_b64)?;
     let db_url = resolve_database_url(&args.common, &args.database_url).await?;
 
+    let client = crate::admin::db::connect(&db_url)
+        .await
+        .map_err(|e| anyhow!("connect db: {}", e))?;
+
     // Insert (or adopt existing) then promote to platform owner. ON CONFLICT
     // keeps the command idempotent: re-running updates the password + re-promotes.
-    let sql = "INSERT INTO users (email, password_hash, display_name, is_platform_admin, platform_role, is_verified_publisher) \
-               VALUES (:'em', :'ph', :'nm', true, 'owner', true) \
-               ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, \
-                 is_platform_admin = true, platform_role = 'owner', is_verified_publisher = true, updated_at = now()";
-    let out = psql_exec(
-        &args.common,
-        &db_url,
-        sql,
-        &[("em", &args.email), ("ph", &hash), ("nm", &name)],
-    )
-    .await?;
-    if out.to_lowercase().contains("error") {
-        return Err(anyhow!("create-owner failed: {}", out.trim()));
-    }
-    println!("✅ platform owner ready: {} (log in, workspace is created on first sign-in)", args.email);
+    client
+        .execute(
+            "INSERT INTO users \
+               (email, password_hash, display_name, is_platform_admin, platform_role, is_verified_publisher) \
+             VALUES ($1, $2, $3, true, 'owner'::workspace_role, true) \
+             ON CONFLICT (email) DO UPDATE SET \
+               password_hash = EXCLUDED.password_hash, \
+               is_platform_admin = true, \
+               platform_role = 'owner'::workspace_role, \
+               is_verified_publisher = true, \
+               updated_at = now()",
+            &[&args.email, &hash, &name],
+        )
+        .await
+        .map_err(|e| anyhow!("create-owner query failed: {}", e))?;
+
+    println!("platform owner ready: {} (log in, workspace is created on first sign-in)", args.email);
     Ok(())
 }
 
