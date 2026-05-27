@@ -1387,11 +1387,108 @@ print(m.group(0) if m else '')
   # NOTE: No wildcard *.doable.me route — each deploy creates its own
   # per-hostname CNAME via the Cloudflare API so multiple servers
   # (prod, dev, staging) can coexist under the same domain.
+  #
+  # On re-installs (or any deploy to a zone that already has CNAME records),
+  # `cloudflared tunnel route dns` exits with code 1003 ("An A, AAAA, or CNAME
+  # record with that host already exists") and does NOT update the record.
+  # The old record then points at the dead/prior tunnel, causing Cloudflare
+  # error 530 for every request even though the new tunnel is healthy.
+  # Fix: detect the "already exists" case and PATCH the record via the
+  # Cloudflare API so it points at the NEW tunnel. (CF_API_TOKEN / CF_ZONE_ID
+  # were extracted from cert.pem above and are available as shell vars.)
+  _cf_upsert_dns_route() {
+    local HOSTNAME="$1"
+    local ROUTE_OUT
+    local ROUTE_RC=0
+    ROUTE_OUT=$(cloudflared tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1) || ROUTE_RC=$?
+
+    if [[ $ROUTE_RC -eq 0 ]]; then
+      ok "DNS route set: $HOSTNAME -> $TUNNEL_ID"
+      return 0
+    fi
+
+    # Check whether failure is the "record already exists" conflict
+    if echo "$ROUTE_OUT" | grep -qi "already exists"; then
+      # Record already exists and cloudflared won't overwrite it.
+      # If we have CF credentials, update it via API so it points at the new tunnel.
+      if [[ -n "${CF_API_TOKEN:-}" && -n "${CF_ZONE_ID:-}" ]]; then
+        info "DNS record for $HOSTNAME already exists — updating via Cloudflare API..."
+        # Query existing record (CNAME first; fall back to any type)
+        local API_RESULT
+        API_RESULT=$(curl -sf -X GET \
+          "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records?name=${HOSTNAME}" \
+          -H "Authorization: Bearer ${CF_API_TOKEN}" \
+          -H "Content-Type: application/json" || true)
+
+        local RECORD_ID
+        RECORD_ID=$(echo "$API_RESULT" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    records = data.get('result', [])
+    # Prefer CNAME; fall back to first record of any type
+    for r in records:
+        if r.get('type') == 'CNAME':
+            print(r['id']); sys.exit(0)
+    if records:
+        print(records[0]['id']); sys.exit(0)
+except Exception:
+    pass
+" 2>/dev/null || true)
+
+        if [[ -z "$RECORD_ID" ]]; then
+          warn "Could not find existing DNS record for $HOSTNAME via API — record may still point at old tunnel"
+          return 1
+        fi
+
+        local PUT_RESULT
+        PUT_RESULT=$(curl -sf -X PUT \
+          "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records/${RECORD_ID}" \
+          -H "Authorization: Bearer ${CF_API_TOKEN}" \
+          -H "Content-Type: application/json" \
+          --data "{\"type\":\"CNAME\",\"name\":\"${HOSTNAME}\",\"content\":\"${TUNNEL_ID}.cfargotunnel.com\",\"proxied\":true}" \
+          || true)
+
+        local PUT_SUCCESS
+        PUT_SUCCESS=$(echo "$PUT_RESULT" | python3 -c "
+import sys, json
+try:
+    print('yes' if json.load(sys.stdin).get('success') else 'no')
+except Exception:
+    print('no')
+" 2>/dev/null || true)
+
+        if [[ "$PUT_SUCCESS" == "yes" ]]; then
+          ok "DNS record updated via API: $HOSTNAME -> ${TUNNEL_ID}.cfargotunnel.com"
+          return 0
+        else
+          warn "Cloudflare API update FAILED for $HOSTNAME — record may still point at old tunnel (530 risk)"
+          warn "  API response: $(echo "$PUT_RESULT" | head -c 300)"
+          return 1
+        fi
+      else
+        warn "DNS record for $HOSTNAME already exists but CF_API_TOKEN/CF_ZONE_ID are not set — cannot update via API"
+        warn "  The record may point at the old tunnel, causing Cloudflare error 530. Update it manually."
+        return 1
+      fi
+    else
+      # Unrelated cloudflared error — surface it clearly
+      warn "cloudflared tunnel route dns failed for $HOSTNAME (rc=$ROUTE_RC):"
+      warn "  $ROUTE_OUT"
+      return 1
+    fi
+  }
+
+  DNS_ALL_OK=1
   for HOSTNAME in "$DOMAIN" "$API_DOMAIN" "$WS_DOMAIN"; do
-    cloudflared tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 | grep -v "already exists" || true
+    _cf_upsert_dns_route "$HOSTNAME" || DNS_ALL_OK=0
   done
 
-  ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}"
+  if [[ "$DNS_ALL_OK" -eq 1 ]]; then
+    ok "DNS routes configured for ${DOMAIN}, ${API_DOMAIN}, ${WS_DOMAIN}"
+  else
+    warn "One or more DNS routes could not be confirmed — check warnings above before going live"
+  fi
 
   # Upsert Cloudflare DNS credentials into .env (token extracted from
   # cert.pem OAuth flow, tunnel ID from tunnel create — neither existed
