@@ -85,27 +85,27 @@ Self-hosting? [Coolify](deployment/docker/coolify.md), [Fly.io](deployment/platf
 <tr>
 <td width="50%">
 <img src="screenshots/Landingpage.png" alt="01 · Landing page" /><br/>
-<sub><b>Landing page</b> — describe what you want to build right from the home screen. Type a prompt and Doable routes you straight into the builder, no sign-up friction before your first idea.</sub>
+<sub><b>Landing page</b> — describe the app you want — including AI chatbots — right from the home screen. Doable routes you straight into the builder and starts generating. No sign-up friction, no infrastructure decisions before your first idea.</sub>
 </td>
 <td width="50%">
 <img src="screenshots/dashboard.png" alt="02 · Project dashboard" /><br/>
-<sub><b>Project dashboard</b> — all your projects in one place. Create a new app, open an existing one, or start from a template. Each workspace is fully isolated with its own members and settings.</sub>
+<sub><b>Project dashboard</b> — all your generated apps in one place. Every app comes with its own in-process backend and Doable AI already wired in. Create, open, or template — each workspace is fully isolated with its own members and settings.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%">
 <img src="screenshots/ai-chat.png" alt="03 · AI chat & build" /><br/>
-<sub><b>AI chat & build</b> — describe your app in plain language. The AI writes the code, scaffolds the UI, and wires up the backend in real time while you watch the output stream in.</sub>
+<sub><b>AI chat & build</b> — describe what you want and Doable generates a fully working app — frontend, in-process backend, and database — in real time. Ask for a chatbot and it's wired up automatically, powered by Doable AI. No boilerplate, no backend setup, no model config.</sub>
 </td>
 <td width="50%">
 <img src="screenshots/live-preview.png" alt="04 · Live preview" /><br/>
-<sub><b>Live preview</b> — every change renders instantly in the sandboxed preview pane. Click any element on the live preview to describe a visual change directly — no digging through code.</sub>
+<sub><b>Live preview</b> — see your generated app running instantly, including any AI chatbots inside it. The in-process backend and Doable AI are live in the preview — interact with the chatbot, test data flow, and refine with follow-up prompts, all without leaving the builder.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%">
 <img src="screenshots/Live-code-editor.png" alt="05 · Code editor" /><br/>
-<sub><b>Code editor</b> — full Monaco-powered editor with AI inline edits. Switch between chat and code freely. Export the entire project as a ZIP or push it to GitHub at any point.</sub>
+<sub><b>Code editor</b> — full Monaco-powered editor with AI inline edits. Every generated app includes its in-process backend and Doable AI integration in the source — readable, editable, and exportable as a ZIP or pushed to GitHub at any point.</sub>
 </td>
 <td width="50%">
 <img src="screenshots/ai-provider.png" alt="06 · AI provider setup" /><br/>
@@ -135,23 +135,33 @@ Self-hosting? [Coolify](deployment/docker/coolify.md), [Fly.io](deployment/platf
 
 ## Features Demo
 
-Everything Doable ships in the box — skills that run inside the AI builder, MCP servers that extend the AI with real tools, and platform capabilities like PWA support. Each card below is a feature you can use today.
+Everything Doable ships in the box — AI-powered app generation with built-in chatbots, in-process backends with RLS, skills, MCP servers, and platform capabilities like PWA. Each card below is a feature you can use today.
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/businesscard01.png"><img src="screenshots/businesscard01.png" alt="business-card-maker" /></a><br/>
-<sub><b><code>business-card-maker</code></b> · <i>skill</i><br/>Design print-ready and digital business cards with full layout control, typography, brand colors, bleed/DPI/CMYK print specs, QR code support, and double-sided export. Trigger with: <em>business card, visiting card, name card, brand card.</em></sub>
+<a href="screenshots/ai-chatbot-generated.png"><img src="screenshots/ai-chatbot-generated.png" alt="AI Chatbot Generation" /></a><br/>
+<sub><b>AI Chatbot Generation</b> · <i>platform feature</i><br/>Describe the chatbot you need — customer support, onboarding assistant, internal knowledge bot — and Doable generates the complete app. Doable AI powers the conversation, the in-process backend stores the data with RLS, and you get a live, working chatbot with zero model wiring, zero backend code, and zero infrastructure setup.</sub>
 </td>
 <td width="50%" valign="top">
-<a href="screenshots/ecommerce.png"><img src="screenshots/ecommerce.png" alt="ecommerce-website" /></a><br/>
-<sub><b><code>ecommerce-website</code></b> · <i>skill</i><br/>Build conversion-focused, accessible ecommerce stores with product listing, product detail, cart, and checkout flows — Core Web Vitals optimized, WCAG 2.2 compliant, and PCI-safe payment integration. Trigger with: <em>online store, storefront, product page, checkout.</em></sub>
+<a href="screenshots/doable-ai-chatbot.png"><img src="screenshots/doable-ai-chatbot.png" alt="Doable AI — In-app Chatbot" /></a><br/>
+<sub><b>Doable AI</b> · <i>platform feature</i><br/>The AI engine that powers every chatbot Doable generates. It handles the model, the context, the conversation memory, and the RAG pipeline — all automatically. You never touch a model config or an API key. Just describe the chatbot you want and Doable AI takes care of everything inside the generated app.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" /></a><br/>
-<sub><b><code>greeting-card</code></b> · <i>skill</i><br/>Design occasion-matched greeting cards and e-cards — front, inside, and back — with tone-matched typography, color palette, print specs, and export. Covers birthdays, anniversaries, weddings, holidays, and more. Trigger with: <em>birthday card, invitation, e-card, festival card.</em></sub>
+<a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="In-Process Backend with RLS" /></a><br/>
+<sub><b>In-Process Backend with RLS</b> · <i>platform feature</i><br/>Every generated app gets a real backend built in — in-process, with Row Level Security enforced automatically. No server to provision, no database to configure, no auth layer to wire up. Your chatbot stores conversation history, your SaaS app isolates user data, your CRUD app persists records — all from the first prompt, zero backend work.</sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" /></a><br/>
+<sub><b>PWA — Progressive Web App</b> · <i>platform feature</i><br/>Every app Doable builds can be shipped as a fully installable Progressive Web App. Service worker, offline support, app manifest, and home-screen install — generated automatically so your users get a native-feeling experience without an app store.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="screenshots/ecommerce.png"><img src="screenshots/ecommerce.png" alt="ecommerce-website" /></a><br/>
+<sub><b><code>ecommerce-website</code></b> · <i>skill</i><br/>Build conversion-focused, accessible ecommerce stores with product listing, product detail, cart, and checkout flows — Core Web Vitals optimized, WCAG 2.2 compliant, and PCI-safe payment integration. Trigger with: <em>online store, storefront, product page, checkout.</em></sub>
 </td>
 <td width="50%" valign="top">
 <a href="screenshots/inbuilt-database.png"><img src="screenshots/inbuilt-database.png" alt="inbuilt-database" /></a><br/>
@@ -160,32 +170,42 @@ Everything Doable ships in the box — skills that run inside the AI builder, MC
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/magazine02.png"><img src="screenshots/magazine02.png" alt="magazine-flipbook" /></a><br/>
-<sub><b><code>magazine-flipbook</code></b> · <i>skill</i><br/>Build a realistic web magazine or flipbook reader with page-flip physics, page curl shadows, optional sound, and full keyboard and touch navigation. Trigger with: <em>flipbook, digital magazine, page flip, catalog viewer, brochure, ebook reader.</em></sub>
-</td>
-<td width="50%" valign="top">
 <a href="screenshots/resume.png"><img src="screenshots/resume.png" alt="resume-cv" /></a><br/>
 <sub><b><code>resume-cv</code></b> · <i>skill</i><br/>Full-lifecycle resume and CV builder. Create, rewrite, optimize, or tailor a resume for any industry, seniority level, or role — with ATS optimization, keyword mapping, achievement writing, and industry-specific formatting. Trigger with: <em>resume, CV, job application.</em></sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/businesscard01.png"><img src="screenshots/businesscard01.png" alt="business-card-maker" /></a><br/>
+<sub><b><code>business-card-maker</code></b> · <i>skill</i><br/>Design print-ready and digital business cards with full layout control, typography, brand colors, bleed/DPI/CMYK print specs, QR code support, and double-sided export. Trigger with: <em>business card, visiting card, name card, brand card.</em></sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<a href="screenshots/markdownfile.png"><img src="screenshots/markdownfile.png" alt="Markdown Builder MCP" /></a><br/>
-<sub><b>Markdown Builder</b> · <i>MCP server · built-in</i><br/>Let the AI generate structured Markdown documents — docs, runbooks, changelogs, READMEs — and write them directly to disk inside your project. Available to every project in the workspace automatically.</sub>
+<a href="screenshots/greeting02.png"><img src="screenshots/greeting02.png" alt="greeting-card" /></a><br/>
+<sub><b><code>greeting-card</code></b> · <i>skill</i><br/>Design occasion-matched greeting cards and e-cards — front, inside, and back — with tone-matched typography, color palette, print specs, and export. Covers birthdays, anniversaries, weddings, holidays, and more. Trigger with: <em>birthday card, invitation, e-card, festival card.</em></sub>
 </td>
+<td width="50%" valign="top">
+<a href="screenshots/magazine02.png"><img src="screenshots/magazine02.png" alt="magazine-flipbook" /></a><br/>
+<sub><b><code>magazine-flipbook</code></b> · <i>skill</i><br/>Build a realistic web magazine or flipbook reader with page-flip physics, page curl shadows, optional sound, and full keyboard and touch navigation. Trigger with: <em>flipbook, digital magazine, page flip, catalog viewer, brochure, ebook reader.</em></sub>
+</td>
+</tr>
+<tr>
 <td width="50%" valign="top">
 <a href="screenshots/pdf.png"><img src="screenshots/pdf.png" alt="PDF Builder MCP" /></a><br/>
 <sub><b>PDF Builder</b> · <i>MCP server · built-in</i><br/>Generate polished PDF reports, invoices, contracts, and documentation from chat. The AI composes the layout and the MCP server renders and exports the file directly into the project workspace.</sub>
 </td>
-</tr>
-<tr>
 <td width="50%" valign="top">
 <a href="screenshots/presentation.png"><img src="screenshots/presentation.png" alt="Presentation Builder MCP" /></a><br/>
 <sub><b>Presentation Builder</b> · <i>MCP server · built-in</i><br/>Build full slide decks from a single prompt. The AI authors the content and structure; the MCP server renders and exports a ready-to-present file. Great for pitch decks, product walkthroughs, and team updates.</sub>
 </td>
+</tr>
+<tr>
 <td width="50%" valign="top">
 <a href="screenshots/spreadsheet.png"><img src="screenshots/spreadsheet.png" alt="Spreadsheet Builder MCP" /></a><br/>
 <sub><b>Spreadsheet Builder</b> · <i>MCP server · built-in</i><br/>Generate XLSX spreadsheets — financial models, data tables, trackers, and reports — directly from chat. The AI populates the data and formulas; the MCP server writes the file to the project workspace.</sub>
+</td>
+<td width="50%" valign="top">
+<a href="screenshots/markdownfile.png"><img src="screenshots/markdownfile.png" alt="Markdown Builder MCP" /></a><br/>
+<sub><b>Markdown Builder</b> · <i>MCP server · built-in</i><br/>Let the AI generate structured Markdown documents — docs, runbooks, changelogs, READMEs — and write them directly to disk inside your project. Available to every project in the workspace automatically.</sub>
 </td>
 </tr>
 <tr>
@@ -193,10 +213,7 @@ Everything Doable ships in the box — skills that run inside the AI builder, MC
 <a href="screenshots/CRM.png"><img src="screenshots/CRM.png" alt="Doable Per-App Database MCP" /></a><br/>
 <sub><b>Doable Per-App Database</b> · <i>MCP server · built-in</i><br/>Workspace-scoped database access available to all projects. The AI can create schemas, query records, and manage migrations through the MCP protocol — no external database configuration required.</sub>
 </td>
-<td width="50%" valign="top">
-<a href="screenshots/pwa_app.png"><img src="screenshots/pwa_app.png" alt="PWA — Progressive Web App" /></a><br/>
-<sub><b>PWA — Progressive Web App</b> · <i>platform feature</i><br/>Every app Doable builds can be shipped as a fully installable Progressive Web App. Service worker, offline support, app manifest, and home-screen install — generated automatically so your users get a native-feeling experience without an app store.</sub>
-</td>
+<td width="50%" valign="top"></td>
 </tr>
 </table>
 
