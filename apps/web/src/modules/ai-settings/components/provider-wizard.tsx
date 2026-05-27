@@ -23,14 +23,18 @@ export function ProviderWizard({
   onOpenChange,
   workspaceId,
   onProviderAdded,
-  scope: initialScope = "user",
+  scope: initialScope,
   isWorkspaceAdmin = false,
 }: ProviderWizardProps) {
-  // Live scope — initialized from the prop on open, mutable via the toggle
-  // when isWorkspaceAdmin. Non-admins are locked to 'user'. Migration 072.
-  const [scope, setScope] = useState<"user" | "workspace">(
-    isWorkspaceAdmin ? initialScope : "user",
-  );
+  // Default scope: admins almost always configure AI for the team, so when no
+  // explicit scope is requested we default them to 'workspace'. Non-admins are
+  // always locked to 'user'. An explicit initialScope (from the Add Personal /
+  // Add for workspace buttons) overrides the admin default. Migration 072.
+  const defaultScope: "user" | "workspace" = isWorkspaceAdmin
+    ? (initialScope ?? "workspace")
+    : "user";
+  // Live scope — initialized on open, mutable via the toggle when admin.
+  const [scope, setScope] = useState<"user" | "workspace">(defaultScope);
   // Wizard state
   const [step, setStep] = useState<WizardStep>("choose");
   const [selectedPreset, setSelectedPreset] = useState<ProviderPreset | null>(null);
@@ -116,9 +120,9 @@ export function ProviderWizard({
   // the wizard via the toggle when admin.)
   useEffect(() => {
     if (open) {
-      setScope(isWorkspaceAdmin ? initialScope : "user");
+      setScope(defaultScope);
     }
-  }, [open, initialScope, isWorkspaceAdmin]);
+  }, [open, defaultScope]);
 
   // ─── Filtered catalog ──────────────────────────────────────
 

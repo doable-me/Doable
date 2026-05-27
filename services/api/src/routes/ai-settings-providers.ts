@@ -135,6 +135,12 @@ const updateProviderSchema = z.object({
   apiKey: z.string().optional(),
   bearerToken: z.string().optional(),
   azureApiVersion: z.string().optional(),
+  /**
+   * Promote a personal provider to workspace-shared (or demote). Admin-only.
+   * The query layer clears owner_user_id when scope='workspace' to satisfy
+   * the aip_scope_owner_consistent CHECK (migration 072).
+   */
+  scope: z.enum(["workspace", "user"]).optional(),
 });
 
 // PATCH /workspaces/:workspaceId/ai-settings/providers/:id
@@ -150,7 +156,41 @@ aiSettingsProviderRoutes.patch(
     const auth = await authorizeProviderMutation(workspaceId, providerId, userId);
     if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
-    const updated = await aiSettings.updateProvider(providerId, body);
+    // Scope change (promote personal -> workspace, or demote) is admin-only —
+    // it shares a token with the whole workspace. Reuse the admin check used
+    // by /discover-models. Migration 072.
+    const wantsScopeChange = body.scope !== undefined && body.scope !== auth.row.scope;
+    let ownerUserId: string | null | undefined;
+    if (wantsScopeChange) {
+      const adminErr = await requireAdmin(workspaceId, userId);
+      if (adminErr) return c.json({ error: adminErr }, 403);
+
+      if (body.scope === "user") {
+        // Demoting a workspace provider that a workspace default/suggestion/
+        // enforced choice still points at would orphan that reference (the
+        // enforce_workspace_default_scope trigger only fires on
+        // workspace_ai_settings writes). Block it; the admin must repoint the
+        // default first. Migration 072.
+        const [refRow] = await sql<{ referenced: boolean }[]>`
+          SELECT EXISTS (
+            SELECT 1 FROM workspace_ai_settings
+            WHERE workspace_id = ${workspaceId}
+              AND ${providerId} IN (
+                default_provider_id, suggestion_provider_id, enforced_provider_id
+              )
+          ) AS referenced
+        `;
+        if (refRow?.referenced) {
+          return c.json({
+            error: "This provider is set as a workspace default. Change the workspace default before making it personal.",
+          }, 409);
+        }
+        // scope='user' requires an owner; assign it to the promoting admin.
+        ownerUserId = userId;
+      }
+    }
+
+    const updated = await aiSettings.updateProvider(providerId, { ...body, ownerUserId });
     if (!updated) return c.json({ error: "Provider not found" }, 404);
 
     const { encrypted_api_key, encrypted_bearer_token, ...safe } = updated;

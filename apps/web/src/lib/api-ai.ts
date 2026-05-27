@@ -230,7 +230,7 @@ export async function apiAddAiProvider(
 export async function apiUpdateAiProvider(
   workspaceId: string,
   id: string,
-  data: { label?: string; baseUrl?: string; apiKey?: string }
+  data: { label?: string; baseUrl?: string; apiKey?: string; scope?: ApiAiAccountScope }
 ): Promise<{ data: ApiAiProvider }> {
   return apiFetch(`/workspaces/${workspaceId}/ai-settings/providers/${id}`, {
     method: "PATCH",

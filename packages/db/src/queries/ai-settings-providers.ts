@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { PROVIDER_BY_ID } from "@doable/shared";
 import type {
   GitHubCopilotAccountRow,
   AiProviderRow,
@@ -297,6 +298,38 @@ export function aiSettingsProviderQueries(sql: postgres.Sql, encryptionKey: stri
         )
         RETURNING *
       `;
+
+      // Seed ai_provider_models from the catalog preset's defaultModels so the
+      // model dropdown is populated immediately — even for providers whose
+      // SDK doesn't expose /models discovery (e.g. DeepSeek). Mirrors the
+      // upsert used when discovery returns models. Best-effort: a seeding
+      // failure must not fail provider creation.
+      const preset = data.presetId ? PROVIDER_BY_ID[data.presetId as keyof typeof PROVIDER_BY_ID] : undefined;
+      if (row && preset && preset.defaultModels.length > 0) {
+        try {
+          for (const m of preset.defaultModels) {
+            await sql`
+              INSERT INTO ai_provider_models (provider_id, model_id, display_name, context_window, supports_tools, supports_vision)
+              VALUES (
+                ${row.id},
+                ${m.id},
+                ${m.name ?? null},
+                ${m.contextWindow ?? null},
+                ${m.supportsTools ?? true},
+                ${m.supportsVision ?? false}
+              )
+              ON CONFLICT (provider_id, model_id) DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                context_window = EXCLUDED.context_window,
+                supports_tools = EXCLUDED.supports_tools,
+                supports_vision = EXCLUDED.supports_vision
+            `;
+          }
+        } catch (err) {
+          console.error("[AI Settings] Failed to seed catalog models on provider add:", err);
+        }
+      }
+
       return row!;
     },
 
@@ -309,8 +342,24 @@ export function aiSettingsProviderQueries(sql: postgres.Sql, encryptionKey: stri
         bearerToken?: string;
         azureApiVersion?: string;
         isValid?: boolean;
+        /**
+         * Promote/demote scope. When promoting to 'workspace', owner_user_id
+         * is forced NULL to satisfy aip_scope_owner_consistent (migration
+         * 072). When demoting to 'user', ownerUserId MUST be supplied (the
+         * route layer passes the caller's id). Migration 072.
+         */
+        scope?: AiProviderRow["scope"];
+        /** Required when scope='user'. Ignored when scope='workspace'. */
+        ownerUserId?: string | null;
       }
     ): Promise<AiProviderRow | undefined> {
+      // Keep scope and owner_user_id consistent with the CHECK constraint
+      // aip_scope_owner_consistent: owner NULL iff scope='workspace'.
+      const ownerUserId = data.scope === "workspace"
+        ? null
+        : data.scope === "user"
+          ? (data.ownerUserId ?? null)
+          : null;
       const [row] = await sql<AiProviderRow[]>`
         UPDATE ai_providers
         SET label = COALESCE(${data.label ?? null}, label),
@@ -324,7 +373,11 @@ export function aiSettingsProviderQueries(sql: postgres.Sql, encryptionKey: stri
               THEN pgp_sym_encrypt(${data.bearerToken ?? ""}, ${ENCRYPTION_KEY})::text
               ELSE encrypted_bearer_token END,
             azure_api_version = COALESCE(${data.azureApiVersion ?? null}, azure_api_version),
-            is_valid = COALESCE(${data.isValid ?? null}, is_valid)
+            is_valid = COALESCE(${data.isValid ?? null}, is_valid),
+            scope = COALESCE(${data.scope ?? null}::ai_account_scope, scope),
+            owner_user_id = CASE
+              WHEN ${data.scope ?? null}::text IS NOT NULL THEN ${ownerUserId}
+              ELSE owner_user_id END
         WHERE id = ${id}
         RETURNING *
       `;

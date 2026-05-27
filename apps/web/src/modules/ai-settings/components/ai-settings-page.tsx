@@ -178,6 +178,7 @@ export function AiSettingsPage() {
           onAddProvider={providers.add}
           onRemoveProvider={providers.remove}
           onValidateProvider={providers.validate}
+          onPromoteProvider={providers.promoteToWorkspace}
           onRefreshProviders={providers.refresh}
         />
       )}

@@ -8,6 +8,7 @@ import {
   apiValidateCopilotAccount,
   apiListAiProviders,
   apiAddAiProvider,
+  apiUpdateAiProvider,
   apiDeleteAiProvider,
   apiValidateAiProvider,
   apiGetAiDefaults,
@@ -129,7 +130,17 @@ export function useCustomProviders(workspaceId: string | null) {
     return res.data;
   };
 
-  return { providers, loading, refresh, add, remove, validate };
+  /**
+   * Promote a personal provider to workspace-shared (admin-only). The API
+   * clears owner_user_id to satisfy the scope/owner CHECK. Migration 072.
+   */
+  const promoteToWorkspace = async (id: string) => {
+    if (!workspaceId) return;
+    await apiUpdateAiProvider(workspaceId, id, { scope: "workspace" });
+    await refresh();
+  };
+
+  return { providers, loading, refresh, add, remove, validate, promoteToWorkspace };
 }
 
 export function useWorkspaceAISettings(workspaceId: string | null) {

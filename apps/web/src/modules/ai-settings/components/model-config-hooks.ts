@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
+import { PROVIDER_BY_ID } from "@doable/shared";
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -148,8 +149,32 @@ export function useCopilotModels(copilotAccountId?: string) {
   return { models, loadingModels };
 }
 
-/** Fetches discovered models for a custom provider from the provider-bridge cache. */
-export function useProviderModels(workspaceId: string | null, providerId: string) {
+/** Maps a catalog preset's defaultModels to ProviderModelInfo rows. */
+function catalogFallbackModels(presetId: string | null | undefined): ProviderModelInfo[] {
+  if (!presetId) return [];
+  const preset = PROVIDER_BY_ID[presetId as keyof typeof PROVIDER_BY_ID];
+  if (!preset || preset.defaultModels.length === 0) return [];
+  return preset.defaultModels.map((m) => ({
+    id: m.id,
+    name: m.name ?? null,
+    contextWindow: m.contextWindow ?? null,
+    supportsTools: m.supportsTools ?? true,
+    supportsVision: m.supportsVision ?? false,
+  }));
+}
+
+/**
+ * Fetches discovered models for a custom provider from the provider-bridge cache.
+ *
+ * `presetId` (when known) provides a catalog fallback so providers added
+ * before catalog-seeding existed — or whose SDK exposes no /models discovery
+ * (e.g. DeepSeek) — still populate the dropdown.
+ */
+export function useProviderModels(
+  workspaceId: string | null,
+  providerId: string,
+  presetId?: string | null,
+) {
   const [models, setModels] = useState<ProviderModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -178,15 +203,18 @@ export function useProviderModels(workspaceId: string | null, providerId: string
               `/workspaces/${workspaceId}/ai-settings/providers/${providerId}/discover-models`,
               { method: "POST" },
             );
-            if (!cancelled) setModels((disc.data ?? []).map((m: ProviderModelInfo) => ({
+            const discovered = (disc.data ?? []).map((m: ProviderModelInfo) => ({
               id: m.id,
               name: m.name ?? null,
               contextWindow: m.contextWindow ?? null,
               supportsTools: m.supportsTools ?? true,
               supportsVision: m.supportsVision ?? false,
-            })));
+            }));
+            if (!cancelled) {
+              setModels(discovered.length > 0 ? discovered : catalogFallbackModels(presetId));
+            }
           } catch {
-            if (!cancelled) setModels([]);
+            if (!cancelled) setModels(catalogFallbackModels(presetId));
           }
         }
       } catch {
@@ -196,7 +224,7 @@ export function useProviderModels(workspaceId: string | null, providerId: string
       }
     })();
     return () => { cancelled = true; };
-  }, [workspaceId, providerId, refreshKey]);
+  }, [workspaceId, providerId, presetId, refreshKey]);
 
   return { models, loading, refresh };
 }

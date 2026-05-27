@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import type { ApiAiProvider } from "@/lib/api";
-import { Key, Plus, Trash2, Loader2, RefreshCw, User as UserIcon, Users as UsersIcon, Lock } from "lucide-react";
+import { Key, Plus, Trash2, Loader2, RefreshCw, User as UserIcon, Users as UsersIcon, Lock, ArrowUpToLine } from "lucide-react";
 import { ProviderWizard } from "./provider-wizard";
 import { ProviderHealthBadge } from "./provider-health-badge";
 
@@ -25,16 +25,33 @@ interface Props {
   }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onValidate: (id: string) => Promise<{ valid: boolean; error?: string }>;
+  /** Promote a personal provider to workspace-shared (admin-only). */
+  onPromote?: (id: string) => Promise<void>;
   onRefresh?: () => void;
 }
 
 export function CustomProvidersTab({
   workspaceId, isWorkspaceAdmin, currentUserId,
-  providers, loading, onRemove, onValidate, onRefresh,
+  providers, loading, onRemove, onValidate, onPromote, onRefresh,
 }: Props) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardScope, setWizardScope] = useState<"user" | "workspace">("user");
   const [validating, setValidating] = useState<string | null>(null);
+  const [promoting, setPromoting] = useState<string | null>(null);
+  const [promoteError, setPromoteError] = useState<string | null>(null);
+
+  const handlePromote = async (id: string) => {
+    if (!onPromote) return;
+    setPromoting(id);
+    setPromoteError(null);
+    try {
+      await onPromote(id);
+    } catch (err) {
+      setPromoteError(err instanceof Error ? err.message : "Failed to make provider available to workspace");
+    } finally {
+      setPromoting(null);
+    }
+  };
 
   const handleValidate = async (id: string) => {
     setValidating(id);
@@ -76,7 +93,7 @@ export function CustomProvidersTab({
     );
   }
 
-  const renderRow = (p: ApiAiProvider, canRemove: boolean) => (
+  const renderRow = (p: ApiAiProvider, canRemove: boolean, canPromote = false) => (
     <div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
       <div className="flex items-center gap-3 min-w-0">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary shrink-0">
@@ -91,6 +108,17 @@ export function CustomProvidersTab({
         <ProviderHealthBadge status={p.is_valid ? "healthy" : "down"} />
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
+        {canPromote && onPromote && (
+          <button
+            onClick={() => handlePromote(p.id)}
+            disabled={promoting === p.id}
+            className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-brand-400 hover:text-brand-300 hover:bg-brand-500/10 transition-colors"
+            title="Share this provider with everyone in the workspace"
+          >
+            {promoting === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpToLine className="h-3.5 w-3.5" />}
+            Make available to workspace
+          </button>
+        )}
         <button
           onClick={() => handleValidate(p.id)}
           disabled={validating === p.id}
@@ -137,12 +165,13 @@ export function CustomProvidersTab({
             Add personal
           </button>
         </div>
+        {promoteError && <p className="text-xs text-red-400">{promoteError}</p>}
         {personalProviders.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border py-6 text-center">
             <p className="text-xs text-muted-foreground">No personal providers. Add your own API key for private use.</p>
           </div>
         ) : (
-          <div className="space-y-2">{personalProviders.map((p) => renderRow(p, true))}</div>
+          <div className="space-y-2">{personalProviders.map((p) => renderRow(p, true, isWorkspaceAdmin))}</div>
         )}
       </section>
 

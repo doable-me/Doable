@@ -29,6 +29,8 @@ interface Props {
   }) => Promise<void>;
   onRemoveProvider: (id: string) => Promise<void>;
   onValidateProvider: (id: string) => Promise<{ valid: boolean; error?: string }>;
+  /** Promote a personal provider to workspace-shared (admin-only). */
+  onPromoteProvider?: (id: string) => Promise<void>;
   onRefreshProviders?: () => void;
 }
 
@@ -36,7 +38,7 @@ export function ConnectionsTab({
   workspaceId, isWorkspaceAdmin, currentUserId,
   accounts, accountsLoading, providers, providersLoading,
   onAddAccount, onRemoveAccount, onValidateAccount,
-  onAddProvider, onRemoveProvider, onValidateProvider, onRefreshProviders,
+  onAddProvider, onRemoveProvider, onValidateProvider, onPromoteProvider, onRefreshProviders,
 }: Props) {
   // GitHub account form state — one form, two scopes selected at submit time
   const [showAccountForm, setShowAccountForm] = useState<null | "user" | "workspace">(null);
@@ -244,6 +246,7 @@ export function ConnectionsTab({
           onAdd={onAddProvider}
           onRemove={onRemoveProvider}
           onValidate={onValidateProvider}
+          onPromote={onPromoteProvider}
           onRefresh={onRefreshProviders}
         />
       </section>

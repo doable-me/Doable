@@ -54,25 +54,30 @@ export function ModelConfigTab({
   const { models: primaryCopilotModels } = useCopilotModels(activePrimaryCopilotId || undefined);
   const { models: suggestionCopilotModels } = useCopilotModels(activeSuggestionCopilotId || undefined);
 
+  // Resolve a provider's catalog preset id so useProviderModels can fall back
+  // to catalog defaultModels when no models are cached/discovered.
+  const presetIdFor = (providerId: string): string | null =>
+    providerId ? (providers.find((p) => p.id === providerId)?.preset_id ?? null) : null;
+
   // ── Provider models per workspace section ──
   const primaryCustomProviderId = primary.source === "custom" ? primary.providerId : "";
   const suggestionCustomProviderId = suggestions.source === "custom" ? suggestions.providerId : "";
-  const { models: primaryProviderModels, loading: primaryProviderModelsLoading, refresh: refreshPrimaryModels } = useProviderModels(workspaceId, primaryCustomProviderId);
-  const { models: suggestionProviderModels, loading: suggestionProviderModelsLoading, refresh: refreshSuggestionModels } = useProviderModels(workspaceId, suggestionCustomProviderId);
+  const { models: primaryProviderModels, loading: primaryProviderModelsLoading, refresh: refreshPrimaryModels } = useProviderModels(workspaceId, primaryCustomProviderId, presetIdFor(primaryCustomProviderId));
+  const { models: suggestionProviderModels, loading: suggestionProviderModelsLoading, refresh: refreshSuggestionModels } = useProviderModels(workspaceId, suggestionCustomProviderId, presetIdFor(suggestionCustomProviderId));
 
   // ── User preferences (primary override) ──
   const [userPrimary, setUserPrimary] = useState<ModelSectionState>(EMPTY_MODEL_STATE);
   const activeUserCopilotId = userPrimary.source === "copilot" ? userPrimary.copilotAccountId : "";
   const { models: userCopilotModels } = useCopilotModels(activeUserCopilotId || undefined);
   const userCustomProviderId = userPrimary.source === "custom" ? userPrimary.providerId : "";
-  const { models: userProviderModels, loading: userProviderModelsLoading, refresh: refreshUserModels } = useProviderModels(workspaceId, userCustomProviderId);
+  const { models: userProviderModels, loading: userProviderModelsLoading, refresh: refreshUserModels } = useProviderModels(workspaceId, userCustomProviderId, presetIdFor(userCustomProviderId));
 
   // ── User preferences (suggestion override) ──
   const [userSuggestion, setUserSuggestion] = useState<ModelSectionState>(EMPTY_MODEL_STATE);
   const activeUserSugCopilotId = userSuggestion.source === "copilot" ? userSuggestion.copilotAccountId : "";
   const { models: userSugCopilotModels } = useCopilotModels(activeUserSugCopilotId || undefined);
   const userSugCustomProviderId = userSuggestion.source === "custom" ? userSuggestion.providerId : "";
-  const { models: userSugProviderModels, loading: userSugProviderModelsLoading, refresh: refreshUserSugModels } = useProviderModels(workspaceId, userSugCustomProviderId);
+  const { models: userSugProviderModels, loading: userSugProviderModelsLoading, refresh: refreshUserSugModels } = useProviderModels(workspaceId, userSugCustomProviderId, presetIdFor(userSugCustomProviderId));
 
   const [userSaving, setUserSaving] = useState(false);
   const [userSaved, setUserSaved] = useState(false);
@@ -390,6 +395,7 @@ export function ModelConfigTab({
         onOpenChange={setWizardOpen}
         workspaceId={workspaceId}
         onProviderAdded={handleProviderAdded}
+        isWorkspaceAdmin={isPlatformAdmin}
       />
     </div>
   );
