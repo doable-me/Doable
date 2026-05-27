@@ -717,7 +717,7 @@ overrides.
 | `DOABLE_HARDENING` | `full` | `relaxed` for debugger workflows on a dev droplet; `off` for raw spawn (debug only). Affects build, dev-server, and runtime layers in lockstep. |
 | `DOABLE_DEV_SECCOMP` | `off` | Turn `on` to add a kernel syscall deny-list to dev preview spawns. Closes kernel-exploit escalation at the cost of breaking ptrace/strace/perf workflows inside the sandbox. |
 | `RATE_LIMIT_MAX` | `0` (off) | Set to `200` (or any positive integer) on hosts without Cloudflare/nginx in front. |
-| `DOABLE_ENABLED_FRAMEWORKS` | `vite-react` | Comma-separated framework ids. Default ships **only Vite-React** (Next.js is registered but off by default — set `vite-react,nextjs-app` to enable it, or toggle in `/admin` → Frameworks). Re-enabling a deleted framework requires restoring its files from `~/Documents/doable-disabled-frameworks-backup-<date>/` first. |
+| `DOABLE_ENABLED_FRAMEWORKS` | `vite-react,nextjs-app` | Comma-separated framework ids. Re-enabling a deleted framework requires restoring its files from `~/Documents/doable-disabled-frameworks-backup-<date>/` first. |
 
 ### Resource toggles
 
