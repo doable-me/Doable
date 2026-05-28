@@ -41,9 +41,9 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
 6. **Never call \`db.exec\`** from app code — schema changes belong in migrations issued via \`data.migrate\` from this chat.`;
 
 /**
- * Returns the per-app database prompt block when DOABLE_APP_DB_ENABLED==="1",
- * otherwise returns an empty string so the block is invisible when the feature
- * is disabled.
+ * Returns the per-app database prompt block unless DOABLE_APP_DB_ENABLED==="0"
+ * (the feature is ON by default; set the env var to "0" to opt out), otherwise
+ * returns an empty string so the block is invisible when the feature is disabled.
  */
 export function buildAppDbContext(opts?: { env?: Record<string, string | undefined> }): string {
   const env = opts?.env ?? process.env;

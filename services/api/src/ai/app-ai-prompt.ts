@@ -219,9 +219,10 @@ Extra rules:
    this in the UI; pgvector handles the cross-over silently.`;
 
 /**
- * Returns the per-app Doable AI prompt block when
- * `DOABLE_APP_AI_ENABLED==="1"`, otherwise an empty string so the block is
- * invisible when the feature is disabled. The RAG block is appended only when
+ * Returns the per-app Doable AI prompt block unless
+ * `DOABLE_APP_AI_ENABLED==="0"` (ON by default; set the env var to "0" to opt
+ * out), otherwise an empty string so the block is invisible when the feature is
+ * disabled. The RAG block is appended only when
  * BOTH the AI flag and the per-app DB flag are on (the recipe requires both
  * SDKs).
  */
