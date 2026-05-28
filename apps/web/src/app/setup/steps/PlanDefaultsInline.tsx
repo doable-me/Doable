@@ -22,7 +22,7 @@ const PLAN_ORDER = ["free", "pro", "business", "enterprise"];
  * step. Reads + writes the same /admin/platform-ai-defaults endpoints the
  * full /admin panel uses — no new API surface.
  *
- * Pre-populated by Step 2 (AI Provider) when the admin opted to "set as plan
+ * Pre-populated by Step 3 (AI Provider) when the admin opted to "set as plan
  * default" (default = true). This section lets the admin verify what got
  * written and override per plan before finishing setup.
  */
@@ -93,7 +93,7 @@ export function PlanDefaultsInline() {
   if (defaults.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
-        No plan defaults configured. The provider you set in Step 2 should already be applied to all plans.
+        No plan defaults configured. The provider you set in Step 3 should already be applied to all plans.
         If this list is empty, you can configure them later from <strong>/admin/plans</strong>.
       </div>
     );
@@ -106,7 +106,7 @@ export function PlanDefaultsInline() {
           <Cpu className="h-4 w-4 text-brand-400" /> AI model defaults per plan
         </h3>
         <p className="text-xs text-muted-foreground">
-          The provider+model you chose in Step 2 was applied to all plans automatically.
+          The provider+model you chose in Step 3 was applied to all plans automatically.
           Optionally override the model for individual plans (e.g. a cheaper model on Free,
           a more capable one on Enterprise). You can change these any time in <strong>/admin/plans</strong>.
         </p>
