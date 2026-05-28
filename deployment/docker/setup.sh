@@ -729,10 +729,16 @@ case "$MODE" in
     else
       info "DOMAIN mode: Caddy binds 0.0.0.0 + auto-fetches Let's Encrypt cert for ${LISTEN_HOST}"
       DOABLE_BIND_ADDR="0.0.0.0"
-      DOABLE_TLS="${EMAIL:-internal}"
+      # When EMAIL is unset, fall back to a placeholder ACME contact ("acme@<domain>")
+      # so Caddy STILL goes to Let's Encrypt — NOT to its internal CA. The OOB promise
+      # is "DOMAIN mode = publicly trusted cert with no browser warning", which is
+      # broken if we fall back to internal (issuer=Caddy Local Authority). Anonymous
+      # ACME registration is supported by LE; the placeholder email just goes in the
+      # account record (no email is ever sent to it).
+      DOABLE_TLS="${EMAIL:-acme@${LISTEN_HOST}}"
       if [ -z "${EMAIL:-}" ]; then
-        warn "EMAIL not set — Caddy ACME will register without a contact address."
-        warn "  Re-run with EMAIL=you@example.com for renewal notifications."
+        warn "EMAIL not set — using placeholder ACME contact 'acme@${LISTEN_HOST}'."
+        warn "  Re-run with EMAIL=you@example.com to receive cert renewal notices."
       fi
     fi
     ;;
