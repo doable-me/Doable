@@ -1919,6 +1919,16 @@ ${CADDY_PREAMBLE}
         reverse_proxy 127.0.0.1:4000
     }
 
+    # /__doable/* → API on 127.0.0.1:4000. AI-generated preview apps call
+    # origin-relative /__doable/data/* (@doable/data SDK), /__doable/ai/*
+    # (@doable/ai SDK), and /__doable/connector-proxy/*; without this route
+    # those POSTs fall through to the Next.js handler below and get a 404,
+    # which surfaces in the preview as a stuck "Saving…" / silent failure.
+    # Mirrors deployment/docker/Caddyfile.
+    handle /__doable/* {
+        reverse_proxy 127.0.0.1:4000
+    }
+
     # /socket* and /ws* → WebSocket on 127.0.0.1:4001
     @ws path /socket* /ws*
     handle @ws {
