@@ -38,6 +38,13 @@ function isVisualEditPrompt(userMessage: string | undefined): boolean {
  * pester the model to "continue building" afterwards. Match by suffix so
  * connector-prefixed names (mcp_<connector>_<tool>) are covered too.
  */
+// Only RENDERERS belong here — not the "create_*" kick-off tools. The kick-off
+// returns a status card that injects a BUILD_* prompt for the model's NEXT
+// turn; the actual artifact (xlsx / pdf / slides / md) is produced by the
+// matching build_* / render_*. Listing the kick-offs here made auto-continue
+// declare "deliverable produced" after the status card alone, so the model
+// never reached build_* and the project's index.html / App.tsx stayed at the
+// default Vite scaffold (no SheetJS viewer, no .xlsx file, no preview).
 const PRODUCTIVE_TOOL_SUFFIXES = [
   // presentation-builder
   "build_deck",
@@ -45,16 +52,12 @@ const PRODUCTIVE_TOOL_SUFFIXES = [
   "render_pptx",
   "render_web_slides",
   "build_presentation",
-  "create_presentation",
   // markdown-builder
   "build_markdown",
-  "create_markdown",
   // spreadsheet-builder
   "build_spreadsheet",
-  "create_spreadsheet",
   // pdf-builder
   "build_pdf",
-  "create_pdf",
 ];
 function isProductiveToolName(name: string | undefined): boolean {
   if (!name) return false;
