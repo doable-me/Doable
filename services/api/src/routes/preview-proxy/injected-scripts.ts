@@ -441,6 +441,43 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
     }
   });
 
+  // ─── Self-heal: reload once the dev server recovers ───────────
+  // After a build, the per-project Vite dev server is restarted ("Deploy
+  // preview"). The iframe can be left showing stale content (the scaffold
+  // splash or an older build) because Vite's own client cannot resync its
+  // module graph across a full server restart — so the user sees a frozen
+  // loading/scaffold preview and thinks NOTHING was built. When the HMR
+  // socket closes we poll this same URL; as soon as the proxy serves a real
+  // 200 (server back + final app), we force ONE reload so the iframe always
+  // lands on the finished app. A short per-window guard prevents reload loops.
+  var __doableReloadArmed = false;
+  function __doableArmReloadOnRecover() {
+    if (__doableReloadArmed) return;
+    __doableReloadArmed = true;
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (tries > 45) { clearInterval(iv); return; } // ~90s safety cap
+      try {
+        fetch(window.location.href, { method: 'GET', cache: 'no-store' })
+          .then(function(r) {
+            if (!r || !r.ok) return; // 503 retry page / server still warming
+            clearInterval(iv);
+            var now = Date.now();
+            var last = 0;
+            try { last = +(sessionStorage.getItem('__doable_reload_at') || 0); } catch (e) {}
+            if (now - last > 8000) {
+              try { sessionStorage.setItem('__doable_reload_at', String(now)); } catch (e) {}
+              window.location.reload();
+            } else {
+              __doableReloadArmed = false;
+            }
+          })
+          .catch(function() {});
+      } catch (e) {}
+    }, 2000);
+  }
+
   // ─── HMR detection ─────────────────────────────────────────
   if (window.__vite_plugin_react_preamble_installed__ !== undefined || true) {
     var hmrSocket = null;
@@ -472,6 +509,12 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
             type: 'doable-hmr-connected',
             timestamp: Date.now()
           }, '*');
+        });
+        ws.addEventListener('close', function() {
+          // Dev server went away (restart after a build, or idle recycle).
+          // Recover by reloading once it answers again, so a stale/scaffold
+          // preview never gets stuck.
+          __doableArmReloadOnRecover();
         });
       }
       return ws;
