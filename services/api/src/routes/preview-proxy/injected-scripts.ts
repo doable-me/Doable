@@ -358,7 +358,7 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
   // auto-fix loop is a false positive: the model can't fix infra, so it burns all
   // attempts and the user sees "Auto-fix paused ... after N attempts". Drop it when
   // the app has actually mounted content (#root has children or the body has text).
-  var HMR_WS_RE = /failed to connect to websocket|\\[vite\\][^\\n]*websocket|server connection lost|websocket connection[^\\n]*fail/i;
+  var HMR_WS_RE = /failed to connect to websocket|\\[vite\\][^\\n]*websocket|server connection lost|websocket connection[^\\n]*fail|websocket closed without opened|websocket is closed before the connection is established/i;
   // CONNECTOR-AUTH FALSE POSITIVE: @doable/data and @doable/ai authenticate with
   // a connector JWT (globalThis.__DOABLE_DATA_TOKEN) that the bridge injects
   // ASYNCHRONOUSLY. An app's on-mount call can fire before the token lands, so
