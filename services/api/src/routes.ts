@@ -54,6 +54,7 @@ import { publicFrameworkRoutes } from "./routes/admin-frameworks.js";
 import { setupRoutes } from "./routes/setup.js";
 // Per-app database (PRD per-app-db). Mounted only when the feature flag is on.
 import { appDataRoutes } from "./routes/app-data.js";
+import { appAuthRoutes } from "./routes/app-auth.js";
 import { dataTokenRoutes } from "./routes/projects/data-token.js";
 import { mcpAppsDataRoutes } from "./routes/mcp-apps-data.js";
 import { DOABLE_APP_DB_ENABLED } from "./data-worker/config.js";
@@ -85,6 +86,11 @@ app.route("/", connectorProxyRoutes);
 // flag off there is no /__doable/data/* surface at all (PRD 08 §6 kill switch).
 if (DOABLE_APP_DB_ENABLED) {
   app.route("/", appDataRoutes);
+  // Per-app end-user auth plane (/__doable/auth/{signup,login,me,logout}).
+  // Credentials live in the platform DB (never the per-app DB); the issued
+  // session token drives app.user_id so per-user RLS works for the app's own
+  // end-users without exposing any password hash. See routes/app-auth.ts.
+  app.route("/", appAuthRoutes);
   // mcpAppsDataRoutes defines GET /:resource{.+} — it MUST be mounted under its
   // own prefix, NOT at "/", or the {.+} wildcard swallows every GET request
   // (/workspaces, /projects, …) and 404s the whole app.

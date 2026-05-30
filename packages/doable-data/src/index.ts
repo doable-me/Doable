@@ -1,13 +1,25 @@
 /**
- * @doable/data — Per-app database client SDK.
+ * @doable/data — Per-app database + end-user auth client SDK.
  *
- * Lets AI-generated Vite apps query their per-project PGlite database
- * through the secure `/__doable/data/*` API surface. Zero dependencies.
+ * Lets AI-generated Vite apps query their per-project PGlite database and
+ * authenticate their OWN end-users through the secure `/__doable/*` API surface.
+ * Zero dependencies.
  *
- * Usage:
+ * Data usage:
  *   import { db } from "@doable/data";
- *   const r = await db.query<{ id: string }>("SELECT id FROM leads WHERE created_by = $1", [userId]);
+ *   const r = await db.query<{ id: string }>("SELECT id FROM leads", []);
  *   if (!r.ok) throw new Error(r.error?.message);
+ *
+ * End-user auth usage (a generated app's OWN customers/users — NOT the Doable
+ * platform account). Passwords are hashed + verified server-side; the app never
+ * sees a hash and never needs a credentials table. The logged-in user is set
+ * automatically as the identity for db.query, so owner-scoped rows
+ * (created_by = current_setting('app.user_id')) isolate per end-user:
+ *   import { db } from "@doable/data";
+ *   await db.auth.signup({ email, password, name });   // logs in + persists (cookie)
+ *   await db.auth.login({ email, password });
+ *   const me = await db.auth.getUser();                 // null when signed out
+ *   await db.auth.logout();
  */
 
 export interface DataResult<T = Record<string, unknown>> {
@@ -25,48 +37,61 @@ export interface DataClientOptions {
   baseUrl?: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string | null;
+}
+export interface AuthResult {
+  ok: boolean;
+  user?: AuthUser | null;
+  token?: string;
+  error?: string;
+  message?: string;
+}
+
 /** Max time to wait for a runtime-injected token before giving up (ms). */
 const TOKEN_WAIT_MS = 5000;
 /** Poll interval while waiting for the token global to be populated (ms). */
 const TOKEN_POLL_MS = 50;
 
+/**
+ * In-memory app end-user session token (set by db.auth.login/signup). Sent as
+ * `x-doable-app-session` on data calls so per-user RLS scopes to the logged-in
+ * end-user. The HttpOnly session cookie that /__doable/auth sets is the DURABLE
+ * copy: it rides credentialed requests after a page reload even though this
+ * module-level variable resets — so "stay logged in" survives a refresh.
+ */
+let appSessionToken = "";
+
+/**
+ * Resolve the connector bearer token: an explicit constructor token, else the
+ * global `__DOABLE_DATA_TOKEN` the bridge injects (possibly asynchronously, so a
+ * bounded poll avoids racing an on-mount call against token arrival).
+ */
+async function resolveBearer(explicit: string): Promise<string> {
+  if (explicit) return explicit;
+  const readGlobal = (): string =>
+    ((globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] as string) || "";
+  const immediate = readGlobal();
+  if (immediate) return immediate;
+  const deadline = Date.now() + TOKEN_WAIT_MS;
+  while (Date.now() < deadline) {
+    await new Promise<void>((r) => setTimeout(r, TOKEN_POLL_MS));
+    const t = readGlobal();
+    if (t) return t;
+  }
+  return "";
+}
+
 export class DoableDataClient {
   private opts: DataClientOptions;
+  /** End-user authentication for the app's OWN users. */
+  readonly auth: DoableAuthClient;
 
   constructor(opts: DataClientOptions) {
     this.opts = opts;
-  }
-
-  /**
-   * Resolve the auth token. Reads the constructor token first, then the global
-   * `__DOABLE_DATA_TOKEN` that the connector bridge populates at runtime.
-   *
-   * The bridge delivers the token asynchronously (postMessage round-trip in the
-   * editor iframe, fetch in standalone), so an app's on-mount query can fire
-   * before the token lands. When that happens this method waits — bounded to
-   * TOKEN_WAIT_MS — for the global to appear instead of sending an empty Bearer.
-   *
-   * Fast path: when a token is already present (constructor or global), it
-   * returns synchronously-resolved with zero added latency. SSR/no-window safe:
-   * if there is no global object the loop simply times out and returns "".
-   */
-  private async resolveToken(): Promise<string> {
-    if (this.opts.token) return this.opts.token;
-
-    const readGlobal = (): string =>
-      ((globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"] as string) || "";
-
-    const immediate = readGlobal();
-    if (immediate) return immediate;
-
-    // Token not here yet — bounded poll for the bridge to inject it.
-    const deadline = Date.now() + TOKEN_WAIT_MS;
-    while (Date.now() < deadline) {
-      await new Promise<void>((r) => setTimeout(r, TOKEN_POLL_MS));
-      const t = readGlobal();
-      if (t) return t;
-    }
-    return "";
+    this.auth = new DoableAuthClient(opts);
   }
 
   async query<T = Record<string, unknown>>(
@@ -91,18 +116,22 @@ export class DoableDataClient {
     retries = 3,
     triedTokenRefresh = false,
   ): Promise<DataResult> {
-    // Resolve token, awaiting a bounded window for the bridge to inject it so an
-    // on-mount query doesn't race the (async) token arrival and send an empty
-    // Bearer. No-op when a token is already present.
-    const token = await this.resolveToken();
+    const token = await resolveBearer(this.opts.token);
+
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "authorization": `Bearer ${token}`,
+      "x-doable-data-api": "1",
+    };
+    // Thread the logged-in end-user's identity so RLS scopes to them. The header
+    // covers same-tab calls; `credentials: "include"` rides the session COOKIE so
+    // the identity also survives a page reload (when appSessionToken is reset).
+    if (appSessionToken) headers["x-doable-app-session"] = appSessionToken;
 
     const res = await fetch(`${this.opts.baseUrl ?? ""}${path}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${token}`,
-        "x-doable-data-api": "1",
-      },
+      headers,
+      credentials: "include",
       body: JSON.stringify(body),
     });
 
@@ -111,21 +140,71 @@ export class DoableDataClient {
       return this.call(path, body, retries - 1, triedTokenRefresh);
     }
 
-    // If we sent an empty token (token arrived after resolveToken gave up) or
-    // the server rejected an in-flight/expired token with 401, re-resolve once
-    // and retry — by now the bridge has very likely populated the global.
     if (
       !triedTokenRefresh &&
       (res.status === 401 || token === "") &&
       this.opts.token === ""
     ) {
-      const fresh = await this.resolveToken();
+      const fresh = await resolveBearer(this.opts.token);
       if (fresh && fresh !== token) {
         return this.call(path, body, retries, true);
       }
     }
 
     return res.json() as Promise<DataResult>;
+  }
+}
+
+/**
+ * End-user auth client (`db.auth`). Talks to /__doable/auth/* with the connector
+ * bearer + credentials so the session cookie is set/sent. signup/login stash the
+ * returned token in `appSessionToken` for the header path; the cookie persists it.
+ */
+export class DoableAuthClient {
+  constructor(private opts: DataClientOptions) {}
+
+  private async req(path: string, body?: unknown): Promise<AuthResult> {
+    const token = await resolveBearer(this.opts.token);
+    const res = await fetch(`${this.opts.baseUrl ?? ""}${path}`, {
+      method: body !== undefined ? "POST" : "GET",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${token}`,
+      },
+      credentials: "include",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    try {
+      return (await res.json()) as AuthResult;
+    } catch {
+      return { ok: false, error: "NETWORK", message: "Auth request failed." };
+    }
+  }
+
+  /** Create an account (and sign in). Returns { ok, user } or { ok:false, error }. */
+  async signup(p: { email: string; password: string; name?: string }): Promise<AuthResult> {
+    const r = await this.req("/__doable/auth/signup", p);
+    if (r.ok && r.token) appSessionToken = r.token;
+    return r;
+  }
+
+  /** Sign in an existing user. */
+  async login(p: { email: string; password: string }): Promise<AuthResult> {
+    const r = await this.req("/__doable/auth/login", p);
+    if (r.ok && r.token) appSessionToken = r.token;
+    return r;
+  }
+
+  /** Sign out (clears the session cookie + in-memory token). */
+  async logout(): Promise<void> {
+    await this.req("/__doable/auth/logout", {});
+    appSessionToken = "";
+  }
+
+  /** The currently signed-in end-user, or null. Works across reloads via cookie. */
+  async getUser(): Promise<AuthUser | null> {
+    const r = await this.req("/__doable/auth/me");
+    return r.ok && r.user ? r.user : null;
   }
 }
 

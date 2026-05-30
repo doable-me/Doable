@@ -56,7 +56,16 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
    );
    if (!r.ok) throw new Error(r.error?.message);
    \`\`\`
-6. **Never call \`db.exec\`** from app code — schema changes belong in migrations issued via \`data.migrate\` from this chat.`;
+6. **Never call \`db.exec\`** from app code — schema changes belong in migrations issued via \`data.migrate\` from this chat.
+7. **🔐 USER ACCOUNTS / LOGIN — use the built-in \`db.auth\`; NEVER roll your own passwords table.** When the app needs its OWN end-users (a store's customers, a SaaS's users — distinct from the Doable account that builds the app), use the built-in auth on the pre-linked \`@doable/data\`:
+   \`\`\`ts
+   import { db } from "@doable/data";
+   await db.auth.signup({ email, password, name }); // creates the account AND signs in
+   await db.auth.login({ email, password });          // sign in
+   const user = await db.auth.getUser();              // current user, or null — call on mount; survives reload
+   await db.auth.logout();
+   \`\`\`
+   Passwords are hashed + verified SERVER-SIDE and stored OFF the app database — your app never sees a hash. So do NOT create a \`users\`/\`customers\`/passwords table, do NOT hash passwords yourself, and NEVER make a credentials table \`public_read\` (that would leak every hash). Once signed in, the logged-in end-user is automatically the identity for \`db.query\`, so OWNER-SCOPED tables (pattern (b) in rule 3) isolate each user's own rows with zero extra wiring — just \`SELECT * FROM bookings\` returns only the current user's bookings, and never set \`created_by\` yourself. On bad credentials the call returns \`{ ok: false, error, message }\` — show \`message\`. Store the user in React state from \`db.auth.getUser()\`; do NOT try to persist sessions in localStorage (it is blocked) — the session is kept in a cookie and restored by \`getUser()\`.`;
 
 /**
  * Returns the per-app database prompt block unless DOABLE_APP_DB_ENABLED==="0"

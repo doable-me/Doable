@@ -30,6 +30,7 @@ import {
   type ResolvedAuth,
 } from "./connector-proxy.js";
 import { runOnProject } from "../data-worker/pool.js";
+import { verifyAppSession, readAppSessionToken } from "./app-auth.js";
 import { introspectSchema } from "../data-worker/schema.js";
 import { applyMigration, MIGRATION_ID_RE } from "../data-worker/migrate.js";
 import {
@@ -120,9 +121,23 @@ export function toolNotAllowed(auth: ResolvedAuth, op: DataOp): boolean {
   return !auth.allowedTools.includes(`data.${op}`);
 }
 
-function appUserId(c: Context, auth: ResolvedAuth): string {
+async function appUserId(c: Context, auth: ResolvedAuth): Promise<string> {
   // RLS scopes every row to this identity, so who may ASSERT it is security-critical.
-  // Only a SERVER-tier API key (a trusted backend, never exposed to the browser)
+  //
+  // (1) Per-app end-user auth (routes/app-auth.ts): if the request carries a
+  // VALID app-session token — a JWT signed with JWT_SECRET and bound to THIS
+  // project — the identity is that authenticated end-user. This is safe to honour
+  // from the browser because the token can only ever assert its own `sub`: a user
+  // cannot forge it (no secret) and a token minted for another project fails the
+  // projectId check. This is what lets a generated app's OWN users (a salon's
+  // customers) get correctly RLS-scoped per-user data without the app ever reading
+  // a password hash.
+  const sessionToken = readAppSessionToken(c);
+  if (sessionToken) {
+    const claims = await verifyAppSession(sessionToken, auth.projectId);
+    if (claims) return claims.sub;
+  }
+  // (2) Only a SERVER-tier API key (a trusted backend, never exposed to the browser)
   // may set an arbitrary end-user identity via x-doable-app-user — that is how a
   // developer threads their authenticated end-user through (PRD 04 §6.2 / S7).
   // For browser-exposed credentials (client-tier keys, preview JWTs) the header is
@@ -215,7 +230,7 @@ async function handle(c: Context, op: DataOp): Promise<Response> {
       op,
       sql: parsed.sql,
       params: parsed.params,
-      app_user_id: op === "query" ? appUserId(c, auth) : null,
+      app_user_id: op === "query" ? await appUserId(c, auth) : null,
       row_cap: parsed.row_cap ?? DOABLE_APP_DB_ROW_CAP,
       timeout_ms: parsed.timeout_ms ?? DOABLE_APP_DB_QUERY_TIMEOUT_MS,
     };
