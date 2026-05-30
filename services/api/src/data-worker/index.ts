@@ -238,6 +238,49 @@ function mapClassifyCode(code?: string): WorkerErrorCode {
   return "FORBIDDEN_STMT";
 }
 
+// PGlite — like the Postgres wire protocol — returns arbitrary-precision and
+// 64-bit numeric types as STRINGS to avoid float64 precision loss: numeric /
+// decimal (OID 1700), money (790) and int8 / bigint (20). But generated apps
+// (and the `: number` TypeScript the AI writes) treat these as JS numbers, e.g.
+// `product.price.toFixed(2)`. Receiving the raw string makes that render throw
+// `TypeError: x.toFixed is not a function`, which trips the preview ErrorBoundary
+// and the (futile) auto-fix loop — every app with a money/decimal column hits it.
+// Coerce the number-like columns back to JS numbers here, at the single choke
+// point every per-app DB read flows through, so the data matches the app's model.
+//
+// Precision tradeoff is intentional and mirrors the common
+// `pg.types.setTypeParser(1700, Number)` recipe: numeric/decimal/money parse via
+// Number(); int8 parses only when the value is a safe integer, otherwise the
+// string is preserved so large bigint IDs stay exact.
+const NUMBER_LIKE_OIDS = new Set<number>([
+  1700, // numeric / decimal
+  790, // money
+  20, // int8 / bigint
+]);
+
+function coerceNumberLikeRows(rows: unknown[], fields: WorkerField[]): void {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  const cols: Array<{ name: string; isInt8: boolean }> = [];
+  for (const f of fields) {
+    if (f.dataTypeID !== undefined && NUMBER_LIKE_OIDS.has(f.dataTypeID)) {
+      cols.push({ name: f.name, isInt8: f.dataTypeID === 20 });
+    }
+  }
+  if (cols.length === 0) return;
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const obj = row as Record<string, unknown>;
+    for (const { name, isInt8 } of cols) {
+      const v = obj[name];
+      if (typeof v !== "string" || v.length === 0) continue;
+      const n = Number(v);
+      if (!Number.isFinite(n)) continue; // 'NaN' / 'Infinity' / junk → leave as-is
+      if (isInt8 && !Number.isSafeInteger(n)) continue; // keep big ids exact
+      obj[name] = n;
+    }
+  }
+}
+
 async function runQuery(
   db: PGlite,
   args: WorkerArgs,
@@ -295,6 +338,7 @@ async function runQuery(
     truncated = true;
   }
   const rowCount = isSelect ? rows.length : (result.affectedRows ?? 0);
+  coerceNumberLikeRows(rows, fields);
   send({ id: req.id, ok: true, rows, rowCount, fields, truncated });
 }
 
@@ -340,6 +384,7 @@ async function runExec(
   // note): db.transaction() suppresses PGlite's per-statement syncToFs, so this
   // makes the schema durable immediately rather than only on a clean close.
   await db.syncToFs();
+  coerceNumberLikeRows(rows, fields);
   send({ id: req.id, ok: true, rows, rowCount: affected, fields, notices: [] });
 }
 
