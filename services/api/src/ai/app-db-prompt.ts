@@ -13,7 +13,24 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
 0. **⛔ CREATE THE SCHEMA *BEFORE* ANY APP CODE — NON-NEGOTIABLE.** Every table your app code will \`db.query\` MUST be created THIS SESSION via the \`data.migrate\` tool BEFORE you write the component that queries it. The runtime data endpoint the app uses ONLY accepts \`SELECT/INSERT/UPDATE/DELETE\` — it REJECTS \`CREATE TABLE\` (DDL), and \`db.exec\` throws in app code. So if you ship code that does \`db.query("... FROM todos ...")\` without first running a \`data.migrate\` that created \`todos\`, the table does NOT exist, every query fails silently, and the app shows empty/"no data" forever (the #1 reason a generated app "won't save anything"). Order, always: (1) \`data.migrate\` create table(s) → (2) \`data.schema\` to verify → (3) write the app code. Never skip step 1.
 1. **Always check \`data.schema\` first** before writing app code that references a table. Never invent table or column names without verification.
 2. **Use \`data.migrate\`** (not \`data.exec\`) for every \`CREATE\`/\`ALTER\`/\`DROP\`. The migration_id should follow \`NNNN_short_name\` (e.g., \`0001_init_leads\`). Migrations are idempotent — re-running the same id is safe; use \`CREATE TABLE IF NOT EXISTS\` so a replayed build never errors. A table referenced by \`db.query\` but never created with \`data.migrate\` simply does not exist.
-3. **Row-level security is the DEFAULT for EVERY table — enable it whenever possible.** Every \`CREATE TABLE\` MUST have a \`created_by uuid NOT NULL\` column, \`ENABLE ROW LEVEL SECURITY\`, and an owner policy. The ONLY exception is data the user *explicitly* asks to be shared/public/global; when in doubt, secure it. Use this template; never deviate:
+3. **Enable RLS on EVERY table, then pick the policy by WHO should see the rows — public-read for shared content, owner-scoped for private data. Getting this wrong is the #1 reason a built app's preview looks empty.** Every \`CREATE TABLE\` MUST \`ENABLE ROW LEVEL SECURITY\`. Then choose:
+
+   **(a) PUBLIC / SHARED content — anything a visitor or customer of the app is meant to browse** (product catalogs, restaurant menus, blog posts, listings, categories, events, public profiles, site/business settings). These rows are NOT owned by one end-user; they must be readable by EVERYONE — the owner's preview, anonymous visitors, and the deployed site. If the user says "customers can browse …", "show our products/menu", "a blog", "a directory" → it is PUBLIC. **When in doubt whether a table is public, ask: "would a visitor of this app need to see these rows?" If yes → use the PUBLIC pattern.** Owner-scoping public content makes it invisible to everyone but the one account that wrote it (the classic "menu/catalog shows blank" bug). Use:
+   \`\`\`sql
+   CREATE TABLE <name> (
+     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     created_by  uuid NOT NULL DEFAULT (nullif(current_setting('app.user_id', true), ''))::uuid,
+     created_at  timestamptz NOT NULL DEFAULT now(),
+     -- your columns
+   );
+   ALTER TABLE <name> ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY <name>_public_read ON <name> FOR SELECT USING (true);
+   CREATE POLICY <name>_owner_write ON <name> FOR ALL
+     USING (created_by::text = current_setting('app.user_id', true))
+     WITH CHECK (created_by::text = current_setting('app.user_id', true));
+   \`\`\`
+
+   **(b) PRIVATE per-user data — rows each end-user should see ONLY their own of** (a user's own orders, cart, bookings, messages, profile). Owner-scope these:
    \`\`\`sql
    CREATE TABLE <name> (
      id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,8 +43,9 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
      USING (created_by::text = current_setting('app.user_id', true))
      WITH CHECK (created_by::text = current_setting('app.user_id', true));
    \`\`\`
-   **\`created_by\` MUST have that exact DEFAULT** — the data API sets \`app.user_id\` to the signed-in end-user, so the default stamps the row owner automatically. In the POLICY, cast the column to text and compare to the GUC — never \`current_setting(...)::uuid\` there: an absent identity is the empty string, and \`''::uuid\` raises instead of matching zero rows.
-   **In app code: NEVER set \`created_by\` and NEVER filter by it.** Just INSERT your business columns (e.g. \`INSERT INTO leads (title, email) VALUES ($1,$2)\`) — the DEFAULT fills \`created_by\`. SELECT without a \`created_by\` filter (e.g. \`SELECT * FROM leads\`) — RLS auto-scopes every read/write to the current user. Manually passing \`created_by\` will mismatch the session identity and the row will be rejected or invisible.
+   **\`created_by\` MUST have that exact DEFAULT.** In the POLICY, cast the column to text and compare to the GUC — never \`current_setting(...)::uuid\` there: an absent identity is the empty string, and \`''::uuid\` raises instead of matching zero rows.
+   **In app code: NEVER set \`created_by\` and NEVER filter by it.** Just INSERT your business columns (e.g. \`INSERT INTO leads (title, email) VALUES ($1,$2)\`) — the DEFAULT fills \`created_by\`; RLS auto-scopes owner-scoped reads. Manually passing \`created_by\` mismatches the session identity and the row is rejected or invisible.
+   **When SEEDING rows from THIS chat (data.query / data.exec): do NOT hardcode \`created_by\` to a placeholder like \`'00000000-0000-0000-0000-000000000000'\`.** The build-time data tools run as the project owner, so the \`created_by\` DEFAULT stamps the owner automatically — just INSERT your business columns and the seeded rows will be visible in the owner's preview. Hardcoding a zero/placeholder owner makes seeded rows invisible to the owner (and to public-read it is simply unnecessary).
 4. **For multi-tenant apps** with a workspace concept, add a \`workspace_id uuid NOT NULL\` column and a second policy that joins through a workspace-membership table.
 5. **In app code, always use parameterised queries.** Never interpolate user input into the SQL string. Example:
    \`\`\`ts

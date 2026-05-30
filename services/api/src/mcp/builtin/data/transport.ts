@@ -153,14 +153,20 @@ export class DataBuiltinTransport implements McpTransport {
       return "";
     }
     try {
-      const [row] = await sql<Array<{ owner_id: string }>>`
-        SELECT w.owner_id
-        FROM projects p
-        JOIN workspaces w ON w.id = p.workspace_id
-        WHERE p.id = ${this.projectId}
+      // Read the owner from the builtin:data connector row, NOT projects/
+      // workspaces: those are FORCE-RLS in the main DB and this lookup runs
+      // outside an RLS context (no doable.current_user_id GUC set), so a JOIN
+      // through them returns zero rows. mcp_connectors is not RLS-gated and its
+      // created_by IS the provisioning owner (see register.ts ensureData-
+      // ConnectorForProject -> createdBy: ownerUserId).
+      const [row] = await sql<Array<{ created_by: string }>>`
+        SELECT created_by
+        FROM mcp_connectors
+        WHERE project_id = ${this.projectId}
+          AND server_command = 'builtin:data'
         LIMIT 1
       `;
-      this.ownerUserId = row?.owner_id ?? null;
+      this.ownerUserId = row?.created_by ?? null;
     } catch {
       this.ownerUserId = null;
     }
