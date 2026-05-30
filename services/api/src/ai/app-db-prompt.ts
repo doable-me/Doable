@@ -62,7 +62,7 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
    import { db } from "@doable/data";
    await db.auth.signup({ email, password, name }); // creates the account AND signs in
    await db.auth.login({ email, password });          // sign in
-   const user = await db.auth.getUser();              // current user, or null — call on mount; survives reload
+   const { user } = await db.auth.getUser();          // user is null when signed out — call on mount; survives reload
    await db.auth.logout();
    \`\`\`
    Passwords are hashed + verified SERVER-SIDE and stored OFF the app database — your app never sees a hash. So do NOT create a \`users\`/\`customers\`/passwords table, do NOT hash passwords yourself, and NEVER make a credentials table \`public_read\` (that would leak every hash). Once signed in, the logged-in end-user is automatically the identity for \`db.query\`, so OWNER-SCOPED tables (pattern (b) in rule 3) isolate each user's own rows with zero extra wiring — just \`SELECT * FROM bookings\` returns only the current user's bookings, and never set \`created_by\` yourself. On bad credentials the call returns \`{ ok: false, error, message }\` — show \`message\`. Store the user in React state from \`db.auth.getUser()\`; do NOT try to persist sessions in localStorage (it is blocked) — the session is kept in a cookie and restored by \`getUser()\`.`;

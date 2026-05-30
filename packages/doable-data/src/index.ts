@@ -201,10 +201,14 @@ export class DoableAuthClient {
     appSessionToken = "";
   }
 
-  /** The currently signed-in end-user, or null. Works across reloads via cookie. */
-  async getUser(): Promise<AuthUser | null> {
+  /**
+   * The currently signed-in end-user. Returns the SAME envelope shape as
+   * signup/login ({ ok, user }) for consistency — `user` is null when signed
+   * out. Works across reloads via the session cookie.
+   */
+  async getUser(): Promise<{ ok: boolean; user: AuthUser | null }> {
     const r = await this.req("/__doable/auth/me");
-    return r.ok && r.user ? r.user : null;
+    return { ok: r.ok !== false, user: r.ok && r.user ? r.user : null };
   }
 }
 
