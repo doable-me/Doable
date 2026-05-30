@@ -15,6 +15,7 @@
  */
 import type { McpTransport } from "../../transport-http.js";
 import type { JsonRpcRequest, JsonRpcResponse, JsonRpcNotification } from "../../types.js";
+import { sql } from "../../../db/index.js";
 import { runOnProject } from "../../../data-worker/pool.js";
 import { introspectSchema, inspectTable } from "../../../data-worker/schema.js";
 import { applyMigration } from "../../../data-worker/migrate.js";
@@ -126,6 +127,46 @@ export class DataBuiltinTransport implements McpTransport {
     return runOnProject(this.projectId, req);
   };
 
+  /**
+   * Cached project-owner id used as the DEFAULT app.user_id for the AI's
+   * build-time data writes. `undefined` = unresolved, `null` = none found.
+   *
+   * The AI's data.* tool calls carry no end-user (`x-doable-app-user`) header,
+   * so before this they defaulted to app_user_id="" — the self-stamping
+   * `created_by` DEFAULT then resolved to the all-zero anon UUID. Owner-scoped
+   * RLS (`created_by = current_setting('app.user_id')`) subsequently hid every
+   * AI-seeded row from the project owner's OWN preview, which DOES resolve
+   * app.user_id to the owner (preview-proxy mints the viewer's id). Result: the
+   * shell rendered but all seeded content (menus, catalogs, sample rows) was
+   * invisible. Defaulting unspecified seed/DML writes to the owner makes the
+   * stamped created_by match what the owner sees in their preview. The AI can
+   * still pass an explicit app_user_id to simulate a specific end-user. The
+   * runtime HTTP data plane (app-data.ts) resolves identity separately and is
+   * unaffected by this default.
+   */
+  private ownerUserId?: string | null;
+
+  private async resolveOwnerUserId(): Promise<string> {
+    if (this.ownerUserId !== undefined) return this.ownerUserId ?? "";
+    if (!this.projectId) {
+      this.ownerUserId = null;
+      return "";
+    }
+    try {
+      const [row] = await sql<Array<{ owner_id: string }>>`
+        SELECT w.owner_id
+        FROM projects p
+        JOIN workspaces w ON w.id = p.workspace_id
+        WHERE p.id = ${this.projectId}
+        LIMIT 1
+      `;
+      this.ownerUserId = row?.owner_id ?? null;
+    } catch {
+      this.ownerUserId = null;
+    }
+    return this.ownerUserId ?? "";
+  }
+
   private toContent(payload: unknown, isError = false): unknown {
     return { content: [{ type: "text", text: JSON.stringify(payload) }], isError };
   }
@@ -137,7 +178,7 @@ export class DataBuiltinTransport implements McpTransport {
           op: "query",
           sql: String(args.sql ?? ""),
           params: Array.isArray(args.params) ? args.params : [],
-          app_user_id: typeof args.app_user_id === "string" ? args.app_user_id : "",
+          app_user_id: typeof args.app_user_id === "string" ? args.app_user_id : await this.resolveOwnerUserId(),
           row_cap: typeof args.row_cap === "number" ? args.row_cap : DOABLE_APP_DB_ROW_CAP,
           timeout_ms: DOABLE_APP_DB_QUERY_TIMEOUT_MS,
         });
@@ -148,7 +189,9 @@ export class DataBuiltinTransport implements McpTransport {
           op: "exec",
           sql: String(args.sql ?? ""),
           params: Array.isArray(args.params) ? args.params : [],
-          app_user_id: null,
+          // Default seed/DML inside an exec body to the owner too (see
+          // resolveOwnerUserId); falls back to null when no owner is resolvable.
+          app_user_id: typeof args.app_user_id === "string" ? args.app_user_id : ((await this.resolveOwnerUserId()) || null),
           timeout_ms: DOABLE_APP_DB_EXEC_TIMEOUT_MS,
         });
         return this.toContent(this.envelope(resp), !resp.ok);
