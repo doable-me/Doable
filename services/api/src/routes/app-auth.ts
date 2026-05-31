@@ -49,6 +49,7 @@ interface AppSessionClaims {
   projectId: string;
   email: string;
   name?: string;
+  adm?: boolean; // admin: may run elevated (cross-user) reads for dashboards
   kind: "app-session";
 }
 
@@ -64,9 +65,12 @@ function ensureTable(): Promise<void> {
           email         text NOT NULL,
           name          text,
           password_hash text NOT NULL,
+          is_admin      boolean NOT NULL DEFAULT false,
           created_at    timestamptz NOT NULL DEFAULT now(),
           UNIQUE (project_id, email)
         )`;
+      // Additive for installs whose table predates the admin column.
+      await sql`ALTER TABLE app_end_users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false`;
     })().catch((e) => {
       tableReady = null; // allow retry on next request
       throw e;
@@ -76,7 +80,7 @@ function ensureTable(): Promise<void> {
 }
 
 async function signSession(claims: Omit<AppSessionClaims, "kind">): Promise<string> {
-  return new SignJWT({ ...claims, kind: "app-session" })
+  return new SignJWT({ ...claims, adm: claims.adm === true, kind: "app-session" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_TTL_DAYS}d`)
@@ -156,15 +160,22 @@ appAuthRoutes.post("/__doable/auth/signup", async (c) => {
     SELECT id FROM app_end_users WHERE project_id = ${pid} AND email = ${email} LIMIT 1`;
   if (existing.length) return c.json({ ok: false, error: "EMAIL_TAKEN", message: "An account with this email already exists." }, 409);
 
+  // The FIRST user to sign up for a project becomes admin (the business owner who
+  // sets the app up) — so an admin dashboard has someone who can read across users.
+  // Subsequent users are non-admin. (An app can later flag others via a server key.)
+  const countRows = await sql<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM app_end_users WHERE project_id = ${pid}`;
+  const isAdmin = (countRows[0]?.n ?? 0) === 0;
+
   const password_hash = await argon2.hash(password, ARGON_OPTS);
   const id = randomUUID();
   await sql`
-    INSERT INTO app_end_users (id, project_id, email, name, password_hash)
-    VALUES (${id}, ${pid}, ${email}, ${name}, ${password_hash})`;
+    INSERT INTO app_end_users (id, project_id, email, name, password_hash, is_admin)
+    VALUES (${id}, ${pid}, ${email}, ${name}, ${password_hash}, ${isAdmin})`;
 
-  const token = await signSession({ sub: id, projectId: pid, email, name: name ?? undefined });
+  const token = await signSession({ sub: id, projectId: pid, email, name: name ?? undefined, adm: isAdmin });
   setSessionCookie(c, token);
-  return c.json({ ok: true, token, user: { id, email, name } });
+  return c.json({ ok: true, token, user: { id, email, name, isAdmin } });
 });
 
 // ─── POST /__doable/auth/login ───────────────────────────────────────────────
@@ -178,8 +189,8 @@ appAuthRoutes.post("/__doable/auth/login", async (c) => {
   if (!email || !password) return c.json({ ok: false, error: "INVALID_CREDENTIALS" }, 400);
 
   await ensureTable();
-  const [row] = await sql<{ id: string; name: string | null; password_hash: string }[]>`
-    SELECT id, name, password_hash FROM app_end_users
+  const [row] = await sql<{ id: string; name: string | null; password_hash: string; is_admin: boolean }[]>`
+    SELECT id, name, password_hash, is_admin FROM app_end_users
     WHERE project_id = ${pid} AND email = ${email} LIMIT 1`;
   // Always run a verify (even with a dummy hash) to blunt user-enumeration timing.
   const hash = row?.password_hash ?? "$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -187,9 +198,9 @@ appAuthRoutes.post("/__doable/auth/login", async (c) => {
   try { ok = await argon2.verify(hash, password); } catch { ok = false; }
   if (!row || !ok) return c.json({ ok: false, error: "INVALID_CREDENTIALS", message: "Incorrect email or password." }, 401);
 
-  const token = await signSession({ sub: row.id, projectId: pid, email, name: row.name ?? undefined });
+  const token = await signSession({ sub: row.id, projectId: pid, email, name: row.name ?? undefined, adm: row.is_admin === true });
   setSessionCookie(c, token);
-  return c.json({ ok: true, token, user: { id: row.id, email, name: row.name } });
+  return c.json({ ok: true, token, user: { id: row.id, email, name: row.name, isAdmin: row.is_admin === true } });
 });
 
 // ─── GET /__doable/auth/me ───────────────────────────────────────────────────
@@ -200,7 +211,7 @@ appAuthRoutes.get("/__doable/auth/me", async (c) => {
   if (!token) return c.json({ ok: true, user: null });
   const claims = await verifyAppSession(token, pid);
   if (!claims) return c.json({ ok: true, user: null });
-  return c.json({ ok: true, user: { id: claims.sub, email: claims.email, name: claims.name ?? null } });
+  return c.json({ ok: true, user: { id: claims.sub, email: claims.email, name: claims.name ?? null, isAdmin: claims.adm === true } });
 });
 
 // ─── POST /__doable/auth/logout ──────────────────────────────────────────────

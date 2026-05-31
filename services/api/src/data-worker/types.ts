@@ -37,6 +37,13 @@ export interface WorkerRequest {
   params?: unknown[];
   /** RLS identity for SET LOCAL role / app.user_id. */
   app_user_id?: string | null;
+  /**
+   * Verified admin/elevated read: skip the doable_app role drop so the SELECT
+   * runs as the RLS-bypassing owner (admin dashboards read across all users).
+   * Set ONLY by the API after it confirms admin status; SELECT-only (enforced in
+   * the worker). The browser/app can never set this — it is server-derived.
+   */
+  elevated?: boolean;
   /** Per-request row cap override (falls back to DOABLE_APP_DB_ROW_CAP). */
   row_cap?: number;
   /** Per-request timeout override in ms. */

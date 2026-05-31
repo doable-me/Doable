@@ -299,6 +299,18 @@ async function runQuery(
   const params = Array.isArray(req.params) ? req.params : [];
   const isSelect = verdict.statementType === "SELECT";
 
+  // Admin/elevated read (app-auth admin dashboards): the API has already verified
+  // the caller is an admin (signed app-session token with adm:true / the project
+  // owner) and set req.elevated. We then SKIP the doable_app role drop so the read
+  // runs as the RLS-bypassing owner and an admin can see ACROSS all end-users.
+  // It is strictly READ-ONLY: refuse a non-SELECT even though the API also gates
+  // this (defense in depth — elevation must never write).
+  const elevated = req.elevated === true;
+  if (elevated && !isSelect) {
+    send({ id: req.id, ok: false, error: { code: "FORBIDDEN_STMT", message: "elevated (admin) queries must be read-only SELECTs" } });
+    return;
+  }
+
   // Row-cap guard: only wrap reads. We append LIMIT rowCap+1 (validated integer,
   // safe to interpolate) so we can detect truncation without a second query.
   const finalSql = isSelect
@@ -316,7 +328,11 @@ async function runQuery(
     await tx.query("SELECT set_config('row_security', 'on', true)");
     // Drop from superuser to the non-bypassing app role so RLS actually applies.
     // SET LOCAL auto-resets at COMMIT/ROLLBACK — identity never leaks across txns.
-    await tx.exec("SET LOCAL ROLE doable_app");
+    // EXCEPTION: a verified admin/elevated read stays as the owner (no drop) so it
+    // can read every user's rows for a dashboard. Read-only, enforced above.
+    if (!elevated) {
+      await tx.exec("SET LOCAL ROLE doable_app");
+    }
     return tx.query(finalSql, params);
   });
 

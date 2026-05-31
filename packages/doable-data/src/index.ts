@@ -41,6 +41,8 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+  /** True for an admin end-user (the first to sign up) — may use db.admin.query. */
+  isAdmin?: boolean;
 }
 export interface AuthResult {
   ok: boolean;
@@ -102,6 +104,25 @@ export class DoableDataClient {
     return this.call("/__doable/data/query", { sql, params, ...opts }) as Promise<DataResult<T>>;
   }
 
+  /**
+   * Admin (cross-user) READ for owner/admin dashboards. Returns rows across ALL
+   * end-users, bypassing per-user RLS — but ONLY when the signed-in user is an
+   * admin (db.auth.getUser() → user.isAdmin === true); otherwise the server
+   * rejects it. SELECT-only. Use for "all orders", "today's bookings", etc.
+   */
+  async adminQuery<T = Record<string, unknown>>(
+    sql: string,
+    params: unknown[] = [],
+    opts: { row_cap?: number; timeout_ms?: number } = {},
+  ): Promise<DataResult<T>> {
+    return this.call("/__doable/data/query", { sql, params, ...opts }, 3, false, true) as Promise<DataResult<T>>;
+  }
+
+  /** Admin namespace: `db.admin.query(sql, params)` (see adminQuery). */
+  get admin(): { query: DoableDataClient["adminQuery"] } {
+    return { query: this.adminQuery.bind(this) };
+  }
+
   exec(): never {
     throw new Error("[doable.data] db.exec() is server-only — call from MCP, not the app.");
   }
@@ -115,6 +136,7 @@ export class DoableDataClient {
     body: unknown,
     retries = 3,
     triedTokenRefresh = false,
+    admin = false,
   ): Promise<DataResult> {
     const token = await resolveBearer(this.opts.token);
 
@@ -127,6 +149,8 @@ export class DoableDataClient {
     // covers same-tab calls; `credentials: "include"` rides the session COOKIE so
     // the identity also survives a page reload (when appSessionToken is reset).
     if (appSessionToken) headers["x-doable-app-session"] = appSessionToken;
+    // Request an elevated cross-user read (server honours it only for admins).
+    if (admin) headers["x-doable-admin"] = "1";
 
     const res = await fetch(`${this.opts.baseUrl ?? ""}${path}`, {
       method: "POST",
@@ -137,7 +161,7 @@ export class DoableDataClient {
 
     if (res.status === 503 && retries > 0) {
       await new Promise<void>((r) => setTimeout(r, (4 - retries) * 250));
-      return this.call(path, body, retries - 1, triedTokenRefresh);
+      return this.call(path, body, retries - 1, triedTokenRefresh, admin);
     }
 
     if (
@@ -147,7 +171,7 @@ export class DoableDataClient {
     ) {
       const fresh = await resolveBearer(this.opts.token);
       if (fresh && fresh !== token) {
-        return this.call(path, body, retries, true);
+        return this.call(path, body, retries, true, admin);
       }
     }
 

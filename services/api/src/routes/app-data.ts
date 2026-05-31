@@ -225,12 +225,28 @@ async function handle(c: Context, op: DataOp): Promise<Response> {
       return c.json({ ok: true, ...result, elapsed_ms: Date.now() - started });
     }
 
+    // Admin/elevated read: db.admin.query() sends `x-doable-admin: 1`. Honour it
+    // ONLY for a verified admin app-session (a signed token with adm:true) on a
+    // "query" op — the worker then skips the RLS role drop so the read spans ALL
+    // end-users (admin dashboards). A non-admin presenting the header is REFUSED,
+    // never silently downgraded. The worker independently enforces SELECT-only.
+    let elevated = false;
+    if (op === "query" && c.req.header("x-doable-admin") === "1") {
+      const tok = readAppSessionToken(c);
+      const claims = tok ? await verifyAppSession(tok, auth.projectId) : null;
+      if (!claims || claims.adm !== true) {
+        return jsonError(c, 403, "ADMIN_REQUIRED", "Admin reads require a signed-in admin account.");
+      }
+      elevated = true;
+    }
+
     // query | exec
     const workerReq: Omit<WorkerRequest, "id"> = {
       op,
       sql: parsed.sql,
       params: parsed.params,
       app_user_id: op === "query" ? await appUserId(c, auth) : null,
+      elevated,
       row_cap: parsed.row_cap ?? DOABLE_APP_DB_ROW_CAP,
       timeout_ms: parsed.timeout_ms ?? DOABLE_APP_DB_QUERY_TIMEOUT_MS,
     };
