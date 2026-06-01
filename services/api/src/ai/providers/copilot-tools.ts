@@ -20,6 +20,7 @@ import { ConfigGuard } from "dovault";
 import { defaultRegistry } from "../../frameworks/registry.js";
 import { sql } from "../../db/index.js";
 import { createBashTool } from "../tools/bash.js";
+import { validateFileSyntax } from "../tools/validate-syntax.js";
 
 /**
  * Per-project ConfigGuard. The bare `new ConfigGuard()` only ships
@@ -160,6 +161,19 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         }
         const fullPath = path.join(getProjectPath(projectId), filePath);
         const alreadyExists = existsSync(fullPath);
+        // Pre-write syntax check — mirrors tools/create-file.ts. Catches LLM
+        // mistakes (e.g. `catch (console.error) {}`, malformed JSON,
+        // unbalanced JSX) BEFORE the broken file hits disk and the dev
+        // server, so the model retries in the same tool call.
+        const syntaxCheck = validateFileSyntax(filePath, content);
+        if (!syntaxCheck.ok) {
+          return {
+            success: false,
+            error:
+              `Syntax error in ${filePath}: ${syntaxCheck.message}\n` +
+              `File was NOT created. Fix the syntax and call create_file again.`,
+          };
+        }
         emitToolEvent(projectId, "create_file", "start", { path: filePath });
         await writeFile(projectId, filePath, content);
         emitToolEvent(projectId, "create_file", "end", { path: filePath });
@@ -190,6 +204,16 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         const guard = await getConfigGuard(projectId);
         if (guard.isLocked(filePath)) {
           return { success: false, error: `Cannot edit ${filePath} — server-side config files are locked by dovault for security.` };
+        }
+        // Pre-write syntax check — same protection as create_file above.
+        const syntaxCheck = validateFileSyntax(filePath, content);
+        if (!syntaxCheck.ok) {
+          return {
+            success: false,
+            error:
+              `Syntax error in ${filePath} after edit: ${syntaxCheck.message}\n` +
+              `File was NOT modified. Re-read the file and try a different edit.`,
+          };
         }
         emitToolEvent(projectId, "edit_file", "start", { path: filePath });
         await writeFile(projectId, filePath, content);
