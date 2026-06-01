@@ -578,14 +578,18 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
         originalPath.includes("/@fs/") ||
         originalPath.includes("/node_modules/"));
     const maxRetries = isJsDep ? 8 : 0;
+    const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD";
     let resp = await fetch(fullUrl, {
       method: c.req.method,
       headers,
-      body:
-        c.req.method !== "GET" && c.req.method !== "HEAD"
-          ? c.req.raw.body
-          : undefined,
-    });
+      body: hasBody ? c.req.raw.body : undefined,
+      // Node 18+/undici requires duplex:"half" when streaming a body via
+      // ReadableStream, otherwise it throws "RequestInit: duplex option is
+      // required when sending a body" and the proxy returns 502 — which breaks
+      // every POST through the preview catchall (db.auth.signup, db.auth.login,
+      // db.data.query, etc.).
+      ...(hasBody ? { duplex: "half" as const } : {}),
+    } as RequestInit & { duplex?: "half" });
     for (let attempt = 0; attempt < maxRetries && resp.status === 504; attempt++) {
       await new Promise((r) => setTimeout(r, 250));
       resp = await fetch(fullUrl, { method: c.req.method, headers });
@@ -855,11 +859,15 @@ async function viteDevAssetFallback(c: import("hono").Context) {
       headers.set(key, value);
     }
 
+    const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD";
     const resp = await fetch(targetUrl, {
       method: c.req.method,
       headers,
-      body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
-    });
+      body: hasBody ? c.req.raw.body : undefined,
+      // See comment on the main catchall fetch above — Node/undici requires
+      // duplex:"half" when streaming a body.
+      ...(hasBody ? { duplex: "half" as const } : {}),
+    } as RequestInit & { duplex?: "half" });
 
     const responseHeaders = new Headers();
     resp.headers.forEach((value, key) => {
