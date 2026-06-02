@@ -51,8 +51,25 @@
                 reverse_proxy api:4000
         }
 
-        # ─── Auth routes (preserve path) ────────────────────────────────────
+        # ─── Auth FRONTEND pages (Next.js client routes) ───────────────────
+        # /auth/callback and /auth/refresh are CLIENT-SIDE React pages
+        # (apps/web/src/app/auth/{callback,refresh}/page.tsx) — they parse
+        # OAuth fragments and perform token refresh in the browser. Without
+        # this explicit web routing, the wildcard /auth/* below would steal
+        # them and proxy to the api, which has no /auth/callback route and
+        # returns "Missing or invalid Authorization header" — leaving OAuth
+        # users stuck on a raw-JSON error page after Google/GitHub sign-in.
+        @auth_web path /auth/callback /auth/callback/* /auth/refresh
+        handle @auth_web {
+                reverse_proxy web:3000
+        }
+
+        # ─── Auth API routes (preserve path) ────────────────────────────────
         # api server handles /auth/* directly, no prefix strip needed.
+        # External OAuth providers (Google, GitHub) POST their callbacks to
+        # /auth/google/callback + /auth/github/callback on the configured
+        # redirect_uri host, which is why this route preserves the path
+        # rather than going via /api/*.
         handle /auth/* {
                 reverse_proxy api:4000
         }
