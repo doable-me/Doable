@@ -279,10 +279,17 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         const { spawn: spawnCmd } = await import("node:child_process");
         const projectPath = getProjectPath(projectId);
         const pkgList = packages.split(/\s+/).filter(Boolean);
-        const npmArgs = ["install", "--ignore-scripts", ...(dev ? ["--save-dev"] : []), ...pkgList, "--legacy-peer-deps"];
+        // BUG-PUB-004: the API runs with NODE_ENV=production (docker/systemd
+        // default). A bare `npm install <pkg>` then silently switches to
+        // --omit=dev and PRUNES existing devDependencies — including `vite`,
+        // `@vitejs/plugin-react`, `tailwindcss` — out of node_modules. The
+        // per-project vite dev server then can't start ("Preview failed to
+        // start" → install circuit-breaker). Mirror the framework adapters:
+        // force --include=dev AND NODE_ENV=development on the install spawn.
+        const npmArgs = ["install", "--ignore-scripts", "--include=dev", ...(dev ? ["--save-dev"] : []), ...pkgList, "--legacy-peer-deps"];
 
         return new Promise((resolve) => {
-          const child = spawnCmd("npm", npmArgs, { cwd: projectPath, shell: true, stdio: "pipe", env: { ...process.env, FORCE_COLOR: "0" } });
+          const child = spawnCmd("npm", npmArgs, { cwd: projectPath, shell: true, stdio: "pipe", env: { ...process.env, FORCE_COLOR: "0", NODE_ENV: "development" } });
           let output = "";
           child.stdout?.on("data", (d: Buffer) => { output += d.toString(); });
           child.stderr?.on("data", (d: Buffer) => { output += d.toString(); });
