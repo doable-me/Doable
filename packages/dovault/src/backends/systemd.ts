@@ -19,13 +19,41 @@ export class SystemdBackend implements ResourceBackend {
   readonly priority = 80;
   readonly description = "Linux cgroup limits via systemd-run (memory, CPU, tasks, network)";
 
+  /** Memoised capability probe — see available(). */
+  private _available?: boolean;
+
   available(): boolean {
-    if (process.platform !== "linux") return false;
+    if (this._available !== undefined) return this._available;
+    if (process.platform !== "linux") return (this._available = false);
+
+    // The binary EXISTING is not enough. This backend creates transient SYSTEM
+    // scopes (`systemd-run --scope`, no `--user`). A non-root service account
+    // (e.g. Doable's `doable` user) running under polkit with no interactive
+    // agent gets "Failed to start transient scope unit: Interactive
+    // authentication required" on EVERY scope it tries to create — and `--user`
+    // mode is no help because such an account has no user session bus. If we
+    // reported available() purely from the binary's presence, detectBackend()
+    // would pick us (priority 80) over a working backend like bubblewrap and
+    // then every wrapped build/preview command would fail.
+    //
+    // So probe the REAL capability: actually create a throwaway transient scope
+    // and run `true` in it. We only claim availability when that succeeds, which
+    // lets detection fall through to bubblewrap/direct when scopes don't work
+    // here. The probe is cheap (the scope exits immediately and is auto-collected)
+    // and memoised so it runs at most once per process.
     try {
       execSync("systemd-run --version", { stdio: "pipe", timeout: 5000 });
-      return true;
     } catch {
-      return false;
+      return (this._available = false);
+    }
+    try {
+      execSync(
+        "systemd-run --scope --quiet --property=Description=dovault-probe -- true",
+        { stdio: "pipe", timeout: 5000 },
+      );
+      return (this._available = true);
+    } catch {
+      return (this._available = false);
     }
   }
 
