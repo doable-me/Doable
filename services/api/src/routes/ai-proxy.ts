@@ -823,8 +823,13 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
         if (ev.type === "text_delta" && typeof ev.data === "string") content += ev.data;
         else if (ev.type === "done" && ev.data && typeof ev.data === "object") {
           const u = (ev.data as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage;
-          promptTokens = u?.prompt_tokens ?? estimateTokens(messages.map((m) => m.content).join(" "));
-          completionTokens = u?.completion_tokens ?? estimateTokens(content);
+          // Use `||` not `??`: smaller models / providers stream a final
+          // usage frame of {0,0} (no stream_options.include_usage), and `??`
+          // would keep those zeros — logging runtime-chat usage as 0 tokens.
+          // `||` falls back to a local estimate whenever the upstream count
+          // is absent OR zero, so per-project/user metering stays accurate.
+          promptTokens = u?.prompt_tokens || estimateTokens(messages.map((m) => m.content).join(" "));
+          completionTokens = u?.completion_tokens || estimateTokens(content);
         } else if (ev.type === "error" && typeof ev.data === "string") {
           err = ev.data;
         }
@@ -885,8 +890,13 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
           }
         } else if (ev.type === "done" && ev.data && typeof ev.data === "object") {
           const u = (ev.data as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage;
-          promptTokens = u?.prompt_tokens ?? estimateTokens(messages.map((m) => m.content).join(" "));
-          completionTokens = u?.completion_tokens ?? estimateTokens(content);
+          // Use `||` not `??`: smaller models / providers stream a final
+          // usage frame of {0,0} (no stream_options.include_usage), and `??`
+          // would keep those zeros — logging runtime-chat usage as 0 tokens.
+          // `||` falls back to a local estimate whenever the upstream count
+          // is absent OR zero, so per-project/user metering stays accurate.
+          promptTokens = u?.prompt_tokens || estimateTokens(messages.map((m) => m.content).join(" "));
+          completionTokens = u?.completion_tokens || estimateTokens(content);
         } else if (ev.type === "error" && typeof ev.data === "string") {
           providerError = ev.data;
         }
