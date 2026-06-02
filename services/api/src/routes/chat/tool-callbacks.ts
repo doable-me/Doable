@@ -36,7 +36,7 @@ type ArtifactRef = {
  * survives page reloads, gets thumbnailed by the dashboard, and can be
  * iteratively edited by the AI via the standard read/edit-file tools.
  */
-function offloadDataUris(
+export function offloadDataUris(
   html: string,
   projectId?: string,
   resourceUri?: string,
@@ -122,7 +122,7 @@ function offloadDataUris(
  * of inline base64, the dispatch still fires and logs a "no viewer source"
  * diagnostic instead of silently doing nothing.
  */
-function persistViewerToProject(
+export function persistViewerToProject(
   projectId: string | undefined,
   resourceUri: string | undefined,
   artifacts: ArtifactRef[],
@@ -495,88 +495,12 @@ export function createToolProgressCallbacks(
           }
         } catch { /* non-critical */ }
       }
-      {
-        // Drain MCP-Apps UI resources queued by tool-bridge during this call.
-        while (pendingUiResources.length > 0) {
-          const item = pendingUiResources.shift();
-          if (!item) break;
-          const emittedToolCallId = `tc_${toolName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          // Off-load any oversize base64 data: URIs inside the rawHtml so the
-          // resulting SSE event stays small enough to flow through Cloudflare
-          // Tunnel without buffering / drops, and grab the artifact refs so
-          // we can also emit a small dedicated `artifact_ready` event (the
-          // mcp_ui_resource iframe path can still be flaky).
-          let artifacts: ArtifactRef[] = [];
-          const safeResource = (() => {
-            const r = item.resource as Record<string, unknown> & { text?: string; uri?: string };
-            // Always run extraction (no size gate) so persistViewerToProject
-            // fires for small builder outputs. See sibling pre-rewrite loop
-            // above for the rationale (project 3b698510 regression).
-            if (typeof r?.text === "string") {
-              const resourceUri = typeof r.uri === "string" ? r.uri : undefined;
-              const { html: rewritten, artifacts: arts, bytesByExt, urlByExt } =
-                offloadDataUris(r.text, projectId, resourceUri);
-              artifacts = arts;
-              // Skip persistence if the pre-rewrite loop already handled this
-              // item (avoids double-invocation log noise on already-rewritten text).
-              const alreadyPersisted = (item as unknown as Record<string, unknown>)._persisted === true;
-              if (!alreadyPersisted) {
-                persistViewerToProject(projectId, resourceUri, arts, bytesByExt, urlByExt);
-              }
-              if (rewritten !== r.text) {
-                return { ...r, text: rewritten };
-              }
-            }
-            return r;
-          })();
-          // Emit one tiny `artifact_ready` event per off-loaded artifact
-          // FIRST. Even if Cloudflare Tunnel drops the larger
-          // mcp_ui_resource event, the client still gets a clickable
-          // download link.
-          for (const a of artifacts) {
-            const small = JSON.stringify({ type: "artifact_ready", data: { ...a, toolName } });
-            try {
-              await stream.writeSSE({ data: small });
-              dlog(`artifact_ready SSE write OK url=${a.url} (${small.length}B)`);
-            } catch (e) {
-              dlog(`artifact_ready SSE write FAILED: ${(e as Error).message}`);
-            }
-          }
-          const sseData = JSON.stringify({
-            type: "mcp_ui_resource",
-            data: {
-              toolCallId: emittedToolCallId,
-              connectorId: item.connectorId,
-              toolName,
-              resource: safeResource,
-            },
-          });
-          dlog(`mcp_ui_resource SSE emit uri=${item.resource.uri} bytes=${sseData.length}`);
-          // BUG-R27-009: Hono's streamSSE drops 10+ KB writeSSE chunks
-          // when the next event lands too quickly behind them. Two
-          // synchronous console.log barriers around the write create the
-          // event-loop turn that lets the chunk flush to the socket
-          // before the next emit competes for the writer. With these
-          // absent, the 13 KB presentation-builder auto-build card never
-          // reaches the client — see investigation in commit message.
-          // The log lines also double as production observability — they
-          // are cheap and noted under [chat:mcp].
-          console.log(`[chat:mcp] mcp_ui_resource emit uri=${item.resource.uri?.slice(0, 80)} bytes=${sseData.length}`);
-          state.awaitingMcpWidget = true;
-          try {
-            await stream.writeSSE({ data: sseData });
-            console.log(`[chat:mcp] mcp_ui_resource flushed uri=${item.resource.uri?.slice(0, 60)}`);
-            dlog(`mcp_ui_resource SSE write OK`);
-            
-            // ADD THIS YIELD: Give the event loop time to flush Hono's streamSSE 
-            // to prevent dropping large HTML chunks.
-            await new Promise(resolve => setTimeout(resolve, 50));
-          } catch (e) {
-            console.error(`[chat:mcp] mcp_ui_resource flush FAILED: ${(e as Error).message}`);
-            dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
-          }
-        }
-      }
+      // NOTE: mcp_ui_resource SSE events are now drained synchronously in
+      // event-processor.ts when the tool_result event is routed. This
+      // guarantees emission BEFORE [DONE] — the old drain here ran inside
+      // onPostToolUse which is an async fire-and-forget SDK hook that the
+      // SDK does NOT await before sendMessage() resolves, causing a race
+      // where mcp_ui_resource arrived after [DONE] and was silently dropped.
     },
     onSessionEnd: (reason: string, error?: string) => {
       if (error) console.error(`[Chat] Session ended: ${reason} —`, typeof error === 'object' ? JSON.stringify(error) : error);

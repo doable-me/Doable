@@ -12,7 +12,9 @@ import {
 } from "../../ai/tool-messages.js";
 import { parsePlanSteps } from "../../ai/plan-parser.js";
 import { mapEventToSSE, ChannelTokenRouter } from "../../ai/sse-mapper.js";
-import { popArtifacts } from "./artifact-stash.js";
+import { popArtifacts, pushArtifacts } from "./artifact-stash.js";
+import { pendingUiResources } from "../../mcp/tool-bridge.js";
+import { offloadDataUris, persistViewerToProject } from "./tool-callbacks.js";
 import { broadcastToRoom } from "../../ai/yjs-bridge.js";
 import { recordToolEventForTrace } from "./tool-event-bookkeeping.js";
 
@@ -266,6 +268,59 @@ function routeSseEvent(
     }
     state.leadingTextFlushed = false;
     state.leadingTextBuffer = "";
+
+    // ── MCP UI resource drain ──────────────────────────────────────────
+    // onPostToolUse (where onToolEnd runs) is an async SDK hook that is
+    // NOT awaited before sendMessage() resolves. Draining here — inside
+    // the synchronous processEvent callback — guarantees mcp_ui_resource
+    // SSE events are emitted BEFORE [DONE], so the frontend SSE loop
+    // receives them while it is still open.
+    const resolvedToolName = (resultData?.name as string | undefined) ?? resolvedName;
+    while (pendingUiResources.length > 0) {
+      const uiItem = pendingUiResources[0];
+      if (!uiItem) break;
+      // Only drain resources that belong to the current tool call.
+      // Leave unrelated ones for the next tool_result event.
+      if (resolvedToolName && uiItem.toolName !== resolvedToolName && pendingUiResources.length === 1) {
+        // Single item but wrong tool — still drain it (better late than never).
+      } else if (resolvedToolName && uiItem.toolName !== resolvedToolName) {
+        break;
+      }
+      pendingUiResources.shift();
+      const toolCallId = `${uiItem.connectorId}_${uiItem.toolName}_${Date.now()}`;
+      // Offload any base64 data: URIs so the SSE event stays small
+      // (< 50 KB avoids CF Tunnel drops). Also persists deck HTML to project.
+      let safeText = uiItem.resource.text;
+      if (typeof safeText === "string") {
+        const { html: rewritten, artifacts, bytesByExt, urlByExt } =
+          offloadDataUris(safeText, projectId, uiItem.resource.uri);
+        safeText = rewritten;
+        if (artifacts.length > 0) {
+          pushArtifacts(uiItem.toolName, artifacts);
+          for (const a of artifacts) {
+            stream.writeSSE({ data: JSON.stringify({ type: "artifact_ready", data: { ...a, toolName: uiItem.toolName } }) }).catch(() => {});
+          }
+        }
+        persistViewerToProject(projectId, uiItem.resource.uri, artifacts, bytesByExt, urlByExt);
+      }
+      const ssePayload = JSON.stringify({
+        type: "mcp_ui_resource",
+        data: {
+          toolCallId,
+          connectorId: uiItem.connectorId,
+          toolName: uiItem.toolName,
+          resource: {
+            uri: uiItem.resource.uri,
+            mimeType: uiItem.resource.mimeType,
+            text: safeText,
+            blob: uiItem.resource.blob,
+          },
+        },
+      });
+      console.log(`[event-processor] mcp_ui_resource drain uri=${uiItem.resource.uri?.slice(0, 60)} toolCallId=${toolCallId} bytes=${ssePayload.length}`);
+      stream.writeSSE({ data: ssePayload }).catch(() => {});
+      state.awaitingMcpWidget = true;
+    }
   }
 
   if (sseData.type === "text_delta") {
