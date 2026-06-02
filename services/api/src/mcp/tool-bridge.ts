@@ -264,6 +264,10 @@ function formatMcpContent(content: McpContent[]): string {
         case "image":
           return `[Image: ${c.mimeType}]`;
         case "resource":
+          // Prevent sending massive UI HTML to the LLM (which confuses it and bloats context)
+          if (c.resource.uri?.startsWith("ui://")) {
+             return `[UI Resource presented to user: ${c.resource.uri}]`;
+          }
           return c.resource.text ?? `[Resource: ${c.resource.uri}]`;
         default:
           return "[Unknown content]";

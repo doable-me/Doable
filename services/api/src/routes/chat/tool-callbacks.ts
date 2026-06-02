@@ -567,6 +567,10 @@ export function createToolProgressCallbacks(
             await stream.writeSSE({ data: sseData });
             console.log(`[chat:mcp] mcp_ui_resource flushed uri=${item.resource.uri?.slice(0, 60)}`);
             dlog(`mcp_ui_resource SSE write OK`);
+            
+            // ADD THIS YIELD: Give the event loop time to flush Hono's streamSSE 
+            // to prevent dropping large HTML chunks.
+            await new Promise(resolve => setTimeout(resolve, 50));
           } catch (e) {
             console.error(`[chat:mcp] mcp_ui_resource flush FAILED: ${(e as Error).message}`);
             dlog(`mcp_ui_resource SSE write FAILED: ${(e as Error).message}`);
