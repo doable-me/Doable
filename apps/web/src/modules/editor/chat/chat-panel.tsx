@@ -264,7 +264,9 @@ export function ChatPanel() {
                       >
                         <ChatMessage
                           message={msg}
+                          isStreaming={isStreaming}
                           onClarificationAnswer={(content) => sendMessage(content)}
+                          onPrompt={(text) => sendMessage(text)}
                         />
                       </div>
                     );

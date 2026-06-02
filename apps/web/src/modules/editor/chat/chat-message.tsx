@@ -215,9 +215,15 @@ interface ChatMessageProps {
   /** Called when the user answers an inline clarification question so the parent
    * can forward the answer to the AI via sendMessage. */
   onClarificationAnswer?: (content: string) => void;
+  /** Called when an MCP UI iframe posts a `prompt` action (user clicked an
+   * option card). The host should inject this as a new user chat message. */
+  onPrompt?: (text: string, displayText?: string) => void;
+  /** Whether the parent chat is currently streaming a response. Forwarded to
+   * McpUiResourceCard so it can gate the host-ready handshake correctly. */
+  isStreaming?: boolean;
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, onClarificationAnswer }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, onClarificationAnswer, onPrompt, isStreaming }: ChatMessageProps) {
   const isUser = message.role === "user";
   const hasThinking = !!message.thinkingContent;
 
@@ -493,6 +499,8 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
                 key={res.toolCallId}
                 resource={res}
                 projectId={projectId}
+                isStreaming={isStreaming}
+                onPrompt={onPrompt}
                 onResource={(newRes) => {
                   updateMessageFields(message.id, {
                     mcpResources: {
