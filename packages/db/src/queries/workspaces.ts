@@ -77,7 +77,7 @@ export function workspaceQueries(sql: postgres.Sql) {
 
         await q`
           INSERT INTO workspace_ai_settings (workspace_id, show_model_selector)
-          VALUES (${workspace!.id}, true)
+          VALUES (${workspace!.id}, false)
           ON CONFLICT (workspace_id) DO NOTHING
         `;
 

@@ -700,15 +700,60 @@ fi
 
 info "Setting up TLS for ${LISTEN_HOST} (Caddy in docker)..."
 
-# Stop any legacy host-side proxy from older setup.sh installs — Caddy in
-# docker now owns 127.0.0.1:{80,443}. Idempotent: no-op on fresh boxes.
-for svc in nginx caddy apache2 lighttpd; do
+# ── Free ports 80/443 for the in-stack Caddy — "Doable FIRST" ────────────────
+# Policy (user requirement): if :80 or :443 are occupied by ANYTHING that is
+# not part of this Doable stack, take them over automatically — irrespective of
+# OS or what's holding them. Three escalating passes, each idempotent + loud.
+#
+# 1) Stop legacy host-side proxies (systemd) from older installs.
+for svc in nginx caddy apache2 lighttpd haproxy traefik; do
   if command -v systemctl &>/dev/null && systemctl is-active --quiet "$svc"; then
     info "Stopping host-side ${svc} (Caddy in docker takes over ports 80/443)"
     systemctl stop "$svc" 2>/dev/null || true
     systemctl disable "$svc" 2>/dev/null || true
   fi
 done
+
+# 2) Stop any *other* docker container publishing :80 or :443 (our own
+#    doable-* containers are left alone — compose recreates them later).
+if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+  for _port in 80 443; do
+    for _cid in $(docker ps --filter "publish=${_port}" -q 2>/dev/null); do
+      _cname=$(docker inspect -f '{{.Name}}' "$_cid" 2>/dev/null | sed 's#^/##')
+      case "$_cname" in
+        doable-*) continue ;;
+      esac
+      warn "Port ${_port} held by docker container '${_cname:-$_cid}' — stopping it (Doable takes priority)"
+      docker stop "$_cid" >/dev/null 2>&1 || true
+    done
+  done
+fi
+
+# 3) Kill any remaining *host* process bound to :80/:443, whatever it is.
+#    Portable across OSes: prefer fuser, then lsof, then ss. Never touch
+#    dockerd/containerd/docker-proxy (container ports handled in pass 2).
+for _port in 80 443; do
+  _pids=""
+  if command -v fuser &>/dev/null; then
+    _pids=$(fuser -n tcp "${_port}" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' || true)
+  elif command -v lsof &>/dev/null; then
+    _pids=$(lsof -nP -iTCP:"${_port}" -sTCP:LISTEN -t 2>/dev/null || true)
+  elif command -v ss &>/dev/null; then
+    _pids=$(ss -tlnpH "( sport = :${_port} )" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)
+  fi
+  for _pid in $_pids; do
+    [ -n "$_pid" ] || continue
+    _pname=$(ps -p "$_pid" -o comm= 2>/dev/null | tr -d ' ' || true)
+    case "$_pname" in
+      docker-proxy|dockerd|containerd|containerd-shim*) continue ;;
+    esac
+    warn "Port ${_port} still held by PID ${_pid} (${_pname:-unknown}) — killing it (Doable takes priority)"
+    kill "$_pid" 2>/dev/null || true
+    sleep 1
+    kill -9 "$_pid" 2>/dev/null || true
+  done
+done
+# ─────────────────────────────────────────────────────────────────────────────
 
 mkdir -p "$SCRIPT_DIR/certs"
 
