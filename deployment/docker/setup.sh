@@ -525,6 +525,12 @@ GITHUB_REDIRECT_URI=${API_URL}/oauth/github/login/callback
 GITHUB_COPILOT_REDIRECT_URI=${API_URL}/oauth/github/copilot/callback
 GITHUB_REPO_REDIRECT_URI=${API_URL}/oauth/github/repo/callback
 GOOGLE_REDIRECT_URI=${API_URL}/auth/google/callback
+# MCP OAuth callback — the browser is redirected here after authenticating with
+# a user-added MCP server's OAuth provider, so it must be the PUBLIC api URL
+# (NOT the internal http://api:4000). Uses dynamic client registration, so no
+# OAuth App to pre-create. The api also derives this from NEXT_PUBLIC_API_URL
+# when unset; we write it explicitly for visibility/override parity with above.
+MCP_OAUTH_REDIRECT_URI=${API_URL}/connectors/mcp-oauth/callback
 
 # ─── Redis (optional) ─────────────────────────────
 REDIS_URL=

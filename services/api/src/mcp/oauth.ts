@@ -67,8 +67,18 @@ export async function getCodeVerifier(stateKey: string): Promise<string | undefi
 
 // ─── MCP OAuth Redirect URI ──────────────────────────────
 
+// The browser is redirected to this callback by the MCP server's authorization
+// server after the user authenticates, so it MUST be the PUBLIC, browser-
+// reachable URL — never the internal service address (e.g. http://api:4000 in
+// Docker, which the browser cannot reach: the user lands on a dead host). Prefer
+// an explicit override, then the public API base (NEXT_PUBLIC_API_URL — set to
+// the proxy-fronted public /api URL by every proxied install, incl.
+// deployment/docker/setup.sh), and only fall back to the internal API_URL for
+// direct/non-proxied (dev) runs where NEXT_PUBLIC_API_URL already points at the
+// api directly.
+const PUBLIC_API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? API_URL).replace(/\/+$/, "");
 export const MCP_OAUTH_REDIRECT_URI =
-  process.env.MCP_OAUTH_REDIRECT_URI ?? `${API_URL}/connectors/mcp-oauth/callback`;
+  process.env.MCP_OAUTH_REDIRECT_URI ?? `${PUBLIC_API_BASE}/connectors/mcp-oauth/callback`;
 
 // ─── Build Authorization URL ─────────────────────────────
 
