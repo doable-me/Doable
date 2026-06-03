@@ -435,6 +435,15 @@ projectItemRoutes.get("/:id/collaborators", async (c) => {
     return c.json({ error: "Project not found" }, 404);
   }
 
+  // Resolve collaborator display info via the SECURITY DEFINER helper
+  // (migration 100) rather than a raw `JOIN users`. Under the users FORCE-RLS
+  // policy `users_workspace_visible` (migration 076) the app role `doable_app`
+  // only sees users who share a workspace with the caller, so a link-join
+  // collaborator (project_collaborators-only, not a workspace member) would be
+  // dropped from a plain JOIN — the Share dialog then shows "No collaborators
+  // yet" despite the rows existing. The definer helper bypasses that visibility
+  // RLS and exposes only public-safe columns. Access to this list is already
+  // gated by requireProjectAccess() above; project_collaborators has no RLS.
   const collaborators = await sql<{
     user_id: string;
     role: string;
@@ -444,9 +453,11 @@ projectItemRoutes.get("/:id/collaborators", async (c) => {
     avatar_url: string | null;
   }[]>`
     SELECT pc.user_id, pc.role, pc.added_at,
-           u.email, u.display_name, u.avatar_url
+           lu.email, lu.display_name, lu.avatar_url
     FROM project_collaborators pc
-    JOIN users u ON u.id = pc.user_id
+    JOIN doable_lookup_users_by_ids(
+           ARRAY(SELECT user_id FROM project_collaborators WHERE project_id = ${id})
+         ) lu ON lu.id = pc.user_id
     WHERE pc.project_id = ${id}
     ORDER BY pc.added_at ASC
   `;
