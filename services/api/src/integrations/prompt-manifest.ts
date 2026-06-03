@@ -22,6 +22,9 @@
 
 import { resolveVaultEnv } from "../env/vault-bridge.js";
 import { SUPABASE_MCP_FULL_TOOL_NAMES } from "../mcp/presets/supabase.js";
+import { sql } from "../db/index.js";
+import { connectorQueries } from "@doable/db";
+import { BUILTIN_MCP_APPS } from "../mcp/builtin-connectors.js";
 
 /**
  * MCP tool-line extensions, keyed by integration id. Each entry returns a
@@ -115,5 +118,105 @@ export async function buildConnectedIntegrationsContext(
     "3. NEVER log, print, or echo env var values.",
     "4. If you need an integration NOT listed here, call the request_integration tool. Do NOT ask the user to paste keys.",
     "</connected-integrations>",
+  ].join("\n");
+}
+
+
+// ─── Connected MCP servers (user-added connectors) ────────────
+
+/** Builtin connector display names that must NOT be advertised as runtime
+ *  data sources for the generated app (per-app DB + builder MCP Apps). */
+const BUILTIN_CONNECTOR_NAMES = new Set(BUILTIN_MCP_APPS.map((a) => a.name));
+
+/**
+ * Build the `<connected-mcp-servers>` system-prompt block.
+ *
+ * Surfaces every ACTIVE, user-connected MCP connector for the workspace
+ * (excluding Doable's builtin per-app-DB and builder MCP Apps) together with
+ * the EXACT AI-prefixed tool names the generated app must call at runtime via
+ * `@doable/sdk`'s `doable.mcp.call()`.
+ *
+ * Why this exists: without it, a user-added MCP server (e.g. an eDiscovery
+ * server) only appears to the agent as `mcp_*` chat tools. The agent then
+ * calls those tools itself and dumps the result in chat, building no
+ * data-wired app — the "empty dashboard" failure. This block tells the agent
+ * the connector is a RUNTIME data source to wire into the app, and gives it
+ * the precise tool identifiers the runtime proxy resolves.
+ *
+ * Generic by construction: driven entirely by the live connector list +
+ * capabilities cache, so it works for ANY MCP server on ANY install. The tool
+ * name derivation mirrors the connector-proxy (`mcp_<safeName>_<safeTool>`).
+ *
+ * Non-fatal: returns "" on any error or when no external MCP servers exist.
+ */
+export async function buildConnectedMcpServersContext(
+  workspaceId: string,
+): Promise<string> {
+  let rows;
+  try {
+    rows = await connectorQueries(sql).listConnectors(workspaceId);
+  } catch (err) {
+    console.warn("[mcp-manifest] failed:", err);
+    return "";
+  }
+
+  const external = rows.filter(
+    (r) =>
+      r.status === "active" &&
+      !(r.server_command ?? "").startsWith("builtin:") &&
+      !BUILTIN_CONNECTOR_NAMES.has(r.name),
+  );
+  if (external.length === 0) return "";
+
+  const MAX_TOOLS = 24;
+  const lines: string[] = [];
+  for (const row of external) {
+    const safeName = row.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+    const cache = row.capabilities_cache as
+      | { tools?: { list?: Array<{ name: string; description?: string }> } }
+      | null;
+    const toolList = cache?.tools?.list ?? [];
+    lines.push(`- **${row.name}**${row.description ? ` — ${row.description}` : ""}`);
+    if (toolList.length === 0) {
+      lines.push(
+        "    (tools load on first use — call `doable.mcp.list()` at runtime to discover them)",
+      );
+      continue;
+    }
+    for (const tool of toolList.slice(0, MAX_TOOLS)) {
+      const safeTool = tool.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+      const full = `mcp_${safeName}_${safeTool}`;
+      const desc = tool.description
+        ? ` — ${tool.description.replace(/\s+/g, " ").slice(0, 140)}`
+        : "";
+      lines.push(`    - \`${full}\`${desc}`);
+    }
+    if (toolList.length > MAX_TOOLS) {
+      lines.push(
+        `    - …and ${toolList.length - MAX_TOOLS} more (call \`doable.mcp.list()\` to enumerate all)`,
+      );
+    }
+  }
+
+  return [
+    "<connected-mcp-servers>",
+    "The user has connected the MCP server(s) below. Their tools are available TO THE GENERATED APP AT RUNTIME through the pre-linked `@doable/sdk` — they are not merely chat tools for you to call.",
+    "",
+    ...lines,
+    "",
+    "**🔌 HOW TO USE — build the data INTO the app; never just print it in chat:**",
+    "```ts",
+    "import { createDoableClient } from '@doable/sdk';",
+    "const doable = createDoableClient();",
+    "const r = await doable.mcp.call('<one of the mcp_… names above>', { /* tool args */ });",
+    "if (r.success) { /* render r.data in a table / chart / card */ } else { /* show r.error.message */ }",
+    "```",
+    "RULES — MANDATORY whenever the user asks for a dashboard, report, view, or to \"show the data\":",
+    "1. You MUST generate React components that call `doable.mcp.call(...)` at runtime and render the returned data as dashboards, tables, charts, and cards ON THE PAGE (with loading and error states).",
+    "2. DO NOT merely call the MCP tool yourself and show its response in chat. DO NOT bake the tool's output into the code as a hardcoded/static constant — the live preview AND the deployed site must fetch fresh data.",
+    "3. You MAY call an MCP tool AT MOST ONCE here to learn the response SHAPE, then build the UI around live `doable.mcp.call` calls.",
+    "4. Use the EXACT `mcp_…` tool names listed above — that is how the runtime proxy resolves the connector + tool. `@doable/sdk` is pre-linked: import it directly, never add it to package.json, and never hardcode the MCP server URL or credentials.",
+    "5. This works identically in the live preview and the deployed site — the auth token / project key is injected automatically.",
+    "</connected-mcp-servers>",
   ].join("\n");
 }

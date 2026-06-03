@@ -202,6 +202,23 @@ export async function buildProjectContextForMode(
     }
   }
 
+  // ── Connected MCP servers (user-added connectors) ──
+  // Surface user-connected MCP servers so the agent wires their tools INTO the
+  // generated app at runtime via @doable/sdk, instead of calling them in chat
+  // and dumping the result (the "empty dashboard" failure).
+  if (workspaceId) {
+    try {
+      const { buildConnectedMcpServersContext } = await import("../integrations/prompt-manifest.js");
+      const mcpBlock = await buildConnectedMcpServersContext(workspaceId);
+      if (mcpBlock) {
+        console.log(`[Chat] Connected MCP servers block injected (${mcpBlock.length} chars)`);
+        context += `\n\n${mcpBlock}`;
+      }
+    } catch (err) {
+      console.warn("[Chat] MCP servers manifest failed:", err);
+    }
+  }
+
   // ── Per-app database prompt addendum ──
   // Injected right after the connected-integrations manifest so the AI sees
   // data.* tools in the same context block as other connectors.
