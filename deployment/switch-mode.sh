@@ -112,6 +112,12 @@ fi
 set_env "$ENV_FILE" NEXT_PUBLIC_API_URL "$API_URL"
 set_env "$ENV_FILE" NEXT_PUBLIC_WS_URL  "$WS_URL"
 set_env "$ENV_FILE" NEXT_PUBLIC_APP_URL "$APP_URL"
+# BUG-OOB-SWITCHMODE-CORS: the API gates browser requests by CORS_ORIGINS.
+# Switching the web's public URL without updating CORS_ORIGINS leaves it
+# pointing at the OLD domain, so every signup/login/API call from the new
+# origin is CORS-rejected ("Something went wrong"). Keep it in lock-step
+# with APP_URL (the only browser-facing origin) on every mode switch.
+set_env "$ENV_FILE" CORS_ORIGINS "$APP_URL"
 set_env "$ENV_FILE" GOOGLE_REDIRECT_URI       "$G_REDIR"
 set_env "$ENV_FILE" GITHUB_REDIRECT_URI       "$GH_REDIR"
 set_env "$ENV_FILE" GITHUB_COPILOT_REDIRECT_URI  "$GH_COP_REDIR"
