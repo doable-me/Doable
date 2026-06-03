@@ -213,7 +213,10 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
 
       if (type === "tool") {
         const toolName = payload.toolName as string | undefined;
-        const params = (payload.params as Record<string, unknown> | undefined) ?? {};
+        const p = payload as Record<string, unknown>;
+        const params = (p.params as Record<string, unknown> | undefined)
+          ?? (p.args as Record<string, unknown> | undefined)
+          ?? {};
         if (toolName) void handleToolCall(toolName, params);
         return;
       }
