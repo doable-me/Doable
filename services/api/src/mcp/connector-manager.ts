@@ -1,6 +1,7 @@
 import type { McpConnectorConfig, McpToolDefinition, ResolvedMcpTool } from "./types.js";
 import { McpClient } from "./client.js";
 import { createTransport } from "./transport.js";
+import { refreshMcpAccessToken } from "./oauth.js";
 import { connectorQueries } from "@doable/db";
 import { sql } from "../db/index.js";
 
@@ -12,6 +13,14 @@ interface ConnectorEntry {
   tools: McpToolDefinition[];
   lastUsed: number;
   connectRetries: number;
+  /**
+   * For oauth2 connectors: epoch-ms when the access token baked into this
+   * client's transport headers expires. A cached HTTP client keeps using the
+   * header set at connect time, so once this passes we must NOT reuse the
+   * cached client — getClient() forces a reconnect, which refreshes the token.
+   * undefined = no known expiry (don't proactively recycle).
+   */
+  oauthExpiresAt?: number;
 }
 
 /**
@@ -37,9 +46,17 @@ export class ConnectorManager {
    */
   async getClient(config: McpConnectorConfig): Promise<McpClient> {
     const existing = this.connections.get(config.id);
-    if (existing?.client.isReady()) {
+    // Don't reuse a cached client whose baked-in OAuth access token has (nearly)
+    // expired — the reconnect below refreshes it. 60s safety margin.
+    const tokenStillValid =
+      !existing?.oauthExpiresAt || Date.now() < existing.oauthExpiresAt - 60_000;
+    if (existing?.client.isReady() && tokenStillValid) {
       existing.lastUsed = Date.now();
       return existing.client;
+    }
+    if (existing && !tokenStillValid) {
+      existing.client.disconnect().catch(() => {});
+      this.connections.delete(config.id);
     }
 
     // Evict LRU if at capacity
@@ -209,6 +226,9 @@ export class ConnectorManager {
   private async connect(config: McpConnectorConfig): Promise<McpClient> {
     const headers: Record<string, string> = {};
     let stdioEnv: Record<string, string> | undefined;
+    // For oauth2: epoch-ms the access token now in `headers` expires (so the
+    // cached client can be recycled before it goes stale). undefined = unknown.
+    let oauthExpiresAtMs: number | undefined;
 
     // Phase 2B: virtual connectors (preset-synthesized) carry their env map
     // inline and have NO DB row, so calling `connectors.getDecrypted(config.id)`
@@ -242,13 +262,63 @@ export class ConnectorManager {
             }
             break;
           }
-          case "oauth2":
-            if (creds.access_token) {
-              headers["Authorization"] = `Bearer ${String(creds.access_token)}`;
+          case "oauth2": {
+            // OAuth2 access tokens are short-lived. The previous code used the
+            // stored access_token verbatim with no expiry check or refresh — so
+            // once it expired the MCP server returned 401 and every runtime call
+            // (preview AND deployed app) silently returned no data. Refresh the
+            // token using the stored refresh_token when it's expired (or about to
+            // be), then persist the rotated credentials. Generic RFC-6749 flow —
+            // works for any OAuth2 MCP server.
+            let accessToken = creds.access_token as string | undefined;
+            const refreshToken = creds.refresh_token as string | undefined;
+            const tokenEndpoint = creds.token_endpoint as string | undefined;
+            const clientId = creds.client_id as string | undefined;
+            const obtainedAt = Number(creds.obtained_at) || 0;
+            const expiresIn = Number(creds.expires_in) || 0;
+            // Refresh 60s before actual expiry. If the AS didn't advertise an
+            // expiry (expiresAtMs === 0) we can't proactively detect staleness;
+            // the call then surfaces a clear re-auth error rather than hanging.
+            const expiresAtMs = obtainedAt && expiresIn ? obtainedAt + expiresIn * 1000 : 0;
+            const isExpired = expiresAtMs > 0 && Date.now() >= expiresAtMs - 60_000;
+            oauthExpiresAtMs = expiresAtMs || undefined;
+            if ((isExpired || !accessToken) && refreshToken && tokenEndpoint) {
+              try {
+                console.log(`[ConnectorManager] Refreshing expired OAuth token for ${config.name}`);
+                const refreshed = await refreshMcpAccessToken(tokenEndpoint, refreshToken, clientId);
+                accessToken = refreshed.access_token;
+                const newExpIn = refreshed.expires_in ?? expiresIn;
+                oauthExpiresAtMs = newExpIn ? Date.now() + newExpIn * 1000 : undefined;
+                await connectors.updateConnector(config.id, {
+                  credentials: {
+                    access_token: refreshed.access_token,
+                    // Some authorization servers rotate the refresh token on use;
+                    // keep the new one when present, else retain the existing one.
+                    refresh_token: refreshed.refresh_token ?? refreshToken,
+                    token_type: refreshed.token_type ?? creds.token_type,
+                    expires_in: refreshed.expires_in ?? expiresIn,
+                    scope: refreshed.scope ?? creds.scope,
+                    obtained_at: Date.now(),
+                    token_endpoint: tokenEndpoint,
+                    client_id: clientId,
+                  },
+                });
+              } catch (refreshErr) {
+                console.error(
+                  `[ConnectorManager] OAuth token refresh failed for ${config.name}:`,
+                  refreshErr instanceof Error ? refreshErr.message : refreshErr,
+                );
+                // Fall through with the (stale) token — the call surfaces a clear
+                // 401 → "re-authenticate" rather than a confusing empty result.
+              }
+            }
+            if (accessToken) {
+              headers["Authorization"] = `Bearer ${String(accessToken)}`;
             } else {
-              throw new Error("OAuth credentials missing. Please re-authenticate by connecting via OAuth again.");
+              throw new Error("OAuth credentials missing or expired. Please re-authenticate by connecting via OAuth again.");
             }
             break;
+          }
           // 'none' or unknown — leave headers empty (existing behavior)
         }
       }
@@ -276,6 +346,7 @@ export class ConnectorManager {
         tools: [],
         lastUsed: Date.now(),
         connectRetries: 0,
+        oauthExpiresAt: oauthExpiresAtMs,
       });
 
       console.log(

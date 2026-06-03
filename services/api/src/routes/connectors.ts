@@ -631,6 +631,12 @@ mcpOAuthCallbackRoute.get("/connectors/mcp-oauth/callback", async (c) => {
           expires_in: tokenResult.expires_in,
           scope: tokenResult.scope,
           obtained_at: Date.now(),
+          // Persist the token endpoint + client id so the connector can later
+          // refresh the access token on its own (connector-manager refresh-on-
+          // expiry). Without these, refresh is impossible after this request and
+          // the connection dies when the access token expires.
+          token_endpoint: tokenEndpoint,
+          client_id: clientId,
         },
       });
     } else {
@@ -650,6 +656,12 @@ mcpOAuthCallbackRoute.get("/connectors/mcp-oauth/callback", async (c) => {
           expires_in: tokenResult.expires_in,
           scope: tokenResult.scope,
           obtained_at: Date.now(),
+          // Persist the token endpoint + client id so the connector can later
+          // refresh the access token on its own (connector-manager refresh-on-
+          // expiry). Without these, refresh is impossible after this request and
+          // the connection dies when the access token expires.
+          token_endpoint: tokenEndpoint,
+          client_id: clientId,
         },
       });
     }

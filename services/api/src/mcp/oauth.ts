@@ -268,3 +268,43 @@ export async function exchangeCodeForToken(
 
   return data;
 }
+
+// ─── Refresh an Access Token (RFC 6749 §6) ───────────────
+//
+// OAuth2 access tokens are short-lived (the AS returns `expires_in`). Without
+// refreshing, a connected MCP server stops responding (401) once the access
+// token expires — which silently empties any generated app/dashboard that
+// fetches MCP data at runtime, hours after the user authenticated. This uses
+// the long-lived `refresh_token` (we request the `refresh_token` grant at DCR
+// time) to mint a fresh access token. Public-client (PKCE) style: client_id in
+// the body, no secret. Works for any RFC-6749 authorization server.
+export async function refreshMcpAccessToken(
+  tokenEndpoint: string,
+  refreshToken: string,
+  clientId?: string,
+): Promise<McpOAuthTokenResult> {
+  const body = new URLSearchParams();
+  body.set("grant_type", "refresh_token");
+  body.set("refresh_token", refreshToken);
+  if (clientId) {
+    body.set("client_id", clientId);
+  }
+
+  const response = await fetch(tokenEndpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Token refresh failed (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json() as McpOAuthTokenResult;
+  if (!data.access_token) {
+    throw new Error("Token refresh response missing access_token");
+  }
+
+  return data;
+}
