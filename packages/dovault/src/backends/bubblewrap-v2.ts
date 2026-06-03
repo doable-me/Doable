@@ -26,6 +26,47 @@ import { tmpdir } from "node:os";
 const SANDBOX_UID_POOL_MIN = 10001;
 const SANDBOX_SPAWN_PATH = "/opt/doable/bin/sandbox-spawn";
 
+/**
+ * Detect whether the `sudo + sandbox-spawn` uid-flip path is actually usable
+ * on this host. BOTH must hold:
+ *   1. `/opt/doable/bin/sandbox-spawn` exists (installed by setup-server.sh /
+ *      the secure docker image), AND
+ *   2. a `sudo` binary is resolvable on PATH.
+ *
+ * BUG-OOB-DOCKER-SUDO: the DEFAULT docker compose (deployment/docker/
+ * docker-compose.yml → `api` target) installs `bwrap` but NOT `sudo` and NOT
+ * the sandbox-spawn wrapper — only the secure image (Dockerfile.secure +
+ * setup-server.sh) provisions those. The AI bash tool resolves the ai-bash
+ * profile with uid 65534 ("nobody", since dev-uid-allocator returns null when
+ * no wrapper is present), which is >= SANDBOX_UID_POOL_MIN, so the old
+ * unconditional `euid != 0 && uid >= POOL_MIN` test prepended
+ * `sudo -n /opt/doable/bin/sandbox-spawn …` and Node threw
+ * `spawn sudo ENOENT` → every `npm run build` inside the jail failed →
+ * the AI could never verify/auto-fix generated apps. Gate the sudo path the
+ * same way services/api/src/runtime/dev-uid-allocator.ts (detectSudoWrapper)
+ * and projects/vite-jail.ts (isSandboxWrapperAvailable) already do, so we
+ * degrade to a direct, unprivileged `bwrap` spawn (which the container's
+ * unprivileged `node` user can do via user namespaces — the reason bwrap is
+ * in the default api image) instead of spawning a non-existent sudo.
+ *
+ * Cached at module load. Restart the API if the wrapper is installed/removed
+ * after boot — matches dev-uid-allocator's caching contract.
+ */
+function detectSandboxSpawnWrapper(): boolean {
+  if (process.platform !== "linux") return false;
+  if (!existsSync(SANDBOX_SPAWN_PATH)) return false;
+  try {
+    // `command -v sudo` is the portable PATH probe; execSync throws (non-zero
+    // exit) when sudo is absent, which is exactly the default-docker case.
+    execSync("command -v sudo", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const SANDBOX_SPAWN_WRAPPER_AVAILABLE = detectSandboxSpawnWrapper();
+
 import type {
   BackendAvailability,
   BuildSpawnResult,
@@ -230,10 +271,15 @@ export class BubblewrapBackend implements SandboxBackend {
     // rootDir (sandbox-spawn validates it against ${PROJECTS_PREFIX}/<uuid>).
     const profileUid = profile.user?.uid;
     const euid = typeof process.geteuid === "function" ? process.geteuid() : 0;
+    // BUG-OOB-DOCKER-SUDO: only take the sudo+sandbox-spawn path when that
+    // wrapper is ACTUALLY installed (see detectSandboxSpawnWrapper). On the
+    // default docker image sudo/the wrapper are absent, so we fall through to
+    // a direct unprivileged `bwrap` spawn rather than `spawn sudo ENOENT`.
     const needsSandboxSpawn =
       euid !== 0 &&
       typeof profileUid === "number" &&
-      profileUid >= SANDBOX_UID_POOL_MIN;
+      profileUid >= SANDBOX_UID_POOL_MIN &&
+      SANDBOX_SPAWN_WRAPPER_AVAILABLE;
 
     // sandbox-spawn validates CMD against an exact-match allowlist; the
     // unwrapped path uses bare "bwrap" (cpSpawn resolves via PATH) but the
