@@ -131,7 +131,28 @@ connectorRoutes.get("/:workspaceId/connectors", async (c) => {
   const role = await workspaces.getMemberRole(workspaceId, userId);
   if (!role) return c.json({ error: "Not a member of this workspace" }, 403);
 
-  const data = await connectors.listConnectors(workspaceId, { projectId });
+  const rows = await connectors.listConnectors(workspaceId, { projectId });
+  // The per-app database connector (builtin:data) is provisioned PER PROJECT —
+  // one mcp_connectors row per project (scope='project'), by design, because
+  // each project owns its own PGlite database. This settings list is a
+  // per-server display, so without de-duplication "Doable Per-App Database"
+  // shows up once per project (4 projects -> 4 identical rows). Collapse those
+  // built-in per-project rows to a single representative entry. When a
+  // projectId is in scope, prefer that project's own row.
+  const preferredBuiltinData = projectId
+    ? rows.find((r) => r.server_command === "builtin:data" && r.project_id === projectId)
+    : undefined;
+  let builtinDataEmitted = false;
+  const data = rows.filter((row) => {
+    if (row.server_command !== "builtin:data") return true;
+    if (builtinDataEmitted) return false;
+    builtinDataEmitted = true;
+    return true;
+  }).map((row) =>
+    row.server_command === "builtin:data" && preferredBuiltinData
+      ? preferredBuiltinData
+      : row,
+  );
   return c.json({ data, role });
 });
 
