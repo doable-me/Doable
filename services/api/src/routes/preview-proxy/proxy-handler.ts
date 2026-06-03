@@ -3,6 +3,7 @@ import {
   getDevServerInternalUrl,
   getDevServerInternalUrlWhenReady,
   getInstallingPeerDep,
+  clearRestartingOverlay,
   startDevServer,
   isRunning,
   touchActivity,
@@ -429,14 +430,33 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
       // overlay meta-refresh falls through to the real preview (markReady
       // clears installingPeerDep). If vite hits ANOTHER missing dep, the
       // new auto-install overwrites the placeholder with a real pkg label.
-      if (installing.pkg === "Restarting preview…" && !isRunning(projectId)) {
-        void startDevServer(projectId).catch(() => {
-          // ignored — markFailed clears the overlay on real failure
+      if (installing.pkg === "Restarting preview…") {
+        if (isRunning(projectId)) {
+          // The dev server is already up. The placeholder is STALE: it got
+          // (re-)set after an instance had already signaled ready (e.g. a
+          // late reactive-install exit handler racing the install_package
+          // tool's own restartDevServer), so no further markReady() will
+          // ever fire to clear it — and without this branch the proxy would
+          // serve "Restarting preview…" forever even though vite serves 200.
+          // This was the root cause of @doable/ai (and any auto-installed
+          // dep) apps getting stuck on the placeholder. Drop the stale
+          // overlay and fall through to the normal proxy path below.
+          clearRestartingOverlay(projectId);
+        } else {
+          // Vite was SIGTERM'd and not yet respawned — kick a fresh start.
+          void startDevServer(projectId).catch(() => {
+            // ignored — markFailed clears the overlay on real failure
+          });
+          return c.html(renderInstallingDepHTML(installing.pkg), 200, {
+            "Cache-Control": "no-store",
+          });
+        }
+      } else {
+        // A genuine `npm install <pkg>` is in flight — show its overlay.
+        return c.html(renderInstallingDepHTML(installing.pkg), 200, {
+          "Cache-Control": "no-store",
         });
       }
-      return c.html(renderInstallingDepHTML(installing.pkg), 200, {
-        "Cache-Control": "no-store",
-      });
     }
   }
 

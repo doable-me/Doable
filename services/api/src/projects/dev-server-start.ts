@@ -105,6 +105,29 @@ export function getInstallingPeerDep(
   return installingPeerDep.get(projectId) ?? null;
 }
 
+/**
+ * Clear a sticky "Restarting preview…" overlay for a project.
+ *
+ * The overlay is set by runInstallBatch on a successful auto-install and is
+ * normally cleared by markReady() when the next Vite boot signals ready. But
+ * markReady() fires at most once per dev-server instance (guarded by
+ * `settled`), so if the placeholder gets (re-)set AFTER an instance has already
+ * become ready — e.g. a late reactive-install exit handler races a restart that
+ * was already driven by the install_package tool's restartDevServer — there is
+ * no subsequent markReady() to clear it, and the preview-proxy serves the
+ * overlay forever even though Vite is up and serving 200. The proxy calls this
+ * to drop the stale placeholder once it has confirmed the dev server is
+ * actually running, so the next request falls through to the real preview.
+ * Only clears the placeholder, never a genuine in-flight `npm install <pkg>`
+ * overlay (those carry a real package label and must persist).
+ */
+export function clearRestartingOverlay(projectId: string): void {
+  const overlay = installingPeerDep.get(projectId);
+  if (overlay && overlay.pkg === "Restarting preview…") {
+    installingPeerDep.delete(projectId);
+  }
+}
+
 /** npm package name validation per https://github.com/npm/validate-npm-package-name */
 const NPM_PKG_NAME_RE = /^(@[a-z0-9-]+\/)?[a-z0-9][a-z0-9-_.]{0,213}$/;
 

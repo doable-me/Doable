@@ -10,7 +10,11 @@
  */
 
 export type { StartDevServerOptions } from "./dev-server-core.js";
-export { startDevServer, getInstallingPeerDep } from "./dev-server-start.js";
+export {
+  startDevServer,
+  getInstallingPeerDep,
+  clearRestartingOverlay,
+} from "./dev-server-start.js";
 export {
   stopDevServer,
   getDevServerUrl,
