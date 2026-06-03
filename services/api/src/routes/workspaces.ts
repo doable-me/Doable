@@ -103,6 +103,17 @@ workspaceRoutes.post("/", async (c) => {
     return c.json({ error: "A workspace with this slug already exists" }, 409);
   }
 
+  // Inherit the creator's plan so an Enterprise/Pro owner's new workspaces are
+  // not born on 'free' — which would impose the 3-project + low-credit caps and
+  // surface as the reported "new workspace is Free / 4 of 3 projects, none
+  // visible" bug. We use the highest plan among the user's existing OWNED
+  // workspaces (falling back to 'free' if they own none). On self-hosted, the
+  // owner's primary workspace is 'enterprise' (firstUserBootstrap promotes it),
+  // so new workspaces correctly inherit 'enterprise'. firstUserBootstrap only
+  // promoted the user's *then-existing* workspaces, never ones created later —
+  // this closes that gap at the source for every install method.
+  const inheritedPlan = await workspaces.highestOwnedPlan(userId);
+
   let workspace;
   try {
     workspace = await workspaces.create({
@@ -110,6 +121,7 @@ workspaceRoutes.post("/", async (c) => {
       slug: parsed.data.slug,
       description: parsed.data.description,
       ownerId: userId,
+      plan: inheritedPlan,
     });
   } catch (err) {
     // BUG-R13-WORKSPACE-SLUG-500: the line-100 pre-check races with

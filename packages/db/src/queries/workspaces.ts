@@ -7,7 +7,7 @@ import type {
   CreditsRow,
 } from "../types.js";
 import type { WorkspacePlan, WorkspaceRole } from "@doable/shared";
-import { PLAN_LIMITS } from "@doable/shared";
+import { PLAN_LIMITS, WORKSPACE_PLANS } from "@doable/shared";
 import crypto from "node:crypto";
 
 export function workspaceQueries(sql: postgres.Sql) {
@@ -35,6 +35,28 @@ export function workspaceQueries(sql: postgres.Sql) {
       `;
     },
 
+    /**
+     * Highest plan among the workspaces this user OWNS, ranked by the
+     * WORKSPACE_PLANS order (free < pro < business < enterprise). Used so a
+     * newly created workspace inherits the creator's plan instead of being born
+     * on 'free' (which imposes the 3-project + low-credit caps). Returns 'free'
+     * when the user owns no workspaces yet. On self-hosted, the owner's primary
+     * workspace is 'enterprise' (firstUserBootstrap), so this returns
+     * 'enterprise' and new workspaces inherit it.
+     */
+    async highestOwnedPlan(userId: string): Promise<WorkspacePlan> {
+      const rows = await sql<{ plan: WorkspacePlan }[]>`
+        SELECT plan FROM workspaces WHERE owner_id = ${userId}
+      `;
+      let best: WorkspacePlan = "free";
+      for (const { plan } of rows) {
+        if (WORKSPACE_PLANS.indexOf(plan) > WORKSPACE_PLANS.indexOf(best)) {
+          best = plan;
+        }
+      }
+      return best;
+    },
+
     async create(
       data: {
         name: string;
@@ -47,6 +69,17 @@ export function workspaceQueries(sql: postgres.Sql) {
     ): Promise<WorkspaceRow> {
       const plan = data.plan ?? "free";
       const limits = PLAN_LIMITS[plan];
+
+      // Postgres integer columns cap at int32; the 'enterprise' plan's
+      // dailyCredits/monthlyCredits are Infinity. Insert MAX_INT instead, exactly
+      // as creditQueries does (queries/credits.ts) — otherwise the credit_balances
+      // INSERT below throws 22P02 (invalid integer input) and the whole workspace
+      // create 500s. This path was previously only exercised with plan='free'
+      // (existing enterprise workspaces were created free then promoted), so the
+      // Infinity case was latent until workspaces inherit 'enterprise' on create.
+      const MAX_INT = 2147483647;
+      const dailyCredits = Number.isFinite(limits.dailyCredits) ? limits.dailyCredits : MAX_INT;
+      const monthlyCredits = Number.isFinite(limits.monthlyCredits) ? limits.monthlyCredits : MAX_INT;
 
       // The four inserts below MUST be atomic. If the workspace_members
       // insert fails (as happened when the 071 RLS WITH CHECK was recursive
@@ -69,7 +102,7 @@ export function workspaceQueries(sql: postgres.Sql) {
           INSERT INTO credit_balances (user_id, workspace_id, daily_credits, monthly_credits, rollover_credits, plan_type, daily_reset_at, monthly_reset_at)
           VALUES (
             ${data.ownerId}, ${workspace!.id},
-            ${limits.dailyCredits}, ${limits.monthlyCredits}, 0, ${plan},
+            ${dailyCredits}, ${monthlyCredits}, 0, ${plan},
             now() + interval '1 day', now() + interval '1 month'
           )
           ON CONFLICT (user_id, workspace_id) DO NOTHING
