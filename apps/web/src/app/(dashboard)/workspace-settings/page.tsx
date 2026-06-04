@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { DASHBOARD_EVENTS } from "@/components/dashboard/sidebar";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Settings, Loader2, Boxes, Plug, Radio, Brain, Sparkles, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -172,6 +173,22 @@ function WorkspaceSettingsPageInner() {
     }
     loadData();
   }, [loadData, authLoading, isAuthenticated]);
+
+  // Re-load when the user switches workspace from the sidebar selector. The
+  // sidebar writes the new id to localStorage("doable_active_workspace_id")
+  // and emits WORKSPACE_CHANGED; loadData() reads that same key, so without
+  // this listener the settings page kept showing the previously-active
+  // workspace after a switch. The dashboard list subscribes the same way
+  // (see use-dashboard.ts).
+  useEffect(() => {
+    const handleWorkspaceChanged = () => {
+      setLoading(true);
+      loadData();
+    };
+    window.addEventListener(DASHBOARD_EVENTS.WORKSPACE_CHANGED, handleWorkspaceChanged);
+    return () =>
+      window.removeEventListener(DASHBOARD_EVENTS.WORKSPACE_CHANGED, handleWorkspaceChanged);
+  }, [loadData]);
 
   const handleSave = async () => {
     if (!workspace || saving) return;

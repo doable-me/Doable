@@ -5,6 +5,7 @@ import {
   Search,
   ExternalLink,
   XCircle,
+  Server,
 } from "lucide-react";
 import type { ProviderPreset, ModelPreset } from "@doable/shared";
 import { ProviderCard } from "./provider-card";
@@ -26,6 +27,7 @@ export function StepChoose({
   setSearchQuery,
   filteredProviders,
   onSelect,
+  onSelectCustom,
 }: {
   catalogLoading: boolean;
   catalogError: string | null;
@@ -36,6 +38,8 @@ export function StepChoose({
   setSearchQuery: (q: string) => void;
   filteredProviders: ProviderPreset[];
   onSelect: (preset: ProviderPreset) => void;
+  /** Select the synthetic "Custom OpenAI-compatible URL" provider. */
+  onSelectCustom: () => void;
 }) {
   if (catalogLoading) {
     return (
@@ -72,6 +76,37 @@ export function StepChoose({
           className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
         />
       </div>
+
+      {/* Pinned "Custom OpenAI-compatible URL" option. Not a catalog preset —
+          it lets users add any /v1 endpoint (vLLM, LM Studio, LiteLLM, proxies)
+          post-setup, the same capability the setup wizard's byok-custom tile
+          offers. Shown above the category grid in every tab, hidden only when
+          the search query clearly doesn't match it. */}
+      {(() => {
+        const q = searchQuery.toLowerCase().trim();
+        const matches =
+          !q ||
+          "custom openai-compatible compatible url byok self-hosted vllm lm studio litellm proxy endpoint local"
+            .includes(q);
+        if (!matches) return null;
+        return (
+          <button
+            type="button"
+            onClick={onSelectCustom}
+            className="flex w-full items-center gap-3 rounded-lg border border-brand-500/40 bg-brand-600/5 p-3 text-left transition-colors hover:border-brand-500 hover:bg-brand-600/10"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-600/15 text-brand-400">
+              <Server className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Custom OpenAI-compatible URL</p>
+              <p className="text-xs text-muted-foreground line-clamp-1">
+                Paste any /v1 base URL + key — vLLM, LM Studio, LiteLLM, proxies, …
+              </p>
+            </div>
+          </button>
+        );
+      })()}
 
       <div className="flex gap-1">
         {TABS.map(({ key, label }) => (

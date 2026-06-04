@@ -62,3 +62,40 @@ export const INITIAL_FORM_STATE: WizardFormState = {
   azureResourceName: "",
   azureApiVersion: "2024-02-15-preview",
 };
+
+// ─── Synthetic "Custom OpenAI-compatible" provider ───────────
+// NOT part of the server catalog (/ai/provider-catalog). The wizard injects
+// this as a first-class option so users can add ANY OpenAI-compatible endpoint
+// (vLLM, LM Studio, LiteLLM, self-hosted proxies, …) AFTER setup — the same
+// capability the setup wizard exposes via its byok-custom tile, which was
+// otherwise unreachable once the wizard was skipped/finished. It reuses the
+// normal configure→validate→models pipeline: editable base URL + optional API
+// key, with model discovery via the endpoint's /v1/models. The backend already
+// accepts providerType:"openai" + a custom baseUrl, so no API change is needed.
+export const CUSTOM_OPENAI_PROVIDER_ID = "custom-openai-compatible";
+
+export const CUSTOM_OPENAI_PRESET: ProviderPreset = {
+  id: CUSTOM_OPENAI_PROVIDER_ID,
+  name: "Custom OpenAI-compatible URL",
+  category: "gateway",
+  subcategory: "infrastructure",
+  sdkType: "openai",
+  defaultBaseUrl: "https://api.example.com/v1",
+  baseUrlEditable: true,
+  authMethod: "api-key",
+  apiKeyPlaceholder: "sk-… (leave blank for keyless local servers)",
+  supportsModelDiscovery: true,
+  defaultModels: [],
+  icon: "byok",
+  description: "Paste any /v1 base URL + key (vLLM, LM Studio, LiteLLM, proxies, …)",
+  capabilities: {
+    streaming: true,
+    toolCalling: true,
+    vision: false,
+    imageGeneration: false,
+    video: false,
+    audio: false,
+    mcp: false,
+  },
+  tags: ["custom", "openai-compatible", "byok", "self-hosted"],
+};

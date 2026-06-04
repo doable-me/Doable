@@ -13,7 +13,7 @@ import { useProviderCatalog } from "../hooks/use-provider-catalog";
 import { useTestConnection } from "../hooks/use-test-connection";
 import { Loader2, ChevronLeft, ChevronRight, X, User as UserIcon, Users as UsersIcon, Lock } from "lucide-react";
 import type { WizardStep, CategoryTab, ProviderWizardProps, WizardFormState } from "./provider-wizard-types";
-import { STEP_LABELS, STEP_ORDER, INITIAL_FORM_STATE } from "./provider-wizard-types";
+import { STEP_LABELS, STEP_ORDER, INITIAL_FORM_STATE, CUSTOM_OPENAI_PRESET, CUSTOM_OPENAI_PROVIDER_ID } from "./provider-wizard-types";
 import { StepChoose, StepConfigure, StepValidate, StepModels } from "./provider-wizard-steps";
 import { useProviderWizardModels } from "./use-provider-wizard-models";
 
@@ -155,6 +155,12 @@ export function ProviderWizard({
     // Pre-fill form
     let baseUrl = preset.defaultBaseUrl;
     if (preset.id === "azure-openai" && preset.baseUrlTemplate) {
+      baseUrl = "";
+    }
+    // The synthetic custom provider's defaultBaseUrl is only a placeholder
+    // example — start the field empty so the user must paste their real
+    // endpoint (and "Test Connection" stays disabled until they do).
+    if (preset.id === CUSTOM_OPENAI_PROVIDER_ID) {
       baseUrl = "";
     }
 
@@ -310,6 +316,7 @@ export function ProviderWizard({
               setSearchQuery={setSearchQuery}
               filteredProviders={filteredProviders}
               onSelect={handleSelectPreset}
+              onSelectCustom={() => handleSelectPreset(CUSTOM_OPENAI_PRESET)}
             />
           )}
 
