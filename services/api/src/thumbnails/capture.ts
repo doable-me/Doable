@@ -159,6 +159,22 @@ async function isPreviewHealthy(page: import("puppeteer").Page): Promise<boolean
       if (bodyText.includes("504 (Outdated Optimize Dep)")) return true;
       // Check for essentially blank page (no meaningful content)
       if ((document.body?.children.length ?? 0) === 0) return true;
+      // Silent blank React mount: the scaffold ships <div id="root"></div> +
+      // module scripts as <body> children (so the body.children===0 check above
+      // misses it), but the bundle hasn't executed yet — Vite is still compiling
+      // on the first request (common on a slow / just-installed box), leaving an
+      // EMPTY #root and a white screenshot that then gets saved as a permanent
+      // "successful" thumbnail. Treat it as not-yet-healthy so the caller retries
+      // (by which point Vite has compiled and React has mounted). Standalone
+      // doc-artifacts (markdown / pdf / pptx) legitimately have an empty #root
+      // but render their content straight into <body>, so the zero-visible-text
+      // guard below excludes them — only a React mount that produced NOTHING is
+      // flagged.
+      {
+        const rootEl2 = document.getElementById("root");
+        const visibleText = (document.body?.innerText ?? "").trim();
+        if (rootEl2 && (rootEl2.children?.length ?? 0) === 0 && visibleText.length === 0) return true;
+      }
       // Check for scaffold placeholder — means the app hasn't been built yet
       if (bodyText.includes("Dream it. Build it.") && bodyText.includes("pulse")) return true;
       if (bodyText.includes("Dream it. Build it.") && bodyText.includes("Doable")) return true;
