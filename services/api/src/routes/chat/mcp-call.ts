@@ -11,7 +11,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { sql } from "../../db/index.js";
 import { projectQueries, workspaceQueries, connectorQueries } from "@doable/db";
-import { getConnectorManager } from "../../mcp/connector-manager.js";
+import { getConnectorManager, McpAuthRequiredError } from "../../mcp/connector-manager.js";
 import type { AuthEnv } from "../../middleware/auth.js";
 
 const mcpCallSchema = z.object({
@@ -77,8 +77,7 @@ export function registerMcpCallRoute(app: Hono<AuthEnv>) {
 
       try {
         const manager = getConnectorManager();
-        const client = await manager.getClient(config);
-        const result = await client.callTool(toolName, params ?? {});
+        const result = await manager.callTool(config, toolName, params ?? {});
         if (result.isError) {
           const text = result.content
             .filter((it) => it.type === "text")
@@ -88,6 +87,9 @@ export function registerMcpCallRoute(app: Hono<AuthEnv>) {
         }
         return c.json({ success: true, content: result.content });
       } catch (err) {
+        if (err instanceof McpAuthRequiredError) {
+          return c.json({ success: false, code: "AUTH_REQUIRED", error: `${err.connectorName} needs to be reconnected — sign in to load its data.`, loginUrl: err.loginUrl });
+        }
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[MCP Call] ${connectorId}/${toolName} failed:`, msg);
         return c.json({ success: false, error: msg }, 500);

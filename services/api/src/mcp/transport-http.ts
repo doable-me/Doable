@@ -81,7 +81,10 @@ export class StreamableHttpTransport implements McpTransport {
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");
       console.error(`[MCP:HTTP] ── RESPONSE ${response.status} (${durationMs}ms) ──\n  Error: ${errBody.slice(0, 2000)}`);
-      throw new Error(`MCP request failed: ${response.status} — ${errBody.slice(0, 500)}`);
+      const httpErr = new Error(`MCP request failed: ${response.status} — ${errBody.slice(0, 500)}`) as Error & { httpStatus?: number; responseBody?: string };
+      httpErr.httpStatus = response.status;
+      httpErr.responseBody = errBody.slice(0, 500);
+      throw httpErr;
     }
 
     // Capture session ID from response header (set on first request, e.g. initialize)
@@ -217,7 +220,10 @@ export class LegacySseTransport implements McpTransport {
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");
       console.error(`[MCP:SSE] ── RESPONSE ${response.status} (${durationMs}ms) ──\n  Error: ${errBody.slice(0, 2000)}`);
-      throw new Error(`Legacy SSE request failed: ${response.status} — ${errBody.slice(0, 500)}`);
+      const sseErr = new Error(`Legacy SSE request failed: ${response.status} — ${errBody.slice(0, 500)}`) as Error & { httpStatus?: number; responseBody?: string };
+      sseErr.httpStatus = response.status;
+      sseErr.responseBody = errBody.slice(0, 500);
+      throw sseErr;
     }
 
     const jsonResp = (await response.json()) as JsonRpcResponse;

@@ -44,7 +44,7 @@ import { getIntegration } from "../integrations/registry/index.js";
 import { verifyProjectJwt } from "../auth/project-jwt.js";
 import { getProjectPath } from "../projects/file-manager.js";
 import { connectorQueries } from "@doable/db";
-import { getConnectorManager } from "../mcp/connector-manager.js";
+import { getConnectorManager, McpAuthRequiredError } from "../mcp/connector-manager.js";
 import type { McpConnectorConfig } from "../mcp/types.js";
 import { PROJECT_JWT_SECRET } from "../lib/secrets.js";
 
@@ -357,8 +357,7 @@ connectorProxyRoutes.post(
 
     try {
       const manager = getConnectorManager();
-      const client = await manager.getClient(config);
-      const result = await client.callTool(realToolName, props);
+      const result = await manager.callTool(config, realToolName, props);
 
       const durationMs = Date.now() - t0;
 
@@ -394,6 +393,15 @@ connectorProxyRoutes.post(
       });
     } catch (err) {
       const durationMs = Date.now() - t0;
+      if (err instanceof McpAuthRequiredError) {
+        await audit(projectId, "mcp", toolName, userId, "denied", durationMs);
+        return c.json({
+          success: false,
+          data: null,
+          error: { code: "AUTH_REQUIRED", message: `${err.connectorName} needs to be reconnected — sign in to load its data.`, loginUrl: err.loginUrl },
+          meta: { connectorName: resolvedConnector.name, toolName: realToolName, durationMs },
+        });
+      }
       await audit(projectId, "mcp", toolName, userId, "error", durationMs);
       return jsonError(c, 500, "MCP_EXECUTION_ERROR",
         err instanceof Error ? err.message : "Unknown error");

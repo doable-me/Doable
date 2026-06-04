@@ -21,7 +21,7 @@ export interface IntegrationCallResult<T = unknown> {
 export interface McpCallResult<T = unknown> {
   success: boolean;
   data: T | null;
-  error: { code: string; message: string } | null;
+  error: { code: string; message: string; loginUrl?: string } | null;
   meta: { connectorName: string; toolName: string; durationMs: number } | null;
 }
 
@@ -403,7 +403,7 @@ async function callMcpProxy<T>(
     return {
       success: json.success ?? false,
       data: json.success ? (json.data as T ?? null) : null,
-      error: json.success ? null : { code: json.error?.code ?? "UNKNOWN", message: json.error?.message ?? "MCP call failed" },
+      error: json.success ? null : { code: json.error?.code ?? "UNKNOWN", message: json.error?.message ?? "MCP call failed", loginUrl: json.error?.loginUrl },
       meta: json.meta ?? null,
     };
   } catch (err) {

@@ -217,6 +217,7 @@ export async function buildConnectedMcpServersContext(
     "3. You MAY call an MCP tool AT MOST ONCE here to learn the response SHAPE, then build the UI around live `doable.mcp.call` calls.",
     "4. Use the EXACT `mcp_…` tool names listed above — that is how the runtime proxy resolves the connector + tool. `@doable/sdk` is pre-linked: import it directly, never add it to package.json, and never hardcode the MCP server URL or credentials.",
     "5. This works identically in the live preview and the deployed site — the auth token / project key is injected automatically.",
+    "6. **🔐 HANDLE AUTH/ERRORS GRACEFULLY — never show raw errors to end-users.** `doable.mcp.call` returns `{ success, data, error }` and does NOT throw. Show a loading state while a call is in flight. If a result is not successful and `error.code === 'AUTH_REQUIRED'`, render a clean centered panel telling the user the data source needs to be connected, with a Sign in button that opens `error.loginUrl` (when present) in a new tab — never a raw error and never a silently-empty dashboard. For any other failure show a small inline Retry affordance. Never surface 401/404 codes, stack traces, or the phrase 'authentication error' to end-users.",
     "</connected-mcp-servers>",
   ].join("\n");
 }
