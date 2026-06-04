@@ -260,6 +260,81 @@ else
   ok "Web standalone rebuilt."
 fi
 
+# ── Ensure Caddy published-sites :8080 block matches the new domain ──
+# Renaming the domain rewrites .env + cloudflared, but the Caddyfile's
+# subdomain-publishing block (the one server-setup.sh emits) still binds to the
+# OLD domain — or is missing entirely if the host was renamed by hand. cloudflared
+# routes *.<wildcard-zone> → 127.0.0.1:8080, so without a matching :8080 host-match
+# block every published site 502s (dead port) or serves the wrong/old domain. We
+# re-emit the canonical block idempotently so a domain change keeps Caddy, cloudflared
+# and .env consistent (the failure mode that broke demo.doable.me after its rename).
+CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
+if command -v caddy >/dev/null 2>&1 && [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" ]; then
+  # Publish wildcard zone: registrable zone for multi-level domains
+  # (dev.doable.me → doable.me), the domain itself for a zone-apex. Mirrors
+  # server-setup.sh's PUBLISH_WILDCARD_DOMAIN so the Caddy host-match agrees
+  # with the cloudflared "*.<zone>" ingress wildcard.
+  if [ "$(echo "$DOMAIN" | tr '.' '\n' | grep -c .)" -gt 2 ]; then
+    PUB_WILDCARD="${DOMAIN#*.}"
+  else
+    PUB_WILDCARD="${DOMAIN}"
+  fi
+  PUB_RE=$(printf '%s' "$PUB_WILDCARD" | sed 's/\./\\./g')
+
+  CADDY_BAK="${CADDYFILE}.pre-domain-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$CADDYFILE" "$CADDY_BAK"
+
+  # Strip any existing top-level ":8080 {" … "}" block (marker-less server-setup
+  # output, a stale hand-added one, or our own from a prior run) so this is
+  # idempotent. The block's only column-0 "}" is its closer; inner braces are
+  # indented, so stop at the first column-0 "}".
+  awk '
+    /^:8080[[:space:]]*\{/ { inblk=1; next }
+    inblk && /^\}/         { inblk=0; next }
+    inblk                  { next }
+    { print }
+  ' "$CADDYFILE" > "${CADDYFILE}.tmp" && mv "${CADDYFILE}.tmp" "$CADDYFILE"
+
+  cat >> "$CADDYFILE" <<CADDYBLOCK
+
+:8080 {
+    # Auto-managed by reconfigure-domain.sh — serves *.${PUB_WILDCARD} published
+    # SPAs from ${INSTALL_DIR}/sites/<subdomain>/live. cloudflared routes
+    # *.${PUB_WILDCARD} → 127.0.0.1:8080 to this block. Regenerated on every
+    # domain change; do not hand-edit (re-run reconfigure-domain.sh instead).
+    bind 127.0.0.1
+    @has_subdomain {
+        header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\\.${PUB_RE}\$
+    }
+    handle @has_subdomain {
+        root * ${INSTALL_DIR}/sites/{re.subdomain.1}/live
+        try_files {path} /index.html
+        file_server
+        header {
+            X-Frame-Options SAMEORIGIN
+            X-Content-Type-Options nosniff
+            Referrer-Policy strict-origin-when-cross-origin
+        }
+        encode gzip
+    }
+    handle {
+        respond "Not Found" 404
+    }
+}
+CADDYBLOCK
+
+  if caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1; then
+    systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true
+    ok "Caddy published-sites :8080 block re-emitted for *.${PUB_WILDCARD} → ${INSTALL_DIR}/sites/<sub>/live (backup: $CADDY_BAK)."
+  else
+    warn "Caddy config invalid after publishing-block update — restoring $CADDY_BAK (published sites may 502 until fixed)."
+    cp -p "$CADDY_BAK" "$CADDYFILE"
+  fi
+else
+  info "Skipping Caddy :8080 publishing-block update (caddy absent, or $CADDYFILE missing/not writable)."
+  info "If you serve published sites via Caddy, ensure a ':8080' host-match block for *.<wildcard-zone> → ${INSTALL_DIR}/sites/<sub>/live exists."
+fi
+
 # ── Restart service ─────────────────────────────────────────────
 if [ "$SKIP_RESTART" = "1" ]; then
   warn "--no-restart: services still running with OLD .env. Restart manually with: systemctl restart doable.service"
