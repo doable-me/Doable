@@ -2393,6 +2393,19 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   # user namespace it needs for the --uid/--gid remap, killing every
   # preview / build / chat-tool spawn with `bwrap: setting up uid map:
   # Permission denied`. The profile is scoped to /usr/bin/bwrap only.
+  #
+  # Both this profile and doable-puppeteer-chrome below exist ONLY to punch a
+  # userns hole through the Ubuntu-24.04+ kernel knob
+  # apparmor_restrict_unprivileged_userns. On any kernel WITHOUT that knob
+  # (Ubuntu 22.04, most Debian) unprivileged user namespaces are already
+  # allowed — bwrap + puppeteer-Chrome work without a profile, and the
+  # profiles' `abi <abi/4.0>` + `userns` rule don't even parse (abi/4.0 is
+  # absent on apparmor 3.x). Loading them there only emitted a scary,
+  # backwards "may fail on Ubuntu 24.04+" warning on a box where nothing was
+  # actually wrong, so skip them unless the kernel really restricts userns.
+  if [ ! -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+    info "Unprivileged user namespaces are unrestricted on this kernel (no apparmor_restrict_unprivileged_userns knob — e.g. Ubuntu 22.04, most Debian); bwrap + puppeteer-Chrome need no userns AppArmor profile. Skipping doable-bwrap + doable-puppeteer-chrome (not needed here)."
+  else
   if [ -f "${INSTALL_DIR}/deployment/apparmor/doable-bwrap" ]; then
     install -m 0644 -o root -g root \
       "${INSTALL_DIR}/deployment/apparmor/doable-bwrap" \
@@ -2424,6 +2437,7 @@ if [ "$CONTAINER_MODE" != "1" ]; then
   else
     warn "deployment/apparmor/doable-puppeteer-chrome missing in repo — thumbnail captures may fail on Ubuntu 24.04+"
   fi
+  fi  # end userns-restricted guard (apparmor_restrict_unprivileged_userns)
 
   # — Bind-mount helper for proc-mask + etc-synth composers —
   # The composers stage synthetic /proc and /etc files in
