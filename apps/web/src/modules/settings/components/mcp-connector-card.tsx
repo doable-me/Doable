@@ -16,6 +16,7 @@ import {
   Power,
   PowerOff,
   Zap,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -63,6 +64,7 @@ export function ConnectorCard({
   onTest,
   onToggleActive,
   onDelete,
+  onReconnect,
 }: {
   connector: McpConnector;
   expanded: boolean;
@@ -70,6 +72,8 @@ export function ConnectorCard({
   onTest: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
+  /** Re-run OAuth in place (only meaningful for oauth2 connectors). */
+  onReconnect?: () => void;
 }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; tools?: McpTool[] } | null>(null);
@@ -255,6 +259,16 @@ export function ConnectorCard({
 
           <div className="flex items-center justify-between px-4 py-2.5">
             <div className="flex items-center gap-2">
+              {connector.auth_type === "oauth2" && onReconnect && (
+                <button
+                  onClick={() => onReconnect()}
+                  className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="Re-run the OAuth login to refresh this connection (keeps the same server and name)"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Reconnect
+                </button>
+              )}
               <button
                 onClick={() => void handleTest()}
                 disabled={testing}

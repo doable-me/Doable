@@ -63,6 +63,71 @@ export function McpPanel({ workspaceId }: McpPanelProps) {
     [createConnector],
   );
 
+  // Re-authenticate an existing OAuth connector IN PLACE (same id + name) so a
+  // connector whose token expired can recover without delete + re-add. The
+  // backend authorize route accepts an existing connectorId and the callback
+  // updates that row's credentials. We re-discover the server's OAuth endpoints
+  // (they are not stored on the connector) and reuse the same popup flow as add.
+  const handleReconnect = useCallback(
+    async (connector: McpConnector) => {
+      if (connector.auth_type !== "oauth2" || !connector.server_url) return;
+      const disc = await discoverServer(connector.server_url);
+      const meta = disc.oauthMetadata;
+      if (!meta?.authorizationEndpoint || !meta?.tokenEndpoint) {
+        window.alert(
+          disc.error
+            ? `Could not start re-authentication: ${disc.error}`
+            : "Could not discover this server's OAuth endpoints. Check the server URL is still reachable.",
+        );
+        return;
+      }
+      let authorizationUrl: string;
+      try {
+        authorizationUrl = await startOAuth({
+          authorizationEndpoint: meta.authorizationEndpoint,
+          tokenEndpoint: meta.tokenEndpoint,
+          mcpServerUrl: disc.mcpEndpointUrl ?? connector.server_url,
+          scopes: meta.scopesSupported,
+          registrationEndpoint: meta.registrationEndpoint,
+          connectorId: connector.id,
+          connectorName: connector.name,
+        });
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : "Failed to start re-authentication");
+        return;
+      }
+      const width = 600, height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        authorizationUrl,
+        "doable-mcp-oauth",
+        `width=${width},height=${height},left=${left},top=${top},popup=1`,
+      );
+      if (!popup) {
+        window.alert("Popup was blocked. Please allow popups for this site and try again.");
+        return;
+      }
+      let pollTimer: ReturnType<typeof setInterval> | undefined;
+      const messageHandler = (ev: MessageEvent) => {
+        const data = ev.data;
+        if (!data || typeof data !== "object" || data.type !== "doable:mcp-oauth-complete") return;
+        window.removeEventListener("message", messageHandler);
+        if (pollTimer) clearInterval(pollTimer);
+        void refresh();
+      };
+      window.addEventListener("message", messageHandler);
+      pollTimer = setInterval(() => {
+        if (popup.closed) {
+          if (pollTimer) clearInterval(pollTimer);
+          window.removeEventListener("message", messageHandler);
+          void refresh();
+        }
+      }, 500);
+    },
+    [discoverServer, startOAuth, refresh],
+  );
+
   const activeCount = connectors.filter((c) => c.status === "active").length;
 
   return (
@@ -172,6 +237,11 @@ export function McpPanel({ workspaceId }: McpPanelProps) {
                 })
               }
               onDelete={() => void deleteConnector(connector.id)}
+              onReconnect={
+                connector.auth_type === "oauth2"
+                  ? () => void handleReconnect(connector)
+                  : undefined
+              }
             />
           ))}
         </div>
