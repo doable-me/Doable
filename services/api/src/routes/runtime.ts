@@ -247,12 +247,24 @@ workspaceRuntimeRoutes.get("/:wid/runtime/instances", async (c) => {
       p.id AS project_id,
       p.name AS project_name,
       p.slug AS project_slug,
-      pr.state,
-      pr.fail_count,
-      pr.last_active_at
-    FROM project_runtime pr
-    JOIN projects p ON p.id = pr.project_id
+      -- A project shows here if it has a live process runtime OR a live
+      -- published deployment. Static publishes (Vite/React SPAs served by
+      -- Caddy) have a deployments row but no project_runtime row, so the
+      -- old INNER JOIN on project_runtime hid every deployed-to-live project.
+      COALESCE(pr.state, 'running') AS state,
+      COALESCE(pr.fail_count, 0) AS fail_count,
+      COALESCE(pr.last_active_at, d.completed_at, d.created_at) AS last_active_at
+    FROM projects p
+    LEFT JOIN project_runtime pr ON pr.project_id = p.id
+    LEFT JOIN LATERAL (
+      SELECT id, completed_at, created_at
+      FROM deployments
+      WHERE project_id = p.id AND status = 'live'
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) d ON true
     WHERE p.workspace_id = ${workspaceId}
+      AND (pr.project_id IS NOT NULL OR d.id IS NOT NULL)
     ORDER BY p.name
   `;
 

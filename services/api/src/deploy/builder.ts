@@ -11,7 +11,7 @@ import { projectQueries } from "@doable/db/queries/projects";
 import { defaultRegistry } from "../frameworks/registry.js";
 import { createBuildContext } from "../frameworks/context.js";
 import { buildSafeEnv } from "../projects/safe-env.js";
-import { acquireDevUid } from "../runtime/dev-uid-allocator.js";
+import { acquireDevUid, isSandboxWrapperAvailable } from "../runtime/dev-uid-allocator.js";
 import {
   BuildEventPublisher,
   LogFilterChain,
@@ -330,21 +330,60 @@ export async function runBuild(
     );
   }
 
-  // Compose the effective spawn command: setpriv-wrapped on Linux when we
-  // have a UID, raw command otherwise. Mirrors the pattern in vite-jail.ts.
-  const useSetpriv =
+  // Compose the effective spawn command: UID-drop on Linux when we have a UID.
+  // Mirrors vite-jail.ts exactly. When the API runs UNPRIVILEGED (e.g. the
+  // baremetal `doable` user, not root) it cannot `setpriv --reuid` directly —
+  // that fails with "setpriv: setresuid failed: Operation not permitted" and
+  // the build dies with exit 127. In that case route the drop through the
+  // NOPASSWD sudo wrapper /opt/doable/bin/sandbox-spawn (the same path the
+  // dev-server/preview and data-worker use). Raw `setpriv` is correct only
+  // when the API is already root.
+  const SANDBOX_SPAWN_PATH = "/opt/doable/bin/sandbox-spawn";
+  const useUidDrop =
     process.platform === "linux" && typeof buildUid === "number";
-  const effectiveCmd = useSetpriv ? "setpriv" : spec.command;
-  const effectiveArgs = useSetpriv
-    ? [
-        "--reuid", String(buildUid),
-        "--regid", String(buildUid),
-        "--clear-groups",
-        "--",
-        spec.command,
-        ...spec.args,
-      ]
-    : spec.args;
+  const useWrapper = useUidDrop && isSandboxWrapperAvailable();
+
+  // Framework build specs invoke `npx <tool> …` (e.g. `npx vite build`). The
+  // sandbox-spawn wrapper's allowlist only permits /usr/bin/node, /usr/bin/bwrap
+  // or a binary under <project>/node_modules/.bin/ (with symlink resolution into
+  // the project tree) — `npx` is rejected. Resolve `npx <tool>` to the
+  // project-local CLI shim, which the wrapper accepts (it readlink -f's to
+  // <project>/node_modules/<tool>/… inside the tree) and which is equivalent to
+  // `npx <tool>` once deps are installed (always true post-scaffold). Harmless
+  // on the root/raw paths too — running the local bin directly.
+  let baseCmd = spec.command;
+  let baseArgs = spec.args;
+  if (baseCmd === "npx" && baseArgs.length > 0) {
+    baseCmd = path.join(projectDir, "node_modules", ".bin", baseArgs[0]);
+    baseArgs = baseArgs.slice(1);
+  }
+
+  let effectiveCmd: string;
+  let effectiveArgs: string[];
+  if (useWrapper) {
+    effectiveCmd = "sudo";
+    effectiveArgs = [
+      "-n",
+      SANDBOX_SPAWN_PATH,
+      String(buildUid),
+      String(opts?.projectId ?? ""),
+      baseCmd,
+      ...baseArgs,
+    ];
+  } else if (useUidDrop) {
+    effectiveCmd = "setpriv";
+    effectiveArgs = [
+      "--reuid", String(buildUid),
+      "--regid", String(buildUid),
+      "--clear-groups",
+      "--",
+      baseCmd,
+      ...baseArgs,
+    ];
+  } else {
+    effectiveCmd = baseCmd;
+    effectiveArgs = baseArgs;
+  }
 
   // Spawn under dovault by default; fall back to raw spawn when dovault
   // throws (unsupported platform / Permission Model unavailable). Operators
@@ -357,7 +396,7 @@ export async function runBuild(
       cwd: spec.cwd,
       // setpriv path is Linux-only; shell:true is for Windows/.cmd resolution
       // which is irrelevant when we've prepended setpriv (a Linux binary).
-      shell: !useSetpriv,
+      shell: !useUidDrop,
       stdio: ["ignore", "pipe", "pipe"],
       env: safeEnv,
     });

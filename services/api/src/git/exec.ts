@@ -1,8 +1,42 @@
 // ─── Git CLI Executor ────────────────────────────────────────
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { rootCertificates } from "node:tls";
+import { writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const execFileAsync = promisify(execFile);
+
+// ─── CA bundle for HTTPS git remotes ─────────────────────────
+// The git CLI verifies github.com's TLS cert against the host's CA store.
+// On hosts where that store is missing or unreadable by the API user
+// (minimal Docker images, sandboxed/baremetal installs, gnutls builds with
+// no default CA path) git fails every fetch/clone/push with:
+//   "server certificate verification failed. CAfile: none CRLfile: none"
+// To make HTTPS git work the same on ANY install, we point git at Node's
+// bundled Mozilla root certificates (always present in-process) by writing
+// them to a temp PEM once and exporting GIT_SSL_CAINFO. An operator-provided
+// GIT_SSL_CAINFO that actually exists is respected and wins.
+let caBundlePath: string | null | undefined;
+function getCaBundlePath(): string | null {
+  if (caBundlePath !== undefined) return caBundlePath;
+  const operator = process.env.GIT_SSL_CAINFO;
+  if (operator && existsSync(operator)) {
+    caBundlePath = operator;
+    return caBundlePath;
+  }
+  try {
+    const p = join(tmpdir(), "doable-git-ca-bundle.pem");
+    if (!existsSync(p)) {
+      writeFileSync(p, rootCertificates.join("\n") + "\n", { mode: 0o644 });
+    }
+    caBundlePath = p;
+  } catch {
+    caBundlePath = null; // fall back to git's default behaviour
+  }
+  return caBundlePath;
+}
 
 export interface ExecOpts {
   env?: Record<string, string>;
@@ -38,6 +72,7 @@ export async function execGit(
       env: {
         ...process.env,
         GIT_TERMINAL_PROMPT: "0",
+        ...(getCaBundlePath() ? { GIT_SSL_CAINFO: getCaBundlePath()! } : {}),
         ...opts?.env,
       },
     });
