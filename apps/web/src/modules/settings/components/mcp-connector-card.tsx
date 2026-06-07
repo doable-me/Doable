@@ -86,6 +86,11 @@ export function ConnectorCard({
   const toolCount = capTools?.count ?? 0;
   const toolList = capTools?.list ?? [];
 
+  // Built-in apps are server-managed stdio connectors (users can only create
+  // streamable_http / http_sse). For built-ins we hide the Args detail and the
+  // Delete control — those remain available for user-added / custom servers.
+  const isBuiltin = connector.transport_type === "stdio";
+
   const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
@@ -187,7 +192,7 @@ export function ConnectorCard({
                   <span className="font-mono truncate">{connector.server_command}</span>
                 </>
               )}
-              {Array.isArray(connector.server_args) && connector.server_args.length > 0 && (
+              {!isBuiltin && Array.isArray(connector.server_args) && connector.server_args.length > 0 && (
                 <>
                   <span className="text-muted-foreground font-medium">Args</span>
                   <span className="font-mono truncate">{connector.server_args.join(", ")}</span>
@@ -299,28 +304,30 @@ export function ConnectorCard({
                 )}
               </button>
             </div>
-            <button
-              onClick={handleDelete}
-              onBlur={() => setConfirmDelete(false)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                confirmDelete
-                  ? "bg-red-600 text-white hover:bg-red-700"
-                  : "text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20",
-              )}
-            >
-              {confirmDelete ? (
-                <>
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Confirm Delete
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </>
-              )}
-            </button>
+            {!isBuiltin && (
+              <button
+                onClick={handleDelete}
+                onBlur={() => setConfirmDelete(false)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  confirmDelete
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20",
+                )}
+              >
+                {confirmDelete ? (
+                  <>
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Confirm Delete
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       )}
