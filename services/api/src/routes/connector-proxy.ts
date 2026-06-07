@@ -133,7 +133,7 @@ export async function resolveAuth(c: Context): Promise<ResolvedAuth | Response> 
         }
         const originHost = requestOrigin.replace(/^https?:\/\//, "").replace(/:\d+$/, "");
         const isAllowed = allowedOrigins.some((allowed: string) => {
-          const pattern = allowed.replace(/^\*\./, "");
+          const pattern = allowed.replace(/^https?:\/\//, "").replace(/:\d+$/, "").replace(/^\*\./, "");
           return originHost === pattern || originHost.endsWith("." + pattern);
         });
         if (!isAllowed) {
@@ -327,6 +327,28 @@ connectorProxyRoutes.post(
         resolvedConnector = row;
         realToolName = candidate.replace(/_/g, "_"); // keep as-is, server will validate
         break;
+      }
+    }
+
+    // Short-name fallback: some generated apps (esp. in-app AI assistants that let
+    // the model choose a tool) pass a BARE tool name like "list_cases_and_folders"
+    // instead of the full "mcp_<server>_<tool>" form. Resolve it against any active
+    // connector's tool list so those assistants work out-of-the-box. This only runs
+    // when the prefixed match above failed, so it never changes existing behavior —
+    // it can only turn a former 404 into a successful resolution.
+    if (!resolvedConnector || !realToolName) {
+      const bare = toolName.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+      for (const row of activeRows) {
+        const cache = row.capabilities_cache as { tools?: { list?: Array<{ name: string }> } } | null;
+        const toolList = cache?.tools?.list ?? [];
+        const match = toolList.find(
+          (t) => t.name === toolName || t.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase() === bare,
+        );
+        if (match) {
+          resolvedConnector = row;
+          realToolName = match.name;
+          break;
+        }
       }
     }
 

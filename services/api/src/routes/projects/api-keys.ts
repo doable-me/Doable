@@ -145,7 +145,7 @@ projectApiKeyRoutes.patch("/:id/api-keys/:keyId", async (c) => {
   // Build dynamic update (safe — column names are hardcoded above)
   const setClauses = updates.map((col, i) =>
     col === "allowed_tools" || col === "allowed_origins"
-      ? `${col} = $${i + 3}::jsonb`
+      ? `${col} = $${i + 3}::text[]`
       : `${col} = $${i + 3}`
   ).join(", ");
 

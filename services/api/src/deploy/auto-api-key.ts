@@ -19,9 +19,11 @@ import { ENCRYPTION_KEY } from "../lib/secrets.js";
 
 /**
  * Scan project source files for MCP tool calls and return list of tool names used.
- * Looks for patterns like:
- *   doable.mcp.call("mcp_hpca_mcp_get_custodians", ...)
- *   doable.mcp.call('mcp_hpca_mcp_get_custodians', ...)
+ * Generic across any connected MCP server / tool set — tool names follow the
+ * AI-prefixed form `mcp_<connectorSafeName>_<toolSafeName>`. Looks for patterns
+ * like:
+ *   doable.mcp.call("mcp_<server>_<tool>", ...)   // literal arg
+ *   doable.mcp.call(toolName, ...)                 // dynamic; name harvested as a literal elsewhere
  */
 export async function detectUsedTools(projectDir: string): Promise<string[]> {
   const tools = new Set<string>();
@@ -70,6 +72,20 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
         const intRegex = /\.integrations\.run\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]/g;
         while ((match = intRegex.exec(content)) !== null) {
           tools.add(`${match[1]!}/${match[2]!}`);
+        }
+        // Dynamic dispatch: AI assistants / ReAct loops call
+        // `doable.mcp.call(toolName, ...)` with a VARIABLE, so the literal-arg
+        // regex above misses the tool name and the published key gets scoped
+        // without it → connector-proxy 403 "not authorized to call tool" at
+        // runtime (works in preview only because the preview JWT is
+        // unrestricted). The concrete `mcp_<connector>_<tool>` names almost
+        // always still appear as string literals elsewhere (tool maps,
+        // inferTool() returns, prompt catalogs), so harvest any such literal.
+        // Additive + safe: false positives can't escalate access — the key is
+        // still origin-bound and the MCP server rejects unknown tool names.
+        const mcpNameRegex = /["'`](mcp_[A-Za-z0-9_]+)["'`]/g;
+        while ((match = mcpNameRegex.exec(content)) !== null) {
+          tools.add(match[1]!);
         }
         // Per-app database: reached via `import { db } from "@doable/data"` +
         // db.query()/db.schema(), NOT via .mcp.call(), so the patterns above miss
@@ -152,8 +168,8 @@ export async function autoProvisionApiKey(opts: {
       'client',
       'Auto-provisioned on publish',
       ${userId},
-      ${allowedTools ? JSON.stringify(allowedTools) : null}::jsonb,
-      ${allowedOrigins ? JSON.stringify(allowedOrigins) : null}::jsonb
+      ${allowedTools},
+      ${allowedOrigins}
     )
   `;
 
@@ -267,11 +283,33 @@ export async function ensurePublishKey(opts: {
     if (origins !== null && !origins.includes(publishOrigin)) {
       await sql`
         UPDATE project_api_keys
-        SET allowed_origins = ${JSON.stringify([...origins, publishOrigin])}::jsonb
+        SET allowed_origins = ${[...origins, publishOrigin]}
         WHERE id = ${existing[0]!.id}
       `;
       console.log(`[auto-api-key] Added publish origin ${publishOrigin} to client key for project ${projectId}`);
     }
+  }
+
+  // Re-scope tools on re-publish. A key minted on an earlier publish keeps its
+  // original allowed_tools forever; if the app later added tools (e.g. an AI
+  // assistant that dispatches MCP tools dynamically), those calls 403 at
+  // runtime. Union the current allowlist with a fresh source scan so we only
+  // ever ADD tools the app's own code references. Guard: only touch keys that
+  // are already tool-restricted (Array) — a null allowed_tools means
+  // "unrestricted" and must be left as-is, never narrowed.
+  try {
+    const [trow] = await sql`SELECT allowed_tools FROM project_api_keys WHERE id = ${existing[0]!.id}`;
+    const current = (trow as { allowed_tools?: unknown } | undefined)?.allowed_tools;
+    if (Array.isArray(current)) {
+      const scanned = await detectUsedTools(opts.projectDir);
+      const merged = Array.from(new Set([...(current as string[]), ...scanned]));
+      if (merged.length > current.length) {
+        await sql`UPDATE project_api_keys SET allowed_tools = ${merged} WHERE id = ${existing[0]!.id}`;
+        console.log(`[auto-api-key] Re-scoped client key for project ${projectId}: now ${merged.length} tools`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[auto-api-key] tool re-scope failed for ${projectId}:`, err instanceof Error ? err.message : err);
   }
 
   // Recover the plaintext key from the stored (encrypted) env var.

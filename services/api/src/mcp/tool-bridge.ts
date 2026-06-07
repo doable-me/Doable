@@ -196,7 +196,7 @@ export function createMcpTools(
           }
           return {
             success: true,
-            result: textResult,
+            result: sanitizeMcpResultForAgent(textResult),
             _mcpTrace: mcpTrace,
           };
         } catch (err) {
@@ -252,6 +252,49 @@ export function createMcpTools(
       },
     });
   }) as Tool[];
+}
+
+/**
+ * Trim the builder-agent-facing MCP result text. Drops the large `_meta` /
+ * `_instructions` blobs (LLM formatting instructions, NOT data) and caps
+ * oversized arrays so a one-shot shape probe stays cheap to read. The generated
+ * APP still fetches the FULL data at runtime via the connector-proxy — this only
+ * affects what the build agent sees while learning the response shape.
+ */
+function stripMetaDeep(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(stripMetaDeep);
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (k === "_meta" || k === "_instructions") continue;
+      out[k] = stripMetaDeep(val);
+    }
+    return out;
+  }
+  return v;
+}
+function sanitizeMcpResultForAgent(text: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!parsed || typeof parsed !== "object") return text;
+  const stripped = stripMetaDeep(parsed) as Record<string, unknown>;
+  let out = JSON.stringify(stripped);
+  if (out.length > 12000) {
+    for (const [k, val] of Object.entries(stripped)) {
+      if (Array.isArray(val) && val.length > 25) {
+        stripped[k] = [
+          ...val.slice(0, 25),
+          `…(${val.length - 25} more items omitted from this build-time shape preview; the app fetches all at runtime)`,
+        ];
+      }
+    }
+    out = JSON.stringify(stripped);
+  }
+  return out;
 }
 
 /** Format MCP content array into a string result */

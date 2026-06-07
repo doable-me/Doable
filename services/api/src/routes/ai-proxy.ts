@@ -774,7 +774,10 @@ aiProxyRoutes.post("/__doable/ai/chat", async (c) => {
     ? [{ role: "system", content: systemPrompts.join("\n\n") }, ...parsed.messages]
     : parsed.messages;
 
-  const inputCap = settings.maxInputTokens ?? DOABLE_APP_AI_MAX_INPUT_TOKENS;
+  // OOB floor: MCP-tool-driven in-app assistants feed real tool JSON back into the
+  // model, which easily exceeds the legacy 8000 default. Use at least 32k unless a
+  // project has set its own explicit maxInputTokens (which still takes precedence).
+  const inputCap = settings.maxInputTokens ?? Math.max(DOABLE_APP_AI_MAX_INPUT_TOKENS, 32000);
   const outputCap = settings.maxOutputTokens ?? DOABLE_APP_AI_MAX_OUTPUT_TOKENS;
   const requestedMax = parsed.max_tokens ?? outputCap;
   const maxTokens = Math.min(requestedMax, outputCap);
