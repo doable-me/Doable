@@ -137,12 +137,21 @@ const PROVIDER_BACKED_MODEL_SOURCES = new Set([
  * from a provider-backed source actually has a resolved provider. Guards the
  * orphaned-model case (model string left behind after its provider was deleted)
  * that assertToolCapableModel no-ops past because providerId is undefined.
+ *
+ * IMPORTANT: GitHub Copilot is a legitimate no-BYOK-provider path — a personal
+ * or workspace Copilot override resolves a `githubToken` and intentionally has
+ * NO `provider` object. Such a model is NOT orphaned, so callers must pass the
+ * resolved github token; when present we skip the throw and let the Copilot
+ * path proceed. (Without this, every Copilot-backed model from a user/workspace/
+ * platform/admin source wrongly failed with "No AI provider configured…".)
  */
 function assertModelHasProvider(
   resolvedModel: string | undefined,
   resolvedProvider: ByokProviderConfig | undefined,
   modelSource: string,
+  resolvedGithubToken: string | undefined,
 ): void {
+  if (resolvedGithubToken) return; // Copilot path — token, not a BYOK provider.
   if (resolvedModel && !resolvedProvider && PROVIDER_BACKED_MODEL_SOURCES.has(modelSource)) {
     throw new Error(`No AI provider configured for the selected model "${resolvedModel}". Open AI Settings and pick a model from a connected provider.`);
   }
@@ -531,7 +540,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           // providerId is undefined): a non-empty model from a provider-backed
           // source MUST have a resolved provider. Catches the orphaned-model
           // case regardless of any incidental github token state.
-          assertModelHasProvider(resolvedModel, resolvedProvider, modelSource);
+          assertModelHasProvider(resolvedModel, resolvedProvider, modelSource, resolvedGithubToken);
 
           state.usageCollector = workspaceId ? createUsageCollector({ userId, workspaceId, projectId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", byokProviderId: providerId, mode }) : null;
           state.traceCollector = workspaceId ? createTraceCollector({ projectId, userId, workspaceId, provider: resolvedProvider ? "byok" : "copilot", providerLabel: resolvedProvider?.type ?? "GitHub Copilot", model: resolvedModel }) : null;
