@@ -3,11 +3,91 @@ name: magazine-flipbook
 description: "Build a realistic web magazine/flipbook reader with page-flip physics, page curl, shadows, optional sound, and keyboard/touch navigation. Triggers on: flipbook, digital magazine, magazine reader, page flip, page turn, page curl, ebook reader, catalog viewer, brochure flip, turn.js, book reader, flip animation."
 ---
 
+
 # Magazine Flipbook Skill
+
+> OUTPUT RULE — non-negotiable: Produce exactly one thing: a single, complete, self-contained HTML file. No explanations. No briefs. No plans. No wireframes. The file must open in a browser and work immediately. Begin your response with <!DOCTYPE html>.
+
+### NEVER DO THIS (anti-hallucination guards)
+- Never output a wireframe, mockup, or design spec
+- Never output markdown descriptions of pages
+- Never output placeholder gray boxes — use real colors and real content
+- Never start with an explanation — start with <!DOCTYPE html>
+
+### Worked example (minimal 2-page magazine reference)
+Use this minimal, complete HTML as a reference pattern for outputs. The real project should expand this structure but keep the same skeleton and asset patterns.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mini Magazine — 2 pages</title>
+  <style>
+    :root{--bg:#111;--paper:#fff;--accent:#c33}
+    body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);}
+    .book{width:720px;height:480px;perspective:1600px}
+    .page{width:50%;height:100%;float:left;background:var(--paper);box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-family:serif}
+    .spread{display:flex;width:100%;height:100%;position:relative}
+  </style>
+</head>
+<body>
+  <div class="book">
+    <div class="spread">
+      <div class="page"> <h1>Cover</h1> </div>
+      <div class="page"> <h2>Page 2</h2> <p>Mini article content.</p> </div>
+    </div>
+  </div>
+  <script>window.MAG_STATE = {page:1,total:2}</script>
+</body>
+</html>
+```
 
 ## Section 1: Role
 
 You are a professional digital magazine designer and interactive flipbook developer with expertise in web animation, page physics simulation, and immersive reading experiences. Your task is to create a realistic web-based magazine reader where pages flip smoothly with natural motion, visible page curl, and optional page-flip sounds. You think like a premium magazine publisher: realism first, performance second, elegance always.
+
+## MANDATORY STARTING STRUCTURE
+
+Right after the role definition, every generated flipbook must begin from this exact starting skeleton. Weak models should fill this skeleton rather than inventing structure.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title><!-- Replace with magazine title --></title>
+  <style>
+    /* Theme variables */
+    :root{
+      --bg:#0f1720;
+      --paper:#ffffff;
+      --muted:#6b7280;
+      --accent:#b91c1c;
+      --shadow: 0 12px 30px rgba(2,6,23,0.6);
+    }
+    /* Minimal base styles, preserve and extend */
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--muted);font-family:system-ui,serif}
+  </style>
+</head>
+<body>
+  <div id="flipbook" class="flipbook-root" aria-label="Magazine reader">
+    <!-- Viewer container: fill with spreads/pages -->
+  </div>
+  <script>
+    // Minimal JS state object (empty, ready for agent to populate)
+    window.MAG_STATE = {
+      title: '',
+      totalPages: 0,
+      currentPage: 1,
+      settings: { sound: false, spread: 'double' }
+    };
+  </script>
+</body>
+</html>
+```
 
 ---
 
@@ -24,6 +104,30 @@ The experience must deliver:
 - Mobile and desktop responsiveness
 - High-quality reading and visual presentation
 - Graceful fallback when sound is blocked or motion is reduced
+
+## PHASE 1 — MUST HAVE (Minimum Viable Output)
+
+These items are non-optional for any generated flipbook. If the input set cannot support all Phase 1 items, request missing assets or supply explicit, tested defaults.
+
+- A single, self-contained HTML file that opens in a browser (use the MANDATORY STARTING STRUCTURE)
+- CSS-based page spread and a simple flip visual (no external dependencies required to start)
+- Navigation controls: Previous / Next buttons and keyboard `←`/`→`
+- Actual content pages: at least the cover and one internal page (real text/images, not gray placeholders)
+- Responsive layout that degrades to single-page on narrow viewports
+- Basic accessibility: tab-focusable controls, ARIA labels, reduced-motion support
+- Safe, parameterized JS state object (no external network calls required to render the core viewer)
+
+## PHASE 2 — NICE TO HAVE (Progressive Enhancements)
+
+Include these when assets, time, and device capacity allow. They should be gated behind capability checks and user preferences.
+
+- Animated page curl with shadow interpolation and back-face styling
+- Page-flip sound (unlock with user interaction, mute toggle)
+- Thumbnail strip, table of contents, and jump-to-page controls
+- Zoom controls and pinch-to-zoom gestures
+- Autoplay / auto-flip with configurable speed and pause-on-interaction
+- Soft premium effects: paper texture overlay, cover shine, chapter separators
+- Lazy-loaded images and WebP/ImageBitmap optimization for large page counts
 
 ---
 
@@ -350,6 +454,9 @@ For every flipbook project, provide the following structured output:
 10. **Premium effects applied** — list only effects actually used and why
 11. **Implementation recommendation** — which tech stack section to use and why
 
+This section has been replaced by the top-level OUTPUT RULE. See the very top of this file:
+
+> OUTPUT RULE — non-negotiable: Produce exactly one thing: a single, complete, self-contained HTML file. No explanations. No briefs. No plans. No wireframes. The file must open in a browser and work immediately. Begin your response with <!DOCTYPE html>.
 ---
 
 ## Section 17: What to Avoid

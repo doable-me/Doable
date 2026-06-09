@@ -1242,4 +1242,899 @@ Deliver: Full optimized resume text + ATS keyword summary + improvement suggesti
 
 ---
 
+---
+
+## Section 20: HTML Resume Website Output
+
+Use this section **only** when the user asks for an HTML resume page, resume website, or web version of their resume.
+
+---
+
+### The Screen vs Print Separation — The Most Critical Concept
+
+The HTML page has **two zones**:
+
+1. **Resume zone** — the actual resume content (header, summary, skills, experience, projects, education). This renders on screen AND prints to PDF.
+2. **ATS panel zone** — the analysis sidebar (ATS score, keyword badges, critical gaps, next steps). This renders on screen ONLY. It is **completely invisible in print/PDF**.
+
+This separation is enforced by CSS classes:
+- Elements with class `no-print` → `display: none` when printing. Use this on the entire ATS sidebar, the screen-only toolbar (Print button, page label), and any annotation panels.
+- The resume content has NO special class — it always prints.
+
+**RULE: Every ATS panel element, keyword badge, gap annotation, next-steps card, and score widget MUST have class `no-print`.** If it is analysis and not resume content, it is `no-print`.
+
+---
+
+### Critical Rules for All Models
+
+**RULE 1 — No placeholders in final output.**
+Never output `[ASSUMED]`, `[Your Name]`, `[City, State]`, `[Month Year]`, or any bracket text in the final HTML. If a value is unknown, omit that element entirely. Never leave a visible placeholder.
+
+**RULE 2 — Fill the template. Do not generate HTML from scratch.**
+Use the exact template in this section. Copy it. Replace the `{{VARIABLE}}` tokens with real values. Do not invent a new layout, new CSS, or new structure.
+
+**RULE 3 — Only include sections where you have real data.**
+If there are no projects, omit the projects card entirely. Never render a section with empty content.
+
+**RULE 4 — Do not add explanatory text outside the HTML.**
+The output is the HTML file only. No preamble. No postamble. Output only the HTML.
+
+**RULE 5 — All `[ASSUMED]` labels go into an HTML comment, never visible text.**
+If you made any assumption, add `<!-- ASSUMED: ... -->` near that element. Never render it visibly.
+
+**RULE 6 — The `@media print` block is mandatory and must not be shortened.**
+Copy the entire `@media print` block from the template exactly. It is what makes the PDF clean. Do not remove rules from it. Do not summarize it.
+
+**RULE 7 — The page layout is two-column on screen, single-column in print.**
+On screen: resume content on the left (~65%), ATS panel on the right (~35%).
+In print: only the resume content column, full width. The ATS panel column is hidden.
+
+---
+
+### Step 0: Pre-Computation Research — Do This Before Writing Anything
+
+This step is mandatory. Do not fill any `{{VARIABLE}}` token until you have completed the research workflow below. The quality of every output — the resume content, the ATS score, the keyword badges, the gap analysis — depends entirely on this step being done first.
+
+There are two paths depending on what the user provided.
+
+---
+
+#### PATH A: User Provided a Job Description (JD)
+
+Work through these sub-steps in order. Record your findings before touching the template.
+
+**Sub-step A1 — Read the full JD once without extracting anything.**
+Get a complete mental model of the role. What does this person do every day? What does the company value most? What problem does this hire solve?
+
+**Sub-step A2 — Extract the responsibility signal.**
+List the top 5 things the role is *responsible for*. These are usually the first 5 bullets under "What you'll do" or "Responsibilities." These define the day-to-day and reveal the Tier 1 verb vocabulary (e.g., "architect", "own", "lead", "design", "scale").
+
+**Sub-step A3 — Build the keyword list with tiers.**
+Go through the JD line by line and build this table:
+
+| Keyword / Phrase | Where Found | Occurrences in JD | Tier |
+|---|---|---|---|
+| e.g. "CI/CD" | Required qualifications | 3 | Tier 1 |
+| e.g. "Redis" | Preferred qualifications | 1 | Tier 2 |
+| e.g. "event-driven" | Responsibilities + Preferred | 2 | Tier 2 |
+
+**Tier assignment rules — apply mechanically, not by feel:**
+- **Tier 1 — Must Have:** Appears in Required Qualifications, OR appears 3+ times in the JD, OR is the primary technology/methodology the role is built around.
+- **Tier 2 — Nice to Have:** Appears in Preferred/Bonus qualifications only, OR appears 1–2 times but not in Required section.
+- **Tier 3 — Domain Vocabulary:** Industry-specific terms appearing once, often in company description. Signal fit but are not ATS filters.
+
+**Also extract during this step:**
+- Exact tool/platform names — use the JD's exact spelling and capitalization ("GitHub Actions" not "github actions", "PostgreSQL" not "Postgres")
+- Seniority signal words ("lead", "own", "architect", "drive", "define" → senior; "assist", "support", "contribute" → junior/mid)
+- Soft skills mentioned 2+ times (e.g., "cross-functional", "stakeholder alignment", "written communication")
+
+**Sub-step A4 — Cross-reference the keyword list against the resume.**
+For each Tier 1 and Tier 2 keyword, search the resume text explicitly — word by word. Mark each:
+- ✓ FOUND — the keyword or a direct synonym appears literally in the resume text
+- ✗ MISSING — does not appear anywhere in the resume
+
+**Critical rule:** Do NOT mark a keyword as found because the candidate "probably knows it" or "worked with something similar." ATS systems do exact text matching. If the word is not physically in the document, it is MISSING.
+
+**Sub-step A5 — Compute the ATS Match Score.**
+Use this exact formula — do not estimate or guess the percentage:
+
+```
+ATS Score % = (count of Tier 1 keywords marked ✓ FOUND) ÷ (total count of Tier 1 keywords) × 100
+```
+
+Round to the nearest whole number. Write it as e.g. `64%`. This becomes `{{ATS_SCORE_PCT}}`.
+Do not include Tier 2 or Tier 3 keywords in this calculation.
+
+Score label for `{{ATS_SCORE_LABEL}}`:
+- 85–100% → `"Strong match — ready to apply"`
+- 65–84% → `"Good match — a few gaps to address before applying"`
+- 45–64% → `"Partial match — address critical gaps first"`
+- Below 45% → `"Low match — significant gaps; consider upskilling or targeting a different role"`
+
+**Sub-step A6 — Classify gaps.**
+- **Critical Gaps** (`{{CRITICAL_GAPS_BLOCK}}`): Every Tier 1 keyword marked ✗ MISSING. For each, write one concrete sentence: exactly which section and bullet to add it to, and what the new phrasing should approximately be.
+- **Nice-to-Have Gaps** (`{{NICE_TO_HAVE_BLOCK}}`): Every Tier 2 keyword marked ✗ MISSING. One brief suggestion each.
+- **Next Steps** (`{{NEXT_STEPS_BLOCK}}`): The Critical gaps rewritten as prescriptive actions. E.g., "Add 'CI/CD (GitHub Actions)' to your Work Experience at TechNova — update the deployment bullet to mention the pipeline tool explicitly."
+
+**Sub-step A7 — Identify the Leadership Signal.**
+Search every bullet in the resume for leadership language: "led", "managed", "mentored", "supervised", "conducted code reviews", "coordinated". If found, quote the relevant bullet and write a reframing suggestion. If none found, the Leadership Signal card says "No leadership signal detected in the current resume."
+
+---
+
+#### PATH B: No JD Provided — Industry Standard Keyword Research
+
+Use this path when the user gives only a target role title (e.g., "Senior Backend Engineer at a startup") without a specific job description.
+
+**Sub-step B1 — Identify the role family from Section 4 of this skill.**
+Map the target title to one of the industry categories (Software/IT, Data Science/AI/ML, Product Management, Finance, Marketing, etc.). This determines the base keyword universe.
+
+**Sub-step B2 — Apply the seniority filter to narrow the keyword set.**
+
+| Seniority Level | Keyword focus |
+|---|---|
+| Intern / Fresher | Core language + 1–2 frameworks + Git + basic CS concepts (OOP, DSA, DBMS) |
+| Junior (0–2 yrs) | Core language + primary framework + REST APIs + one database + testing basics |
+| Mid (2–5 yrs) | All junior keywords + cloud (1 provider) + CI/CD + system design basics + Agile/Scrum |
+| Senior (5+ yrs) | All mid keywords + architecture patterns + performance at scale + mentorship + cross-functional leadership |
+| Staff / Principal | All senior keywords + org-wide technical decisions + roadmap ownership + hiring + technical strategy |
+
+**Sub-step B3 — Build a synthetic Tier 1 keyword list.**
+Using Section 4's keyword list for the relevant industry/role, select the 12–20 most commonly required keywords matching the seniority level from B2. Since there is no JD, treat all selected keywords as Tier 1. Add a note to the ATS score label: "Score based on industry-standard keyword profile — no JD provided."
+
+**Sub-step B4 — Cross-reference against the resume.**
+Same process as Path A Sub-step A4. Mark each synthetic Tier 1 keyword as ✓ FOUND or ✗ MISSING based only on literal text in the resume. No inferences.
+
+**Sub-step B5 — Compute score and classify gaps.**
+Same formula as A5. Same classification as A6. Same leadership signal check as A7.
+
+---
+
+#### BOTH PATHS — Mandatory Output Checklist Before Touching the Template
+
+You must have produced all of these from your research before writing a single line of HTML:
+
+| What to compute first | Where it goes in the template |
+|---|---|
+| Tier 1 keyword list with ✓/✗ marks | `{{KEYWORD_BADGES_BLOCK}}` |
+| ATS score % computed by the formula above — never guessed | `{{ATS_SCORE_PCT}}` |
+| Score label string from the interpretation table | `{{ATS_SCORE_LABEL}}` |
+| All Tier 1 missing keywords with specific placement advice | `{{CRITICAL_GAPS_BLOCK}}` |
+| All Tier 2 missing keywords with brief suggestions | `{{NICE_TO_HAVE_BLOCK}}` |
+| Prescriptive next-step sentences for each critical gap | `{{NEXT_STEPS_BLOCK}}` |
+| Leadership signal quote + reframing suggestion (or "none found") | `{{NEXT_STEPS_BLOCK}}` Leadership card |
+| Professional summary rewritten to include Tier 1 vocabulary | `{{SUMMARY}}` |
+| Skills block updated to include all ✓ FOUND Tier 1 + Tier 2 keywords the candidate honestly holds | `{{SKILLS_BLOCK}}` |
+| Experience bullets reviewed; Tier 1 keywords added in context where the experience genuinely warrants it | `{{EXPERIENCE_BLOCK}}` |
+
+Only after completing this checklist should you begin filling the HTML template.
+
+---
+
+### Variable Extraction — What to Pull From the Resume
+
+After completing Step 0 above, extract these values. If a value is absent, write `OMIT` and skip that element.
+
+| Variable | Where to find it | If missing |
+|---|---|---|
+| `{{FULL_NAME}}` | Header of resume | Ask user — do not proceed without it |
+| `{{ROLE_TITLE}}` | Current title or target role | Use "Software Engineer" |
+| `{{EMAIL}}` | Contact section | OMIT email line |
+| `{{PHONE}}` | Contact section | OMIT phone line |
+| `{{LOCATION}}` | Contact section | OMIT location span |
+| `{{LINKEDIN_URL}}` | Contact section | OMIT LinkedIn link |
+| `{{GITHUB_URL}}` | Contact section | OMIT GitHub link |
+| `{{PORTFOLIO_URL}}` | Contact section | OMIT portfolio link |
+| `{{SUMMARY}}` | Summary / About section | Write 2-sentence summary from skills + experience |
+| `{{SKILLS_BLOCK}}` | Skills section | Use skills mentioned in experience bullets |
+| `{{EXPERIENCE_BLOCK}}` | Experience section | Required — ask if completely absent |
+| `{{PROJECTS_BLOCK}}` | Projects section | OMIT section if no projects |
+| `{{EDUCATION_BLOCK}}` | Education section | Required — ask if completely absent |
+| `{{AVAILABILITY_LINE}}` | Footer / availability note | OMIT if not mentioned |
+| `{{ATS_SCORE_PCT}}` | Computed keyword match % | Compute from JD keywords found vs total |
+| `{{ATS_SCORE_LABEL}}` | Score interpretation | "Strong match" / "Good match" / "Needs work" |
+| `{{KEYWORD_BADGES_BLOCK}}` | JD keyword analysis | See Block Generation Rules |
+| `{{CRITICAL_GAPS_BLOCK}}` | Missing Tier-1 JD keywords | See Block Generation Rules |
+| `{{NICE_TO_HAVE_BLOCK}}` | Missing Tier-2 JD keywords | See Block Generation Rules |
+| `{{NEXT_STEPS_BLOCK}}` | Actionable improvement items | See Block Generation Rules |
+| `{{ATS_TIPS_BLOCK}}` | ATS best practices | See Block Generation Rules |
+
+---
+
+### The HTML Template
+
+Copy this template exactly. Replace all `{{VARIABLE}}` tokens. The `@media print` block is non-negotiable — copy it in full.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{{FULL_NAME}} — {{ROLE_TITLE}}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      line-height: 1.6;
+    }
+    a { color: #4f46e5; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── SCREEN-ONLY TOOLBAR ── */
+    .screen-toolbar {
+      background: #1e293b;
+      color: #94a3b8;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      letter-spacing: 0.5px;
+    }
+    .screen-toolbar strong { color: #e2e8f0; }
+    .print-btn {
+      background: #fff;
+      color: #1e293b;
+      border: none;
+      padding: 7px 18px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .print-btn:hover { background: #f1f5f9; }
+
+    /* ── TWO-COLUMN LAYOUT (screen only) ── */
+    .page-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 24px;
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 20px;
+    }
+
+    /* ── RESUME COLUMN ── */
+    .resume-column {
+      flex: 0 0 62%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    /* ── ATS PANEL COLUMN (screen only) ── */
+    .ats-column {
+      flex: 0 0 35%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: sticky;
+      top: 24px;
+    }
+
+    /* ── RESUME HEADER ── */
+    .resume-header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      color: #fff;
+      padding: 40px 36px 30px;
+      border-radius: 12px 12px 0 0;
+    }
+    .resume-header h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .resume-header .role {
+      font-size: 0.82rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #a5b4fc;
+      margin-bottom: 20px;
+    }
+    .contact-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 20px;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+    .contact-row a { color: #a5b4fc; }
+    .contact-item { display: flex; align-items: center; gap: 5px; }
+    .contact-item::before { content: "•"; opacity: 0.35; }
+    .contact-item:first-child::before { content: ""; }
+
+    /* ── RESUME BODY ── */
+    .resume-body {
+      background: #fff;
+      border-radius: 0 0 12px 12px;
+      padding: 28px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    }
+
+    /* ── RESUME SECTION ── */
+    .resume-section h2 {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #4f46e5;
+      margin-bottom: 14px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #e8eaf6;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .resume-section h2 .icon { font-size: 0.9rem; }
+
+    /* ── SUMMARY ── */
+    .summary-text {
+      font-size: 0.95rem;
+      color: #374151;
+      line-height: 1.75;
+      background: #f8f9ff;
+      border-left: 3px solid #4f46e5;
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+    }
+
+    /* ── SKILLS ── */
+    .skills-grid { display: flex; flex-direction: column; gap: 10px; }
+    .skill-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .skill-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #6b7280;
+      min-width: 110px;
+      flex-shrink: 0;
+    }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      background: #eef2ff;
+      color: #4338ca;
+      border: 1px solid #c7d2fe;
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+
+    /* ── EXPERIENCE & PROJECTS ── */
+    .job, .project { margin-bottom: 20px; }
+    .job:last-child, .project:last-child { margin-bottom: 0; }
+    .entry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 2px;
+      margin-bottom: 2px;
+    }
+    .entry-title { font-weight: 700; font-size: 0.97rem; color: #111827; }
+    .entry-date { font-size: 0.8rem; color: #6b7280; white-space: nowrap; }
+    .entry-sub { font-size: 0.85rem; color: #4f46e5; margin-bottom: 8px; }
+    .entry-stack { font-size: 0.78rem; color: #6b7280; font-style: italic; margin-bottom: 8px; }
+    .project-category {
+      display: inline-block;
+      background: #1e293b;
+      color: #94a3b8;
+      font-size: 0.68rem;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+    }
+    .resume-body ul { padding-left: 16px; }
+    .resume-body li {
+      font-size: 0.88rem;
+      color: #374151;
+      margin-bottom: 5px;
+      line-height: 1.6;
+    }
+
+    /* ── EDUCATION ── */
+    .edu-degree { font-weight: 700; font-size: 0.97rem; color: #111827; }
+    .edu-year { font-weight: 700; color: #4f46e5; }
+    .edu-institution { font-size: 0.85rem; color: #6b7280; margin: 2px 0 6px; }
+    .edu-cgpa { font-size: 0.85rem; color: #374151; margin-bottom: 8px; }
+    .coursework-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .coursework-tag {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+      border-radius: 5px;
+      padding: 2px 8px;
+      font-size: 0.77rem;
+    }
+
+    /* ── ATS PANEL CARDS ── */
+    .ats-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 18px 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+    }
+    .ats-card-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ATS Score */
+    .score-label { font-size: 0.8rem; color: #64748b; margin-bottom: 4px; }
+    .score-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .score-pct { font-size: 1rem; font-weight: 700; color: #f59e0b; }
+    .score-bar-bg { background: #e2e8f0; border-radius: 4px; height: 6px; width: 100%; margin-bottom: 8px; }
+    .score-bar-fill { background: #f59e0b; border-radius: 4px; height: 6px; }
+    .score-note { font-size: 0.78rem; color: #64748b; }
+
+    /* Keyword badges */
+    .keyword-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+    .kw-badge {
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .kw-found { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .kw-missing { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+
+    /* Gaps */
+    .gap-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      font-size: 0.82rem;
+      color: #374151;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .gap-icon { flex-shrink: 0; margin-top: 1px; }
+    .gap-critical { color: #dc2626; }
+    .gap-nice { color: #d97706; }
+    .gap-good { color: #16a34a; }
+
+    /* Next steps cards */
+    .next-step-card {
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .next-step-card.critical { background: #fff7ed; border: 1px solid #fed7aa; }
+    .next-step-card.nice { background: #fefce8; border: 1px solid #fde68a; }
+    .next-step-card.signal { background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .next-step-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .next-step-card.critical .next-step-title { color: #c2410c; }
+    .next-step-card.nice .next-step-title { color: #92400e; }
+    .next-step-card.signal .next-step-title { color: #15803d; }
+    .next-step-body { font-size: 0.82rem; color: #374151; line-height: 1.55; }
+
+    /* ATS tips */
+    .tip-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      font-size: 0.8rem;
+      color: #374151;
+      margin-bottom: 6px;
+      line-height: 1.5;
+    }
+    .tip-check { color: #16a34a; flex-shrink: 0; }
+
+    /* ── AVAILABILITY FOOTER (screen) ── */
+    .avail-footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 0.82rem;
+      color: #9ca3af;
+      font-style: italic;
+    }
+
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      .page-layout { flex-direction: column; }
+      .resume-column, .ats-column { flex: 0 0 100%; }
+      .ats-column { position: static; }
+      .resume-header h1 { font-size: 1.8rem; }
+    }
+
+    /* ══════════════════════════════════════════════════
+       PRINT / PDF STYLES
+       Everything with class "no-print" is hidden.
+       The resume column becomes full-width.
+       No backgrounds, no shadows, no colors that waste ink.
+    ══════════════════════════════════════════════════ */
+    @media print {
+
+      /* Hide ALL screen-only UI */
+      .no-print { display: none !important; }
+
+      /* Reset page */
+      html, body {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      /* Remove the two-column layout — resume goes full width */
+      .page-layout {
+        display: block !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      /* Resume column = full page width */
+      .resume-column {
+        width: 100% !important;
+        flex: none !important;
+      }
+
+      /* Clean up header for print */
+      .resume-header {
+        background: #1a1a2e !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        border-radius: 0 !important;
+        padding: 24px 28px 20px !important;
+      }
+
+      /* Clean up body for print */
+      .resume-body {
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 20px 28px !important;
+        gap: 20px !important;
+      }
+
+      /* Ensure tag backgrounds print */
+      .tag {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      /* No page breaks inside jobs or projects */
+      .job, .project, .resume-section { page-break-inside: avoid; }
+
+      /* Slightly smaller font for print density */
+      .resume-body { font-size: 0.88rem !important; }
+      .resume-body li { font-size: 0.85rem !important; }
+
+      /* Remove availability footer decorative styling */
+      .avail-footer {
+        border-top: 1px solid #e5e7eb;
+        margin-top: 12px;
+        padding: 10px 0 0 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SCREEN-ONLY TOOLBAR — hidden in print -->
+  <div class="screen-toolbar no-print">
+    <span>ATS-OPTIMIZED RESUME &nbsp;·&nbsp; <strong>{{FULL_NAME}} — {{ROLE_TITLE}} Target</strong></span>
+    <button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button>
+  </div>
+
+  <div class="page-layout">
+
+    <!-- ══ RESUME COLUMN — prints in full ══ -->
+    <div class="resume-column">
+
+      <!-- HEADER -->
+      <div class="resume-header">
+        <h1>{{FULL_NAME}}</h1>
+        <div class="role">{{ROLE_TITLE}}</div>
+        <div class="contact-row">
+          {{IF_EMAIL}}<span class="contact-item"><a href="mailto:{{EMAIL}}">{{EMAIL}}</a></span>{{END_IF_EMAIL}}
+          {{IF_PHONE}}<span class="contact-item">{{PHONE}}</span>{{END_IF_PHONE}}
+          {{IF_LOCATION}}<span class="contact-item">{{LOCATION}}</span>{{END_IF_LOCATION}}
+          {{IF_LINKEDIN}}<span class="contact-item"><a href="{{LINKEDIN_URL}}" target="_blank">{{LINKEDIN_URL}}</a></span>{{END_IF_LINKEDIN}}
+          {{IF_GITHUB}}<span class="contact-item"><a href="{{GITHUB_URL}}" target="_blank">{{GITHUB_URL}}</a></span>{{END_IF_GITHUB}}
+          {{IF_PORTFOLIO}}<span class="contact-item"><a href="{{PORTFOLIO_URL}}" target="_blank">{{PORTFOLIO_URL}}</a></span>{{END_IF_PORTFOLIO}}
+        </div>
+      </div>
+
+      <!-- RESUME BODY -->
+      <div class="resume-body">
+
+        <!-- PROFESSIONAL SUMMARY -->
+        <div class="resume-section">
+          <h2><span class="icon">👤</span> Professional Summary</h2>
+          <p class="summary-text">{{SUMMARY}}</p>
+        </div>
+
+        <!-- TECHNICAL SKILLS -->
+        <div class="resume-section">
+          <h2><span class="icon">⚙</span> Technical Skills</h2>
+          <div class="skills-grid">
+            {{SKILLS_BLOCK}}
+          </div>
+        </div>
+
+        <!-- WORK EXPERIENCE -->
+        <div class="resume-section">
+          <h2><span class="icon">🏢</span> Work Experience</h2>
+          {{EXPERIENCE_BLOCK}}
+        </div>
+
+        <!-- PROJECTS — omit entire section if no projects -->
+        {{IF_PROJECTS}}
+        <div class="resume-section">
+          <h2><span class="icon">🗂</span> Projects</h2>
+          {{PROJECTS_BLOCK}}
+        </div>
+        {{END_IF_PROJECTS}}
+
+        <!-- EDUCATION -->
+        <div class="resume-section">
+          <h2><span class="icon">🎓</span> Education</h2>
+          {{EDUCATION_BLOCK}}
+        </div>
+
+      </div><!-- /resume-body -->
+
+      <!-- AVAILABILITY (optional) -->
+      {{IF_AVAILABILITY}}
+      <div class="avail-footer">{{AVAILABILITY_LINE}}</div>
+      {{END_IF_AVAILABILITY}}
+
+    </div><!-- /resume-column -->
+
+    <!-- ══ ATS PANEL COLUMN — SCREEN ONLY, hidden in print ══ -->
+    <div class="ats-column no-print">
+
+      <!-- ATS MATCH SCORE -->
+      <div class="ats-card">
+        <div class="ats-card-title" style="color: #1e293b;">⚡ ATS Match Score</div>
+        <div class="score-label">Keyword Match</div>
+        <div class="score-row">
+          <span></span>
+          <span class="score-pct">{{ATS_SCORE_PCT}}</span>
+        </div>
+        <div class="score-bar-bg">
+          <div class="score-bar-fill" style="width: {{ATS_SCORE_PCT}};"></div>
+        </div>
+        <div class="score-note">{{ATS_SCORE_LABEL}}</div>
+      </div>
+
+      <!-- KEYWORD ANALYSIS -->
+      <div class="ats-card">
+        <div class="ats-card-title" style="color: #1e293b;"># Keyword Analysis</div>
+        <div class="keyword-grid">
+          {{KEYWORD_BADGES_BLOCK}}
+        </div>
+      </div>
+
+      <!-- CRITICAL GAPS -->
+      <div class="ats-card" style="border: 1px solid #fecaca;">
+        <div class="ats-card-title" style="color: #dc2626;">⚠ Critical Gaps</div>
+        {{CRITICAL_GAPS_BLOCK}}
+      </div>
+
+      <!-- NICE TO HAVE -->
+      <div class="ats-card" style="border: 1px solid #fde68a;">
+        <div class="ats-card-title" style="color: #d97706;">◎ Nice to Have</div>
+        {{NICE_TO_HAVE_BLOCK}}
+      </div>
+
+      <!-- ATS BEST PRACTICES -->
+      <div class="ats-card">
+        <div class="ats-card-title" style="color: #1e293b;">✓ ATS Best Practices</div>
+        {{ATS_TIPS_BLOCK}}
+      </div>
+
+    </div><!-- /ats-column -->
+
+  </div><!-- /page-layout -->
+
+  <!-- NEXT STEPS PANEL — SCREEN ONLY, hidden in print -->
+  <div class="no-print" style="max-width: 1200px; margin: 0 auto 40px; padding: 0 20px; display: flex; gap: 16px; flex-wrap: wrap;">
+    {{NEXT_STEPS_BLOCK}}
+  </div>
+
+</body>
+</html>
+```
+
+---
+
+### Block Generation Rules
+
+**`{{SKILLS_BLOCK}}`** — one `<div class="skill-row">` per skill category:
+
+```html
+<div class="skill-row">
+  <span class="skill-label">Languages</span>
+  <div class="tags">
+    <span class="tag">Python</span>
+    <span class="tag">Java</span>
+  </div>
+</div>
+```
+
+Do not create a skill category with zero tags. Only include skills explicitly stated in the resume.
+
+---
+
+**`{{EXPERIENCE_BLOCK}}`** — one `<div class="job">` per position, newest first:
+
+```html
+<div class="job">
+  <div class="entry-header">
+    <span class="entry-title">Software Engineer</span>
+    <span class="entry-date">Jan 2023 – Present</span>
+  </div>
+  <div class="entry-sub">TechNova Solutions Pvt Ltd — Chennai, India</div>
+  <ul>
+    <li>Designed and built REST APIs with FastAPI, handling 10K+ requests/day with sub-50ms latency.</li>
+  </ul>
+</div>
+```
+
+Do not add bullets that are not in the resume. Do not add metrics that are not stated.
+
+---
+
+**`{{PROJECTS_BLOCK}}`** — one `<div class="project">` per project:
+
+```html
+<div class="project">
+  <div class="project-category">AI / NLP</div>
+  <div class="entry-header">
+    <span class="entry-title">AI Resume Parser</span>
+  </div>
+  <div class="entry-stack">Python · NLTK · spaCy · Flask · SQLite</div>
+  <ul>
+    <li>Built an NLP pipeline to extract structured data from resumes using Named Entity Recognition.</li>
+  </ul>
+</div>
+```
+
+---
+
+**`{{EDUCATION_BLOCK}}`** — one block per degree:
+
+```html
+<div>
+  <div class="entry-header">
+    <span class="edu-degree">B.E. Computer Science &amp; Engineering</span>
+    <span class="edu-year">2026</span>
+  </div>
+  <div class="edu-institution">Anna University — Chennai, India</div>
+  <div class="edu-cgpa">CGPA: 8.6 / 10</div>
+  <div class="coursework-tags">
+    <span class="coursework-tag">Operating Systems</span>
+    <span class="coursework-tag">Database Management</span>
+  </div>
+</div>
+```
+
+Only include `coursework-tags` if coursework is explicitly listed in the resume.
+
+---
+
+**`{{KEYWORD_BADGES_BLOCK}}`** — one badge per JD keyword, green if found in resume, red if missing:
+
+```html
+<span class="kw-badge kw-found">✓ Python</span>
+<span class="kw-badge kw-missing">✗ CI/CD</span>
+<span class="kw-badge kw-found">✓ FastAPI</span>
+```
+
+---
+
+**`{{CRITICAL_GAPS_BLOCK}}`** — Tier-1 JD keywords completely absent from resume:
+
+```html
+<div class="gap-item">
+  <span class="gap-icon gap-critical">!</span>
+  <span>Add <strong>"CI/CD"</strong> to your work experience or skills section.</span>
+</div>
+```
+
+---
+
+**`{{NICE_TO_HAVE_BLOCK}}`** — Tier-2 JD keywords absent from resume:
+
+```html
+<div class="gap-item">
+  <span class="gap-icon gap-nice">+</span>
+  <span>Consider adding <strong>"Redis"</strong> to strengthen your profile.</span>
+</div>
+```
+
+---
+
+**`{{ATS_TIPS_BLOCK}}`** — standard ATS formatting advice:
+
+```html
+<div class="tip-item"><span class="tip-check">✓</span><span>Use standard section headings — ATS bots expect them</span></div>
+<div class="tip-item"><span class="tip-check">✓</span><span>Quantify achievements: use numbers, %, and metrics</span></div>
+<div class="tip-item"><span class="tip-check">✓</span><span>Submit in .docx or .pdf — avoid images and tables</span></div>
+<div class="tip-item"><span class="tip-check">✓</span><span>Match keywords from the JD into your bullet points</span></div>
+<div class="tip-item"><span class="tip-check">✓</span><span>Keep formatting simple — no columns or text boxes</span></div>
+```
+
+---
+
+**`{{NEXT_STEPS_BLOCK}}`** — three `<div class="next-step-card">` panels side by side (Critical / Nice-to-Have / Leadership Signal):
+
+```html
+<div class="next-step-card critical" style="flex: 1; min-width: 220px;">
+  <div class="next-step-title">⚡ Next Steps — Critical</div>
+  <div class="next-step-body">Add <strong>CI/CD (GitHub Actions)</strong> and <strong>System Design</strong> to your work bullets. Use these exact terms from the JD.</div>
+</div>
+<div class="next-step-card nice" style="flex: 1; min-width: 220px;">
+  <div class="next-step-title">💡 Nice-to-Have Gaps</div>
+  <div class="next-step-body">Add <strong>Redis caching</strong> experience and mention any event-driven architecture (Kafka/SQS) projects you've touched.</div>
+</div>
+<div class="next-step-card signal" style="flex: 1; min-width: 220px;">
+  <div class="next-step-title">🎯 Leadership Signal</div>
+  <div class="next-step-body">The "conducted code reviews &amp; mentored junior engineers" bullet already shows leadership. Frame it explicitly: "Led a team of 3 engineers."</div>
+</div>
+```
+
+---
+
+### Quality Gate Before Outputting HTML
+
+**Phase 1 — Research Verification (Step 0 must be complete):**
+- [ ] A Tier 1 keyword list was built from the JD (Path A) or industry standard (Path B) — not guessed
+- [ ] Every Tier 1 keyword was checked against the literal resume text and marked ✓ or ✗
+- [ ] ATS score was computed using the formula: (Tier 1 found ÷ Tier 1 total) × 100 — not estimated
+- [ ] Score label was selected from the interpretation table — not written freehand
+- [ ] Critical Gaps list contains only Tier 1 keywords that are literally absent from the resume
+- [ ] Each Critical Gap has a specific, actionable placement instruction
+- [ ] Nice-to-Have list contains only Tier 2 keywords absent from the resume
+- [ ] Leadership signal was found by searching the resume text, not assumed
+
+**Phase 2 — Template Integrity:**
+- [ ] Zero `{{...}}` tokens remain in the output — all replaced with real values
+- [ ] The `.ats-column` div has class `no-print`
+- [ ] The `.screen-toolbar` div has class `no-print`
+- [ ] The next-steps panel div has class `no-print`
+- [ ] The `@media print` block is present and complete — not shortened or summarized
+- [ ] `.no-print { display: none !important; }` is inside the `@media print` block
+- [ ] `.page-layout` is set to `display: block` inside `@media print`
+- [ ] `.resume-column` is set to `width: 100%` inside `@media print`
+- [ ] Every ATS badge, gap item, score, and tip lives inside a `.no-print` parent element
+
+**Phase 3 — Content Integrity:**
+- [ ] No bullet or metric in the resume was invented — all traceable to what the user provided
+- [ ] No keyword was added to the resume that the user did not genuinely have
+- [ ] The ATS score percentage in `{{ATS_SCORE_PCT}}` matches the computed formula result exactly
+- [ ] The `score-bar-fill` width style matches `{{ATS_SCORE_PCT}}` exactly (e.g., both say `64%`)
+
+---
+
 *End of Resume / CV Skill File*

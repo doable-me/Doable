@@ -3,6 +3,7 @@ name: ecommerce-website
 description: "Build conversion-focused, accessible, fast ecommerce stores (PLP/PDP/cart/checkout) with a design system, Core Web Vitals, WCAG 2.2, and PCI-safe payments. Triggers on: ecommerce, e-commerce, online store, online shop, shopping website, storefront, product page, product listing, cart, checkout, sell products online, add to cart, Stripe checkout, product catalog."
 ---
 
+
 # Ecommerce Website Development Skill
 
 ---
@@ -1272,6 +1273,8 @@ For every ecommerce request, provide:
 13. **Security checklist** — PCI DSS scope; payment, account, input safety
 14. **Variation set** — if multiple design directions requested
 
+**When the output is a single-file HTML implementation**, follow Section 25 precisely — do not produce a partial stub or concept description. Produce the complete, working, interactive HTML file.
+
 ---
 
 ## Section 22: Latest Ecommerce Practices Update
@@ -1291,7 +1294,7 @@ For every ecommerce request, provide:
   { "prerender": [{ "source": "list", "urls": ["/cart", "/checkout"] }] }
   </script>
   ```
-- **Partial Hydration / Islands Architecture** (Astro, Fresh): ship zero JS to the browser by default; hydrate only interactive components. Up to 90% reduction in JS for content-heavy pages.
+- **Partial Hydration / Islands Architecture** (Astro, Fresh): ship zero JS to the browser by default; hydrate only interactive components. Up to 90% reduction in JS for content-heavy stores.
 - **Cache-Control for product pages**: `stale-while-revalidate` for product data; full revalidation on price/inventory change.
 
 ---
@@ -1376,6 +1379,9 @@ Never:
 - Handle raw card data on your own server — always use a gateway-hosted payment element
 - Use `innerHTML` with user-provided content — always sanitize or use `textContent`
 - Deploy third-party scripts on the checkout page without auditing and CSP coverage
+- **Use images that do not visually match the product being sold** — wrong images destroy trust immediately
+- **Use placeholder or stock image URLs that return 404 or unrelated content** — always verify Unsplash search terms match the product
+- **Leave the hero section text-only** — it must have a strong, relevant background image or lifestyle photo
 
 ---
 
@@ -1413,4 +1419,1123 @@ Every pixel, every word, every millisecond of load time either earns that trust 
 
 ---
 
-*Skill file: ecommerce-website.md — Performance: Core Web Vitals (LCP ≤ 2.5s, INP ≤ 200ms, CLS ≤ 0.1). Accessibility: WCAG 2.2 AA. Payment security: PCI DSS v4.0 SAQ A via hosted gateway fields. Product data: Google Merchant Center accuracy and schema.org Product markup. Updated May 2026.*
+## Section 25: Single-File HTML SPA Generation Mode
+
+**Use this section whenever the output is a single HTML file.** This is the most common output mode for prototypes, demos, and standalone store implementations. Follow every step below without exception.
+
+### 25.1 — Mandatory File Structure
+
+The output must be a single `.html` file with all CSS and JavaScript inlined. No external `.css` or `.js` files. The structure must be:
+
+```
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- meta, title, Google Fonts preconnect, Google Fonts link -->
+  <style>/* ALL CSS here — design tokens first, then components */</style>
+</head>
+<body>
+  <!-- Promo banner (optional, dismissible) -->
+  <header><!-- logo, nav, cart icon --></header>
+  <main id="app"><!-- JS renders into this --></main>
+  <footer><!-- links, social, payment icons --></footer>
+  <script>/* ALL JavaScript here — IIFE wrapping all code */</script>
+</body>
+</html>
+```
+
+### 25.2 — Required Pages / Routes
+
+Every single-file SPA must implement hash-based routing (`location.hash`) with these routes:
+
+| Route | What renders |
+|---|---|
+| `#/` or empty | Homepage — hero + value strip + product grid |
+| `#/product/:id` | Product detail page — image, info, size/option select, ATC button |
+| `#/cart` | Cart page — line items, quantities, total, checkout CTA |
+| `#/checkout` | Checkout form — name, email/phone, address, order summary, place order |
+| `#/order-confirmation` | Success page — order number, summary, thank-you message |
+
+### 25.3 — Homepage Sections (all required)
+
+The homepage route must render ALL of these sections in order:
+
+1. **Hero** — full-width section with a background image overlay, large headline, sub-headline, and a primary CTA button. The hero image must be a relevant Unsplash photo (see Section 26).
+
+2. **Value proposition strip** — 3–4 inline icons with short labels: e.g., "Free Shipping", "Easy Returns", "Secure Checkout", "24/7 Support".
+
+3. **Featured / Best Sellers grid** — 4–6 product cards using a CSS Grid (2 columns mobile, 3–4 columns desktop).
+
+4. **Category strip** (optional but recommended) — 3–4 clickable category cards with images, for stores with multiple product types.
+
+5. **Trust section** — a row of 3–4 review quotes or testimonials with star ratings and customer names.
+
+6. **Newsletter signup** — email input + subscribe button with a brief value proposition ("Get 10% off your first order").
+
+7. **Footer** — brand name, navigation links (Home, Products, FAQ, Contact), social icons (SVG or Unicode), copyright.
+
+### 25.4 — Product Card Requirements
+
+Every product card must include:
+- Product image (use Unsplash URL per Section 26 — must visually match the product)
+- Product name (bold, 2-line clamp)
+- Price (bold, brand accent color)
+- Short description (1 line, muted text)
+- "Add to Cart" button (full-width or inline) + "View" link button
+- Optional: discount badge if product has a sale price
+
+```html
+<!-- Minimum viable product card structure -->
+<article class="card">
+  <a href="#/product/${p.id}">
+    <img src="${p.image}" alt="${p.name}" loading="lazy" />
+  </a>
+  <div class="card-body">
+    <h3 class="card-title">${p.name}</h3>
+    <div class="card-price">$${p.price.toFixed(2)}</div>
+    <p class="card-desc">${p.shortDesc}</p>
+  </div>
+  <div class="card-actions">
+    <a class="btn btn-primary" href="#/product/${p.id}">View</a>
+    <button class="btn btn-secondary" data-add="${p.id}">Add</button>
+  </div>
+</article>
+```
+
+### 25.5 — Cart State Management
+
+Use `localStorage` for cart persistence across page refreshes. Key `cart_v1`. Structure:
+
+```javascript
+// Cart item shape
+{ key: `${productId}:${variant}`, productId, variant, qty, price, name, image }
+
+// Helper functions — always define these
+function getCart() { try { return JSON.parse(localStorage.getItem('cart_v1')) || []; } catch(e) { return []; } }
+function saveCart(cart) { localStorage.setItem('cart_v1', JSON.stringify(cart)); }
+function getCartCount() { return getCart().reduce((s, i) => s + i.qty, 0); }
+function updateCartBadge() { document.querySelectorAll('.cart-count').forEach(el => el.textContent = getCartCount()); }
+```
+
+### 25.6 — Add-to-Cart Feedback (required)
+
+Every "Add to Cart" button must give immediate visual feedback:
+
+```javascript
+function animateAddToCart(btn, originalText) {
+  btn.disabled = true;
+  btn.textContent = '✓ Added!';
+  btn.style.background = '#16a34a'; // success green
+  setTimeout(() => {
+    btn.textContent = originalText;
+    btn.style.background = '';
+    btn.disabled = false;
+  }, 1200);
+}
+```
+
+### 25.7 — Checkout Form Requirements
+
+The checkout page must include:
+- Full Name field (`autocomplete="name"`)
+- Email field (`autocomplete="email"`)  
+- Phone field (`autocomplete="tel"`)
+- Delivery Address textarea (`autocomplete="street-address"`)
+- Order summary panel (items list + line totals + grand total)
+- "Place Order" submit button showing the total: "Place Order ($XX.XX)"
+- On submit: clear cart, redirect to `#/order-confirmation`
+
+### 25.8 — Order Confirmation Page
+
+Must show:
+- A success icon or emoji
+- "Order Confirmed!" headline
+- Thank-you message with the customer's name
+- List of ordered items with quantities
+- Order total
+- Estimated delivery window (e.g., "Expected in 3–5 business days")
+- "Continue Shopping" button back to `#/`
+
+### 25.9 — CSS Requirements for HTML Output
+
+```css
+/* Required in every HTML output */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text-primary); line-height: 1.5; }
+
+/* Design tokens — ALWAYS define these */
+:root {
+  --brand:        /* primary brand color — pick from Section 26 color palette */;
+  --brand-hover:  /* 15% darker than --brand */;
+  --accent:       /* secondary accent color */;
+  --bg:           /* page background */;
+  --surface:      /* card background */;
+  --border:       /* card/input border */;
+  --text-primary: /* main text — dark */;
+  --text-muted:   /* secondary text — grey */;
+  --success:      #16a34a;
+  --radius:       12px;
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:    0 4px 12px rgba(0,0,0,0.1);
+  --shadow-lg:    0 10px 30px rgba(0,0,0,0.15);
+}
+
+/* Hero with overlay — always use this pattern for hero sections */
+.hero {
+  position: relative;
+  min-height: 520px;
+  background-image: url(/* relevant Unsplash URL */);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.25) 100%);
+}
+.hero-content {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+  max-width: 600px;
+  padding: 48px 32px;
+}
+.hero-title { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 900; line-height: 1.1; margin-bottom: 16px; }
+.hero-sub   { font-size: 1.1rem; opacity: 0.9; margin-bottom: 32px; }
+
+/* Sticky header */
+.site-header {
+  position: sticky; top: 0; z-index: 100;
+  background: white; border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 64px;
+}
+
+/* Product grid — responsive */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+@media (min-width: 640px)  { .product-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 900px)  { .product-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1200px) { .product-grid { grid-template-columns: repeat(4, 1fr); } }
+
+/* Product card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+.card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 0.95rem; font-weight: 700;
+  transition: background 0.15s ease, transform 0.1s ease; text-decoration: none;
+  min-height: 44px;
+}
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-primary:hover { background: var(--brand-hover); transform: translateY(-1px); }
+.btn-secondary { background: transparent; border: 2px solid var(--border); color: var(--text-primary); }
+.btn-secondary:hover { border-color: var(--brand); color: var(--brand); }
+
+/* Value strip */
+.value-strip {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 24px; padding: 32px 24px; background: var(--surface);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.value-item { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; font-weight: 600; }
+.value-icon { font-size: 1.5rem; }
+
+/* Section wrapper */
+.section { padding: 64px 24px; max-width: 1200px; margin: 0 auto; }
+.section-title { font-size: 1.75rem; font-weight: 800; margin-bottom: 8px; }
+.section-sub   { color: var(--text-muted); margin-bottom: 32px; }
+```
+
+### 25.10 — JavaScript Architecture for HTML Output
+
+Use an IIFE (Immediately Invoked Function Expression) to wrap all JS and prevent global scope pollution:
+
+```javascript
+(function() {
+  'use strict';
+
+  // 1. STORE CONFIG — customize per brand
+  const CONFIG = {
+    name: 'BrandName',
+    currency: '$',
+    shippingThreshold: 50,
+    returnDays: 30,
+  };
+
+  // 2. PRODUCT DATA — array of product objects
+  const PRODUCTS = [ /* ... */ ];
+
+  // 3. CART FUNCTIONS
+  // getCart(), saveCart(), addToCart(), removeFromCart(), updateCartCount()
+
+  // 4. RENDER FUNCTIONS — one per route
+  // renderHome(), renderProduct(id), renderCart(), renderCheckout(), renderConfirmation()
+
+  // 5. ROUTER
+  function route() {
+    const hash = location.hash.replace(/^#/, '') || '/';
+    window.scrollTo(0, 0);
+    if (hash === '/' || hash === '') renderHome();
+    else if (hash.startsWith('/product/')) renderProduct(Number(hash.split('/')[2]));
+    else if (hash === '/cart') renderCart();
+    else if (hash === '/checkout') renderCheckout();
+    else if (hash === '/order-confirmation') renderConfirmation();
+  }
+
+  // 6. EVENT DELEGATION — one listener for all dynamic buttons
+  document.addEventListener('click', e => { /* handle data-* attributes */ });
+
+  // 7. INIT
+  window.addEventListener('hashchange', route);
+  window.addEventListener('load', () => { updateCartCount(); route(); });
+})();
+```
+
+### 25.11 — Data Layer: Never Hardcode Product or Config Values
+
+**Products, categories, store config, and reviews must never be written as inline literal values inside the JavaScript.** Hardcoded arrays break the moment the store owner adds, removes, or updates a product. All data must be loaded at runtime from a structured source.
+
+#### 25.11.1 — Preferred Pattern: Embedded JSON Data Block
+
+For single-file HTML output where an external server is not available, embed all store data in a `<script type="application/json">` tag in the `<head>`. The JS reads this tag at init time — it is the "database" for the SPA. This keeps data separate from logic and makes it trivially editable.
+
+```html
+<!-- In <head> — the store's database. Edit this block to update the store. -->
+<script id="store-data" type="application/json">
+{
+  "config": {
+    "name": "Artisan Sole",
+    "currency": "₹",
+    "currencyCode": "INR",
+    "locale": "en-IN",
+    "shippingThreshold": 999,
+    "returnDays": 30,
+    "supportEmail": "support@artisansole.in"
+  },
+  "categories": [
+    { "id": "running",  "name": "Running",  "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80" },
+    { "id": "casual",   "name": "Casual",   "image": "https://images.unsplash.com/photo-1606107557195-0e29a4b5b4aa?auto=format&fit=crop&w=600&q=80" },
+    { "id": "trail",    "name": "Trail",    "image": "https://images.unsplash.com/photo-1512374382149-233c42b6a83b?auto=format&fit=crop&w=600&q=80" }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "name": "Air Zoom Runner X",
+      "category": "running",
+      "price": 2499,
+      "originalPrice": 3099,
+      "shortDesc": "Lightweight daily trainer with responsive foam.",
+      "description": "Built for speed and comfort on long runs. Engineered mesh upper, full-length foam midsole, rubber outsole.",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "inStock": true,
+      "badge": "sale",
+      "variants": ["Black/White", "Red/Black", "Blue/Grey"],
+      "images": [
+        "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?auto=format&fit=crop&w=800&q=80"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Trail Blazer Pro",
+      "category": "trail",
+      "price": 3299,
+      "originalPrice": null,
+      "shortDesc": "Aggressive grip for off-road adventures.",
+      "description": "Rugged trail shoe with rock plate protection, Vibram outsole, and waterproof upper.",
+      "rating": 4.7,
+      "reviewCount": 64,
+      "inStock": true,
+      "badge": "new",
+      "variants": ["Olive/Orange", "Black/Yellow"],
+      "images": [
+        "https://images.unsplash.com/photo-1512374382149-233c42b6a83b?auto=format&fit=crop&w=800&q=80"
+      ]
+    }
+  ],
+  "reviews": [
+    { "author": "Priya M.", "rating": 5, "title": "Best shoes I've owned", "body": "Incredibly comfortable from day one. No break-in period needed.", "verified": true },
+    { "author": "Rohan K.", "rating": 4, "title": "Great quality", "body": "Solid build, runs slightly narrow. Size up if you have wide feet.", "verified": true }
+  ]
+}
+</script>
+```
+
+Then in the JavaScript IIFE, load from this block **before doing anything else**:
+
+```javascript
+(function () {
+  'use strict';
+
+  // ── DATA LAYER ──────────────────────────────────────────────────────────
+  // All store data comes from the <script id="store-data"> block.
+  // Never hardcode product names, prices, images, or config values below.
+  let DB = {};
+  let CONFIG = {};
+  let PRODUCTS = [];
+  let CATEGORIES = [];
+  let REVIEWS = [];
+
+  function loadDB() {
+    try {
+      const raw = document.getElementById('store-data');
+      if (!raw) throw new Error('store-data block not found');
+      DB         = JSON.parse(raw.textContent);
+      CONFIG     = DB.config     || {};
+      PRODUCTS   = DB.products   || [];
+      CATEGORIES = DB.categories || [];
+      REVIEWS    = DB.reviews    || [];
+    } catch (err) {
+      console.error('[Store] Failed to load store data:', err);
+      // Fail gracefully — render an error state rather than a broken store
+      document.getElementById('app').innerHTML =
+        '<p style="padding:40px;color:red">Store data could not be loaded. Check the store-data JSON block.</p>';
+    }
+  }
+
+  // ── HELPERS ──────────────────────────────────────────────────────────────
+  function getProduct(id) {
+    return PRODUCTS.find(p => p.id === Number(id)) || null;
+  }
+
+  function getProductsByCategory(catId) {
+    return catId ? PRODUCTS.filter(p => p.category === catId) : PRODUCTS;
+  }
+
+  function formatPrice(amount) {
+    return `${CONFIG.currency || '$'}${Number(amount).toLocaleString(CONFIG.locale || 'en-US')}`;
+  }
+
+  // ── CART (localStorage) ──────────────────────────────────────────────────
+  function getCart()         { try { return JSON.parse(localStorage.getItem('cart_v1')) || []; } catch(e) { return []; } }
+  function saveCart(cart)    { localStorage.setItem('cart_v1', JSON.stringify(cart)); }
+  function getCartCount()    { return getCart().reduce((s, i) => s + i.qty, 0); }
+  function updateCartCount() { document.querySelectorAll('.cart-count').forEach(el => el.textContent = getCartCount()); }
+
+  function addToCart(productId, variant) {
+    const product = getProduct(productId);
+    if (!product) return;
+    const cart = getCart();
+    const key  = `${productId}:${variant || 'default'}`;
+    const existing = cart.find(i => i.key === key);
+    if (existing) {
+      existing.qty += 1;
+    } else {
+      cart.push({
+        key,
+        productId: product.id,
+        variant:   variant || product.variants?.[0] || '',
+        qty:       1,
+        price:     product.price,
+        name:      product.name,
+        image:     product.images?.[0] || ''
+      });
+    }
+    saveCart(cart);
+    updateCartCount();
+  }
+
+  // ── ROUTER ───────────────────────────────────────────────────────────────
+  function route() {
+    const hash = location.hash.replace(/^#/, '') || '/';
+    window.scrollTo(0, 0);
+    const app = document.getElementById('app');
+    if (!app) return;
+
+    if      (hash === '/' || hash === '')          renderHome(app);
+    else if (hash.startsWith('/product/'))         renderProduct(app, hash.split('/')[2]);
+    else if (hash === '/cart')                     renderCart(app);
+    else if (hash === '/checkout')                 renderCheckout(app);
+    else if (hash === '/order-confirmation')       renderConfirmation(app);
+    else    app.innerHTML = '<p style="padding:60px 24px">Page not found.</p>';
+  }
+
+  // ── RENDER FUNCTIONS ─────────────────────────────────────────────────────
+  // Each render function reads from PRODUCTS, CONFIG, CATEGORIES, REVIEWS.
+  // No literal values. Every string, price, image, label comes from DB.
+
+  function renderHome(app) {
+    // Hero text and CTA from CONFIG; product grid from PRODUCTS; reviews from REVIEWS
+    // ... (implement per Section 25.3)
+  }
+
+  function renderProduct(app, id) {
+    const product = getProduct(id);
+    if (!product) { app.innerHTML = '<p style="padding:60px 24px">Product not found.</p>'; return; }
+    // Render using product.name, product.price, product.images, product.variants, etc.
+    // ... (implement per Section 25.4 and Section 8)
+  }
+
+  function renderCart(app) {
+    const cart = getCart();
+    // Build line items from cart — each item already has name, price, qty, image from addToCart()
+    // ... (implement per Section 25.7 / Section 9)
+  }
+
+  function renderCheckout(app) {
+    // Order summary from getCart(); total calculation uses CONFIG.shippingThreshold
+    // ... (implement per Section 25.7)
+  }
+
+  function renderConfirmation(app) {
+    // Pull last order from sessionStorage (set at checkout submit)
+    // ... (implement per Section 25.8)
+  }
+
+  // ── EVENT DELEGATION ─────────────────────────────────────────────────────
+  document.addEventListener('click', e => {
+    const atcBtn = e.target.closest('[data-add-to-cart]');
+    if (atcBtn) {
+      const id      = atcBtn.dataset.addToCart;
+      const variant = atcBtn.dataset.variant || null;
+      addToCart(id, variant);
+      animateAddToCart(atcBtn);
+    }
+  });
+
+  function animateAddToCart(btn) {
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '✓ Added!';
+    btn.style.background = '#16a34a';
+    setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.disabled = false; }, 1200);
+  }
+
+  // ── INIT ─────────────────────────────────────────────────────────────────
+  loadDB();   // ← always first; nothing else runs until data is loaded
+  window.addEventListener('hashchange', route);
+  window.addEventListener('load', () => { updateCartCount(); route(); });
+
+})();
+```
+
+#### 25.11.2 — Alternative Pattern: External JSON fetch (when a server / file server is available)
+
+When the SPA is served by a local or remote server (Node, Python, etc.), replace the embedded JSON block with a `fetch` call. All render functions remain identical — only `loadDB()` changes:
+
+```javascript
+async function loadDB() {
+  try {
+    const res = await fetch('./db.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    DB         = await res.json();
+    CONFIG     = DB.config     || {};
+    PRODUCTS   = DB.products   || [];
+    CATEGORIES = DB.categories || [];
+    REVIEWS    = DB.reviews    || [];
+  } catch (err) {
+    console.error('[Store] Failed to fetch db.json:', err);
+    document.getElementById('app').innerHTML =
+      '<p style="padding:40px;color:red">Could not load store data. Is db.json present?</p>';
+  }
+}
+
+// Because loadDB is now async, delay init:
+window.addEventListener('load', async () => {
+  await loadDB();
+  updateCartCount();
+  route();
+});
+```
+
+The `db.json` file has the exact same structure as the embedded JSON block in 25.11.1.
+
+#### 25.11.3 — SQLite via sql.js (browser-native SQLite, advanced)
+
+When the user explicitly requests SQLite, use [sql.js](https://sql.js.org) — SQLite compiled to WebAssembly. This loads a real `.sqlite` file in the browser with no server required.
+
+```html
+<!-- Load sql.js from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.min.js"></script>
+```
+
+```javascript
+let db = null; // sql.js database instance
+
+async function loadDB() {
+  try {
+    const SQL = await initSqlJs({
+      locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${file}`
+    });
+
+    // Fetch the .sqlite binary (must be served from same origin or CORS-enabled)
+    const response = await fetch('./store.sqlite');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const arrayBuffer = await response.arrayBuffer();
+    db = new SQL.Database(new Uint8Array(arrayBuffer));
+
+    // Populate runtime arrays from DB tables
+    PRODUCTS   = dbQuery('SELECT * FROM products WHERE active = 1');
+    CATEGORIES = dbQuery('SELECT * FROM categories');
+    REVIEWS    = dbQuery('SELECT * FROM reviews ORDER BY created_at DESC');
+    CONFIG     = dbQuery('SELECT key, value FROM config').reduce((acc, row) => {
+      acc[row.key] = row.value; return acc;
+    }, {});
+
+  } catch (err) {
+    console.error('[Store] SQLite load failed:', err);
+    document.getElementById('app').innerHTML =
+      '<p style="padding:40px;color:red">Could not load store.sqlite. ' + err.message + '</p>';
+  }
+}
+
+// Helper: run a SELECT and return rows as plain objects
+function dbQuery(sql, params = []) {
+  if (!db) return [];
+  try {
+    const stmt    = db.prepare(sql);
+    const results = [];
+    stmt.bind(params);
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+  } catch (err) {
+    console.error('[Store] Query error:', sql, err);
+    return [];
+  }
+}
+
+// Parameterized lookup — never string-concatenate user input into SQL
+function getProduct(id) {
+  const rows = dbQuery('SELECT * FROM products WHERE id = ? AND active = 1', [Number(id)]);
+  return rows[0] || null;
+}
+
+function getProductsByCategory(catId) {
+  if (!catId) return dbQuery('SELECT * FROM products WHERE active = 1');
+  return dbQuery('SELECT * FROM products WHERE category_id = ? AND active = 1', [catId]);
+}
+```
+
+**Required SQLite schema** (create `store.sqlite` with this structure):
+
+```sql
+CREATE TABLE config (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE categories (
+  id    TEXT PRIMARY KEY,
+  name  TEXT NOT NULL,
+  image TEXT
+);
+
+CREATE TABLE products (
+  id            INTEGER PRIMARY KEY,
+  name          TEXT    NOT NULL,
+  category_id   TEXT    REFERENCES categories(id),
+  price         REAL    NOT NULL,
+  original_price REAL,
+  short_desc    TEXT,
+  description   TEXT,
+  rating        REAL    DEFAULT 0,
+  review_count  INTEGER DEFAULT 0,
+  in_stock      INTEGER DEFAULT 1,   -- 1 = true, 0 = false
+  badge         TEXT,                -- 'sale' | 'new' | 'popular' | NULL
+  images        TEXT,                -- JSON array of URLs, parse with JSON.parse()
+  variants      TEXT,                -- JSON array of variant strings
+  active        INTEGER DEFAULT 1
+);
+
+CREATE TABLE reviews (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER REFERENCES products(id),
+  author     TEXT    NOT NULL,
+  rating     INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+  title      TEXT,
+  body       TEXT,
+  verified   INTEGER DEFAULT 0,
+  created_at TEXT    DEFAULT (datetime('now'))
+);
+```
+
+#### 25.11.4 — Data Layer Decision Matrix
+
+| Situation | Use |
+|---|---|
+| Single-file HTML output with no server | **25.11.1** — Embedded JSON `<script>` block |
+| Files served by a local/remote server | **25.11.2** — `fetch('./db.json')` |
+| User explicitly requests SQLite | **25.11.3** — sql.js + `store.sqlite` |
+| Next.js / Nuxt / SvelteKit project | Server-side DB (PostgreSQL, SQLite via Prisma/Drizzle) — query in route handlers, pass data as props |
+
+**In all cases: render functions never contain literal product names, prices, images, or config strings. Every value is read from `DB`, `PRODUCTS`, `CONFIG`, `CATEGORIES`, or `REVIEWS` at render time.**
+
+---
+
+## Section 26: Image Selection Guide — Unsplash URLs
+
+**This is the most important section for output quality.** Wrong images destroy the site's credibility. The image URL must show the actual product category or brand context.
+
+### 26.1 — Unsplash URL Format
+
+Always use this URL format for Unsplash images. It returns a properly sized, CDN-optimized JPEG:
+
+```
+https://images.unsplash.com/photo-{PHOTO_ID}?auto=format&fit=crop&q=80&w={WIDTH}&h={HEIGHT}
+```
+
+- `auto=format` — serves WebP to supporting browsers automatically
+- `fit=crop` — crops to exact dimensions
+- `q=80` — 80% quality, good balance of size and sharpness
+- `w` + `h` — set to your image slot size (e.g., 600×400 for a card, 1200×600 for hero)
+
+For hero backgrounds, use `w=1400&h=700`. For product cards, use `w=600&h=450`. For product detail pages, use `w=800&h=800`.
+
+### 26.2 — Industry-Specific Image IDs
+
+Use these **verified, relevant Unsplash photo IDs** for each product category. These images visually match the product type.
+
+#### Sports / Athletic Footwear
+```
+Hero (running shoes, action):
+  photo-1542291026-7eec264c27ff  — Nike shoes red athletic
+  photo-1460353581641-37baddab0fa2 — runner feet close-up
+  photo-1539185441755-769473a23570 — sneakers flat lay
+
+Product cards (shoes):
+  photo-1542291026-7eec264c27ff  — red Nike running shoe
+  photo-1606107557195-0e29a4b5b4aa — white sneaker on white
+  photo-1600185365483-26d7a4cc7519 — Nike Air running shoes
+  photo-1491553895911-0055eca6402d — athletic shoe side view
+  photo-1512374382149-233c42b6a83b — trail running shoe
+  photo-1595950653106-6c9ebd614d3a — colorful sneakers pair
+```
+
+#### Fast Food / Burgers / Restaurant
+```
+Hero:
+  photo-1568901346375-23c9450c58cd — double smash burger
+  photo-1565299624946-b28f40a0ae38 — pizza close-up
+
+Product cards (food):
+  photo-1568901346375-23c9450c58cd — burger close-up
+  photo-1576107232684-1279f390859f — loaded cheese fries
+  photo-1606755962773-d324e0a13086 — crispy chicken sandwich
+  photo-1628840042765-356cda07504e — pepperoni pizza
+  photo-1504674900247-0877df9cc836 — food flat lay
+  photo-1550547660-d9450f859349 — hot dog with mustard
+```
+
+#### Fashion / Apparel
+```
+Hero:
+  photo-1441984904996-e0b6ba687e04 — clothing rack editorial
+  photo-1558618666-fcd25c85cd64 — fashion model street
+
+Product cards:
+  photo-1434389677669-e08b4cac3105 — folded denim jeans
+  photo-1485518994905-c7b6d11a7ebc — white t-shirt flat lay
+  photo-1620799140408-edc6dcb6d633 — hoodie on model
+  photo-1591047139829-d91aecb6caea — women's dress
+  photo-1516762689617-e1cffcef479d — luxury handbag
+```
+
+#### Beauty / Skincare / Cosmetics
+```
+Hero:
+  photo-1596462502278-27bfdc403348 — cosmetics flat lay
+  photo-1522335789203-aabd1fc54bc9 — beauty products arrangement
+
+Product cards:
+  photo-1556228578-8c89e6adf883 — moisturizer bottle
+  photo-1608248543803-ba4f8c70ae0b — serum dropper
+  photo-1617897903246-719242758050 — face cream jar
+  photo-1512496015851-a90fb38ba796 — lipstick collection
+```
+
+#### Electronics / Tech
+```
+Hero:
+  photo-1593642632559-0c6d3fc62b89 — laptop on clean desk
+  photo-1558618666-fcd25c85cd64 — tech gear layout
+
+Product cards:
+  photo-1496181133206-80ce9b88a853 — laptop open white bg
+  photo-1585386959984-a4155224a1ad — smartphone on white
+  photo-1505740420928-5e560c06d30e — wireless headphones
+  photo-1523275335684-37898b6baf30 — smartwatch wrist
+  photo-1491933382434-500287f9b54b — earbuds case
+```
+
+#### Home Decor / Furniture
+```
+Hero:
+  photo-1555041469-a586c61ea9bc — modern living room
+  photo-1524758631624-e2822e304c36 — minimalist interior
+
+Product cards:
+  photo-1555041469-a586c61ea9bc — sofa living room
+  photo-1567538096630-e0c55bd6374c — minimalist chair
+  photo-1586023492125-27b2c045efd7 — floor lamp modern
+  photo-1538688525198-9b88f6f53126 — coffee table wood
+```
+
+#### Jewelry / Accessories
+```
+Hero:
+  photo-1515562141207-7a88fb7ce338 — jewelry editorial
+  photo-1611591437281-460bfbe1220a — fine jewelry flatlay
+
+Product cards:
+  photo-1515562141207-7a88fb7ce338 — gold necklace
+  photo-1535632787350-4e68ef0ac584 — diamond ring
+  photo-1573408301185-9146fe634ad0 — bracelet on wrist
+  photo-1611591437281-460bfbe1220a — earrings flatlay
+```
+
+#### Grocery / Organic Food
+```
+Hero:
+  photo-1542838132-92c53300491e — fresh vegetables market
+  photo-1498837167922-ddd27525d352 — healthy food spread
+
+Product cards:
+  photo-1560806887-1e4cd0b6cbd6 — fresh apples
+  photo-1550258987-190a2d41a8ba — mixed vegetables
+  photo-1490645935967-10de6ba17061 — healthy food bowl
+  photo-1467453678174-768ec283a940 — fresh bread loaves
+```
+
+### 26.3 — Image Selection Rules (CRITICAL)
+
+**You must follow these rules. Violating them is the single biggest cause of low-quality output.**
+
+1. **Match image to product exactly.** A shoe store must show shoes. A food store must show food. A beauty store must show beauty products. Never use a landscape, architecture, or abstract image as a product photo.
+
+2. **Hero image must show the product in use or in context.** For a shoe brand: a runner in motion, or a dramatic shoe flat-lay. For food: an appetizing close-up of the food. Never a generic photo.
+
+3. **Every product in the `PRODUCTS` array must have its own correctly matched image URL.** If you have 4 products, use 4 different relevant Unsplash IDs.
+
+4. **If you are unsure of an exact photo ID**, construct the URL using the Unsplash search endpoint:
+   ```
+   https://source.unsplash.com/600x450/?{search-term}
+   ```
+   Use specific, relevant search terms: `running+shoes`, `burger+food`, `skincare+cream`, `laptop+desk`, NOT generic terms like `product` or `item`.
+
+5. **Test your image URLs mentally** — before writing a URL, ask: "Does this URL return an image of [the product]?" If unsure, use a more specific search term.
+
+6. **Use different images for each product** — never reuse the same URL for multiple products. Each product card must look visually distinct.
+
+### 26.4 — Industry Color Palettes
+
+Match the color palette to the industry and brand personality.
+
+| Industry | Primary | Accent | Background | Surface | Text |
+|---|---|---|---|---|---|
+| Sports / Athletic | `#111827` (near-black) | `#f97316` (orange) | `#ffffff` | `#f9fafb` | `#111827` |
+| Premium Sports | `#0f172a` (navy) | `#3b82f6` (blue) | `#ffffff` | `#f8fafc` | `#0f172a` |
+| Fast Food | `#dc2626` (red) | `#f59e0b` (amber) | `#fef3c7` (warm yellow) | `#ffffff` | `#1f2937` |
+| Fashion — Minimal | `#1a1a1a` | `#c9a96e` (gold) | `#ffffff` | `#fafafa` | `#1a1a1a` |
+| Fashion — Bold | `#7c3aed` (purple) | `#f43f5e` (rose) | `#fdf4ff` | `#ffffff` | `#1e1b4b` |
+| Beauty | `#be185d` (rose) | `#fbbf24` (gold) | `#fff1f2` | `#ffffff` | `#1f2937` |
+| Electronics | `#1d4ed8` (blue) | `#0ea5e9` (sky) | `#f8fafc` | `#ffffff` | `#0f172a` |
+| Organic / Natural | `#15803d` (green) | `#a16207` (earthy) | `#f0fdf4` | `#ffffff` | `#14532d` |
+| Luxury | `#1c1917` (charcoal) | `#d97706` (gold) | `#fffbeb` | `#ffffff` | `#1c1917` |
+| Health / Wellness | `#0d9488` (teal) | `#84cc16` (lime) | `#f0fdfa` | `#ffffff` | `#134e4a` |
+| Home Decor | `#78350f` (warm brown) | `#d97706` (amber) | `#fef9f0` | `#ffffff` | `#1c1917` |
+
+---
+
+## Section 27: Visual Polish Enforcement
+
+**These patterns must be applied to every HTML output.** They are the difference between a demo-quality and a production-quality result.
+
+### 27.1 — Typography That Communicates Quality
+
+```css
+/* Load Inter from Google Fonts — always */
+/* In <head>: */
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+/* Type hierarchy — use these classes consistently */
+.text-hero   { font-size: clamp(2rem, 5vw, 3.75rem); font-weight: 900; line-height: 1.05; letter-spacing: -0.03em; }
+.text-h1     { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
+.text-h2     { font-size: clamp(1.25rem, 3vw, 1.75rem); font-weight: 700; line-height: 1.2; }
+.text-h3     { font-size: 1.125rem; font-weight: 600; }
+.text-body   { font-size: 1rem; font-weight: 400; line-height: 1.6; }
+.text-sm     { font-size: 0.875rem; }
+.text-xs     { font-size: 0.75rem; }
+.text-muted  { color: var(--text-muted); }
+.text-price  { font-size: 1.25rem; font-weight: 800; color: var(--brand); }
+.text-price-original { text-decoration: line-through; color: var(--text-muted); font-weight: 400; }
+```
+
+### 27.2 — Hero Section: Always Use a Dark Overlay
+
+The hero section must always use a dark gradient overlay over the background image to ensure text readability at WCAG contrast levels:
+
+```css
+.hero {
+  position: relative;
+  min-height: 560px;
+  background-image: url('https://images.unsplash.com/photo-{ID}?auto=format&fit=crop&q=80&w=1400&h=700');
+  background-size: cover;
+  background-position: center;
+  display: flex; align-items: center;
+}
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg,
+    rgba(0,0,0,0.70) 0%,
+    rgba(0,0,0,0.40) 50%,
+    rgba(0,0,0,0.20) 100%
+  );
+}
+.hero-content { position: relative; z-index: 1; color: #fff; max-width: 580px; padding: 48px 32px; }
+```
+
+### 27.3 — Card Shadow and Hover Polish
+
+```css
+/* Layered shadows — more depth than a single shadow */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.card:hover {
+  box-shadow: 0 10px 25px rgba(0,0,0,0.12), 0 4px 10px rgba(0,0,0,0.08);
+  transform: translateY(-5px);
+}
+
+/* Image zoom-on-hover */
+.card-img-wrap { overflow: hidden; }
+.card-img-wrap img {
+  width: 100%; display: block;
+  transition: transform 0.4s ease;
+}
+.card:hover .card-img-wrap img { transform: scale(1.05); }
+```
+
+### 27.4 — Discount / Badge Styling
+
+```css
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.badge-sale    { background: #fee2e2; color: #dc2626; }
+.badge-new     { background: #dbeafe; color: #1d4ed8; }
+.badge-popular { background: #fef3c7; color: #d97706; }
+.badge-sold-out{ background: #f3f4f6; color: #6b7280; }
+```
+
+### 27.5 — Form Input Polish
+
+```css
+.form-group { margin-bottom: 20px; }
+.form-group label {
+  display: block; margin-bottom: 6px;
+  font-size: 0.875rem; font-weight: 600; color: var(--text-primary);
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%; padding: 12px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-family: inherit; font-size: 1rem;
+  background: var(--surface); color: var(--text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 15%, transparent);
+}
+```
+
+### 27.6 — Value Proposition Strip Pattern
+
+Always include this strip between hero and product grid:
+
+```html
+<div class="value-strip">
+  <div class="value-item"><span class="value-icon">🚚</span><span>Free Shipping over $50</span></div>
+  <div class="value-item"><span class="value-icon">↩️</span><span>30-Day Free Returns</span></div>
+  <div class="value-item"><span class="value-icon">🔒</span><span>Secure Checkout</span></div>
+  <div class="value-item"><span class="value-icon">💬</span><span>24/7 Support</span></div>
+</div>
+```
+
+```css
+.value-strip {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 24px 48px; padding: 28px 24px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.value-item { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; font-weight: 600; }
+.value-icon { font-size: 1.4rem; }
+```
+
+### 27.7 — Footer Pattern (always include)
+
+```html
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <strong class="footer-logo">BrandName</strong>
+      <p>Short brand tagline here.</p>
+    </div>
+    <div class="footer-links">
+      <strong>Shop</strong>
+      <a href="#/">All Products</a>
+      <a href="#/">New Arrivals</a>
+      <a href="#/">Sale</a>
+    </div>
+    <div class="footer-links">
+      <strong>Help</strong>
+      <a href="#/">FAQ</a>
+      <a href="#/">Returns</a>
+      <a href="#/">Contact</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 BrandName. All rights reserved.</span>
+    <span class="footer-payment">💳 Visa · Mastercard · PayPal · UPI</span>
+  </div>
+</footer>
+```
+
+```css
+.site-footer { background: #111827; color: #9ca3af; padding: 48px 24px 24px; margin-top: 80px; }
+.footer-inner { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+.footer-logo { font-size: 1.25rem; color: #fff; font-weight: 800; }
+.footer-links { display: flex; flex-direction: column; gap: 8px; }
+.footer-links strong { color: #fff; font-size: 0.875rem; margin-bottom: 4px; }
+.footer-links a { color: #9ca3af; text-decoration: none; font-size: 0.875rem; transition: color 0.15s; }
+.footer-links a:hover { color: #fff; }
+.footer-bottom { max-width: 1100px; margin: 0 auto; padding-top: 24px; border-top: 1px solid #1f2937; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; font-size: 0.8rem; }
+@media (max-width: 640px) { .footer-inner { grid-template-columns: 1fr; } }
+```
+
+### 27.8 — Cart Page Polish
+
+The cart page must show line items in a clean list, not a plain unstyled list. Required layout:
+
+```
+┌─────────────────────────────────────────────────────┐
+│ [product img]  Product Name          $XX.XX          │
+│                Variant: Size M      [qty] [✕ Remove] │
+├─────────────────────────────────────────────────────┤
+│ [product img]  Product Name          $XX.XX          │
+│                Variant: Blue        [qty] [✕ Remove] │
+├─────────────────────────────────────────────────────┤
+│                              Subtotal:    $XX.XX     │
+│                         [Checkout →]  [Clear Cart]   │
+└─────────────────────────────────────────────────────┘
+```
+
+### 27.9 — Responsive Check Before Submitting
+
+Before finalizing any HTML output, mentally verify:
+
+- [ ] Hero image shows on mobile (background-image, min-height set)
+- [ ] Product grid collapses to 2 columns on mobile (not 3 or 4)
+- [ ] Buttons are at least 44px tall on mobile
+- [ ] No horizontal scroll on mobile (no fixed-width elements wider than viewport)
+- [ ] Cart and checkout form are readable on 375px width
+- [ ] Navigation logo and cart icon do not overlap on mobile
+
+---
+
+## Section 28: Microcopy and Brand Voice Guide
+
+Every word in the store either builds or erodes trust. This section governs what text to write.
+
+### 28.1 — CTA Copy Patterns
+
+| Context | Strong CTA | Weak CTA (avoid) |
+|---|---|---|
+| Product listing page | "Shop Collection", "View All Shoes" | "Click Here", "See More" |
+| Product detail page | "Add to Cart", "Buy Now — Free Shipping" | "Submit", "Confirm" |
+| Cart | "Checkout →", "Proceed to Checkout" | "Next", "Continue" |
+| Checkout | "Place Order ($XX.XX)", "Complete Purchase" | "Submit Order", "Done" |
+| Hero | "Shop Now →", "Explore the Collection" | "Get Started", "Learn More" |
+| Newsletter | "Get 10% Off", "Join the Club" | "Subscribe", "Submit" |
+| Empty cart | "Start Shopping →", "Browse Products" | "Go Back" |
+| Post-purchase | "Track Your Order", "Continue Shopping" | "OK", "Done" |
+
+### 28.2 — Product Name Patterns
+
+Product names must be clear and searchable:
+
+- **Good**: "Air Zoom Runner X — Black/White", "Double Smash Burger", "Hydrating Rose Serum 30ml"
+- **Bad**: "Product 1", "Item A", "Our Best Shoe"
+
+### 28.3 — Pricing Copy
+
+- Always show currency symbol before the number: `$129.00` not `129.00 USD`
+- Sale prices: show both prices — `<span class="price-sale">$99</span> <s class="price-orig">$129</s>`
+- Show savings as percentage on the badge: `-23%`
+- Free shipping threshold: "Free shipping on orders over $50" — show this near the ATC button
+
+### 28.4 — Trust Microcopy (near ATC button)
+
+Include these trust statements near or below the Add to Cart button on the PDP:
+
+```html
+<ul class="trust-bullets">
+  <li>✓ Free shipping over $50</li>
+  <li>✓ 30-day free returns</li>
+  <li>✓ Ships in 2–3 business days</li>
+  <li>✓ Secure, encrypted checkout</li>
+</ul>
+```
+
+### 28.5 — Order Confirmation Microcopy
+
+```
+"Your order is confirmed! 🎉
+Thank you, [Name]. We're getting your order ready.
+Order #ORD-[random 5-digit number]
+Estimated delivery: [today + 3–5 business days]
+We'll send a confirmation to your email shortly."
+```
+
+### 28.6 — Error and Empty State Copy
+
+| State | Copy |
+|---|---|
+| Empty cart | "Your cart is empty. Time to fix that! → Browse Products" |
+| No search results | "No results for '[query]'. Try a broader search or browse by category." |
+| Out of stock | "Out of stock — join the waitlist to be notified." |
+| Form error — required field | "This field is required." |
+| Form error — invalid email | "Please enter a valid email address." |
+| Checkout success | "Order confirmed! Your items are on their way." |
+
+---
+
+*Skill file: ecommerce-website.md — Performance: Core Web Vitals (LCP ≤ 2.5s, INP ≤ 200ms, CLS ≤ 0.1). Accessibility: WCAG 2.2 AA. Payment security: PCI DSS v4.0 SAQ A via hosted gateway fields. Product data: Google Merchant Center accuracy and schema.org Product markup. HTML SPA generation: Section 25. Image selection: Section 26. Visual polish: Section 27. Microcopy: Section 28. Updated May 2026.*

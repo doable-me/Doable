@@ -3,6 +3,7 @@ name: business-card-maker
 description: "Design print-ready and digital business cards with layouts, typography, color, print specs (bleed/DPI/CMYK), and export. Triggers on: business card, visiting card, name card, calling card, contact card, card design, double-sided card, QR business card, brand card, business card maker."
 ---
 
+
 # Business Card Maker Skill
 
 ## Section 1: Role
@@ -14,6 +15,8 @@ You are a professional business card designer and branding assistant with expert
 ## Section 2: Objective
 
 Create professional business card designs for individuals and brands, suitable for both print production and digital preview. Every design must be clean, premium, and easy to scan in 3 seconds. The output must meet real-world print standards and communicate brand identity instantly.
+
+**Your deliverable is always a complete, self-contained HTML file — not a description of a design.**
 
 ---
 
@@ -150,52 +153,30 @@ Any of the above adapted to portrait orientation (2 x 3.5 inches)
 
 ---
 
-## Section 6: Output Format
+## Section 6: Output Format — MANDATORY HTML DELIVERABLE
 
-For every design request, generate the following structured output:
+> **CRITICAL RULE: Your output is always a complete, working HTML file. Never output text descriptions, design briefs, or bullet-point layouts as your final answer. The HTML file IS the design.**
 
-### 1. Design Brief Summary
-Restate the user's key identity, style direction, and layout choice in 2–3 sentences.
+After gathering inputs, skip straight to producing the HTML. Do not write a "design brief summary" first — embed all design reasoning as HTML comments inside the file.
 
-### 2. Front Side Layout
-- Element list with position (top-left, center, bottom-right, etc.)
-- Size weight for each element (dominant, supporting, secondary)
-- Description of any visual or decorative elements
+### What the HTML file must contain:
+1. Complete front side of the card
+2. Complete back side of the card (displayed below front in the same file)
+3. All fonts loaded from Google Fonts
+4. All styles inline in a `<style>` block — no external CSS files
+5. Export buttons (PNG via html2canvas, PDF via jsPDF) if multiple variations are requested
+6. A variation switcher if multiple themes are requested
 
-### 3. Back Side Layout
-- Element list with position
-- Whether it is information-dense or visually minimal
-- Any QR code or social icon placement
-
-### 4. Typography Pairing
-- Font 1 (headline/name): Name or description, style reasoning
-- Font 2 (body/contact): Name or description, style reasoning
-- Font size guidance for each level of hierarchy
-
-### 5. Color Palette
-- Background color: hex + CMYK value
-- Primary text color: hex + CMYK value
-- Accent color: hex + CMYK value
-- Usage rules (what each color is used for)
-
-### 6. Spacing and Alignment Notes
-- Grid type (centered, left-aligned, asymmetric)
-- Whitespace strategy
-- Padding from edges
-
-### 7. Print-Ready Checklist
-- [ ] 300 DPI resolution confirmed
-- [ ] CMYK color mode
-- [ ] Bleed area included (3mm all sides)
-- [ ] Safe margin respected
-- [ ] Fonts embedded or outlined
-- [ ] Export formats: PDF, PNG, SVG
-
-### 8. Optional Variations
-If multiple variations are requested, provide:
-- Variation A: (e.g., dark version)
-- Variation B: (e.g., light version)
-- Variation C: (e.g., alternate layout)
+### Quality floor — every output must meet ALL of these:
+- [ ] Background has atmospheric depth: radial gradients, not flat color
+- [ ] Font pairing: display/headline font + monospace or clean sans for contacts
+- [ ] Logo: proper inline SVG geometric mark, NOT a gradient-filled text square
+- [ ] Name block: dominant typographic element, clear position (bottom-left preferred for horizontal cards)
+- [ ] Accent element: at least one intentional decorative element (gradient bar, line, shape)
+- [ ] Back side: subtle texture (dot pattern via `radial-gradient` background-image)
+- [ ] Contact items: icon + label + value stacked, generous row gaps (14–18px minimum)
+- [ ] No random decorative dots, pagination indicators, or filler elements
+- [ ] All text readable at print size
 
 ---
 
@@ -203,16 +184,19 @@ If multiple variations are requested, provide:
 
 Never do the following in any business card design:
 
+- Do not output a text description when an HTML file is required
+- Do not use a generic gradient square as a logo — build an SVG icon
+- Do not use flat backgrounds — always add atmospheric depth with radial gradients
+- Do not use a single font for everything — always pair two fonts
+- Do not center-align everything — use left-anchored or asymmetric layouts
+- Do not crowd the card — use generous whitespace
 - Do not leave brand identity unclear before starting
 - Do not use more than 2 fonts or 3 colors per design
 - Do not put every possible element on one card
-- Do not use unreadable tiny text
 - Do not ignore print margins, bleed, or safe zones
-- Do not make the layout look crowded or noisy
 - Do not use RGB-only colors without CMYK conversion
-- Do not use decorative or complex illustrations unless the style explicitly requires it
-- Do not sacrifice readability for aesthetics
 - Do not skip the front/back structure
+- Do not place random decorative elements with no design purpose
 
 ---
 
@@ -226,7 +210,7 @@ When relevant or requested, also support:
 - **Vertical orientation:** Portrait card as an alternative to landscape
 - **QR-enabled designs:** Integrate QR code that links to portfolio, LinkedIn, or contact page
 - **Social media icon set:** Use standard icon blocks for Instagram, LinkedIn, X, YouTube, etc.
-- **Monogram design:** Generate initial-based logo mark when no logo exists
+- **Monogram design:** Generate initial-based logo mark when no logo exists — as a proper SVG, not a colored text box
 - **Export guidance:** Advise on print vendors, file submission formats, and finishing options (matte, gloss, spot UV, embossing)
 
 ---
@@ -320,8 +304,6 @@ For every request with multiple variations, each variation must use a different 
 | Texture usage | Flat vs. textured stock or background element |
 | Branding emphasis | Company-first vs. person-first vs. contact-first |
 
-State which concept type was applied and which three dimensions differ for each variation.
-
 ---
 
 ## Section 13: Advanced Layout Engines
@@ -342,13 +324,11 @@ Beyond the 7 standard layouts in Section 5, support these advanced composition s
 - **Diagonal division** — a diagonal line or color split creates dynamic visual energy
 - **Layered typographic hierarchy** — size contrast alone creates visual composition, no decoration needed
 
-Select the layout engine that best matches the creative concept direction for each variation.
-
 ---
 
 ## Section 14: Premium Production Suggestions
 
-After completing the design, suggest finishing options appropriate to the brand's industry and budget level. Do not suggest premium finishes for budget contexts.
+After completing the design, suggest finishing options appropriate to the brand's industry and budget level.
 
 | Finish | Best for |
 |---|---|
@@ -365,8 +345,6 @@ After completing the design, suggest finishing options appropriate to the brand'
 | **Transparent PVC** | High-impact, minimal, luxury or tech |
 | **NFC smart cards** | Tech professionals, sales, networking-heavy roles |
 
-Only recommend finishes that genuinely fit the brand. State the reasoning for each suggestion.
-
 ---
 
 ## Section 15: Validation and Fail-Safe Rules
@@ -381,6 +359,7 @@ Before finalizing any design output, verify each of the following. If any check 
 - [ ] Style direction is confirmed or inferred from industry
 
 **Design validation:**
+- [ ] Output is a complete HTML file, not a text description
 - [ ] Every requested variation contains both Front and Back
 - [ ] Selected layout matches the industry context
 - [ ] No variation reuses another's layout + color + composition
@@ -388,105 +367,457 @@ Before finalizing any design output, verify each of the following. If any check 
 - [ ] Color palette uses no more than 3 colors per card
 - [ ] All text is readable at print size (minimum 7pt)
 - [ ] Bleed, safe margin, and DPI specs are met
+- [ ] Background has radial gradient atmospheric depth
+- [ ] Logo is a proper inline SVG, not a text box
+- [ ] Contact items use icon + label + value pattern
 
 **If information is missing or conflicting:**
 - Ask for clarification before guessing on critical details (name, title, company)
-- For non-critical details (website, social handles), state the assumption explicitly at the top of the output: e.g., *"No website provided — back side uses email and phone only"*
+- For non-critical details (website, social handles), state the assumption in an HTML comment
 - Never silently invent brand names, colors, or identity details
-- Never omit one side of a variation due to missing information — design around what is available
+- Never omit one side of a variation due to missing information
 
 ---
 
-## Section 16: Design Reasoning Requirement
+## Section 16: HTML Template — Required Starting Point
 
-For every variation generated, include a brief **Design Reasoning** block immediately after the layout description.
+**Every business card output must be built on this template structure. Customize colors, fonts, content, and SVG icons — but keep the structural skeleton intact. Do not invent a new layout from scratch.**
 
-The reasoning block must answer:
-1. **Why this layout** — how does the composition match the industry and role?
-2. **Why this typography** — what does the font pairing communicate about the brand?
-3. **Why these colors** — what emotional and professional signal does the palette send?
-4. **What visual feeling** — what impression does a viewer get in the first 3 seconds?
-5. **Why front and back are arranged this way** — how do the two sides work together as a system?
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Business Card — [NAME] · [COMPANY]</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- FONT RULE: Always load exactly two fonts. Default pairing below.
+       Replace with industry-appropriate pair but never use zero or one font. -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-Keep each answer to 1–2 sentences. This section is mandatory, not optional.
+    body {
+      /* Page background — neutral, never matches card */
+      background: #E8ECEF;
+      font-family: 'Plus Jakarta Sans', sans-serif; /* REPLACE with chosen headline font */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px 24px;
+      gap: 64px;
+      min-height: 100vh;
+    }
+
+    .page-label {
+      color: #64748B;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .card-set {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 40px;
+    }
+
+    .card-side-label {
+      color: #0E172A;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    /* CARD DIMENSIONS: 3.5×2in at 96dpi = 336×192px. Scale 2× for screen = 672×384px */
+    .card {
+      width: 672px;
+      height: 384px;
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
+    }
+
+    /* ── FRONT SIDE ────────────────────────────────────────────────── */
+    /* CUSTOMIZE: background color for your brand */
+    .card-front {
+      background: #0B0F19; /* REPLACE: brand primary dark color */
+      color: #FFFFFF;
+    }
+
+    /* ATMOSPHERE RULE: Front card MUST have at least one radial gradient overlay.
+       Never use a flat solid background. Two overlapping gradients = ideal depth. */
+    .card-front::before {
+      content: '';
+      position: absolute;
+      top: -200px; right: -100px;
+      width: 400px; height: 400px;
+      border-radius: 50%;
+      /* CUSTOMIZE: change the rgba color to match your accent */
+      background: radial-gradient(circle, rgba(56,189,248,0.15) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .card-front::after {
+      content: '';
+      position: absolute;
+      bottom: -150px; left: -150px;
+      width: 400px; height: 400px;
+      border-radius: 50%;
+      /* CUSTOMIZE: secondary radial — can be same or complementary hue */
+      background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* LOGO + COMPANY NAME — top-left anchor, always present */
+    .header-block {
+      position: absolute;
+      top: 40px; left: 40px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* LOGO RULE: Must be an inline SVG with geometric paths.
+       Do NOT use a colored rounded square with initials.
+       Do NOT use an img tag pointing to an external file.
+       Build a simple abstract mark: triangles, hexagons, stacked layers, etc. */
+    .company-logo { width: 28px; height: 28px; }
+
+    .company-name {
+      font-family: 'Plus Jakarta Sans', sans-serif; /* REPLACE with headline font */
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: #F8FAFC;
+    }
+    /* Accent color on part of company name */
+    .company-name span { color: #38BDF8; /* REPLACE with brand accent */ }
+
+    /* Optional tagline — use only if brand has one */
+    .company-tagline {
+      font-size: 10px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    /* ACCENT BAR — top-right vertical element. Always include one intentional accent.
+       Can be a bar, a dot, a line, a subtle shape — but MUST be present. */
+    .accent-bar {
+      position: absolute;
+      top: 40px; right: 40px;
+      width: 2px; height: 44px;
+      /* CUSTOMIZE: gradient using brand accent colors */
+      background: linear-gradient(to bottom, #38BDF8, #6366F1);
+      border-radius: 2px;
+    }
+
+    /* NAME BLOCK — dominant typographic anchor, always bottom-left */
+    .name-block {
+      position: absolute;
+      bottom: 46px; left: 40px;
+    }
+
+    .full-name {
+      font-family: 'Plus Jakarta Sans', sans-serif; /* REPLACE with headline font */
+      font-size: 32px;
+      font-weight: 700;
+      color: #FFFFFF;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 6px;
+    }
+
+    /* JOB TITLE: Use the secondary/monospace font. Muted, never bold. */
+    .job-title {
+      font-family: 'JetBrains Mono', monospace; /* REPLACE with secondary font */
+      font-size: 12px;
+      font-weight: 400;
+      color: #94A3B8; /* muted — not white */
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── BACK SIDE ─────────────────────────────────────────────────── */
+    /* Default: white/light back. For dark-on-dark variants, override background. */
+    .card-back {
+      background: #FFFFFF;
+      color: #0F172A;
+    }
+
+    /* TEXTURE RULE: Back side MUST have a subtle dot or grid pattern.
+       Never use a completely flat white/solid back. */
+    .card-back-pattern {
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
+      background-size: 20px 20px;
+      opacity: 0.4;
+      pointer-events: none;
+    }
+
+    /* Faint watermark logo — large, very low opacity, left-center */
+    .logo-watermark {
+      position: absolute;
+      top: 50%; left: 56px;
+      transform: translateY(-50%);
+      width: 80px; height: 80px;
+      opacity: 0.05; /* Must stay ≤ 0.07 — decorative only */
+    }
+
+    /* CONTACT BLOCK — centered vertically, offset right of watermark */
+    .contact-block {
+      position: absolute;
+      top: 50%; left: 45%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 16px; /* MINIMUM 14px gap between contact rows */
+      z-index: 2;
+    }
+
+    /* Each contact row: icon square + label/value stack */
+    .contact-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    /* ICON RULE: Square pill with light background, accent-colored icon inside.
+       Size: 32–36px. Background: very light (#F1F5F9 or equivalent).
+       Do NOT use full-color filled squares or gradient backgrounds for icons. */
+    .contact-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      background: #F1F5F9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6366F1; /* REPLACE with brand accent */
+      flex-shrink: 0;
+    }
+    .contact-icon svg { width: 16px; height: 16px; fill: currentColor; }
+
+    /* Label above value — small caps, muted */
+    .contact-label {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 9px;
+      font-weight: 700;
+      color: #94A3B8;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 2px;
+    }
+
+    /* Value — monospace font, readable, not tiny */
+    .contact-text {
+      font-family: 'JetBrains Mono', monospace; /* REPLACE with secondary font */
+      font-size: 11px;
+      font-weight: 500;
+      color: #334155;
+      letter-spacing: 0.02em;
+    }
+
+    .contact-details { display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+
+  <p class="page-label">Print Preview</p>
+
+  <!-- FRONT SIDE -->
+  <div class="card-set">
+    <div class="card-side-label">Front</div>
+    <div class="card card-front">
+
+      <!-- LOGO: Replace paths below with a geometric SVG mark for the brand.
+           Use 2–3 simple paths. Do NOT replace with a <rect> filled with a gradient. -->
+      <div class="header-block">
+        <svg class="company-logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- CUSTOMIZE: Replace with brand-appropriate geometric icon paths -->
+          <path d="M16 2L2 9L16 16L30 9L16 2Z" fill="#38BDF8"/>
+          <path d="M2 23L16 30L30 23V16L16 23L2 16V23Z" fill="#6366F1"/>
+          <path d="M2 9V16L16 23L30 16V9L16 16L2 9Z" fill="#818CF8" opacity="0.5"/>
+        </svg>
+        <div>
+          <div class="company-name">[Company]<span>[Name part]</span></div>
+          <!-- Uncomment if brand has a tagline: -->
+          <!-- <div class="company-tagline">Tagline here</div> -->
+        </div>
+      </div>
+
+      <!-- Intentional accent element — keep this, customize gradient colors -->
+      <div class="accent-bar"></div>
+
+      <!-- Name block — dominant, bottom-left -->
+      <div class="name-block">
+        <div class="full-name">[Full Name]</div>
+        <div class="job-title">[Job Title]</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- BACK SIDE -->
+  <div class="card-set">
+    <div class="card-side-label">Back</div>
+    <div class="card card-back">
+
+      <!-- Required dot texture — do not remove -->
+      <div class="card-back-pattern"></div>
+
+      <!-- Faint watermark logo — same SVG paths, very low opacity -->
+      <svg class="logo-watermark" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16 2L2 9L16 16L30 9L16 2Z" fill="#0F172A"/>
+        <path d="M2 23L16 30L30 23V16L16 23L2 16V23Z" fill="#0F172A"/>
+        <path d="M2 9V16L16 23L30 16V9L16 16L2 9Z" fill="#0F172A"/>
+      </svg>
+
+      <!-- Contact block: icon + label + value for each contact point -->
+      <div class="contact-block">
+
+        <!-- EMAIL -->
+        <div class="contact-item">
+          <div class="contact-icon">
+            <svg viewBox="0 0 24 24"><path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 18H4V8L12 13L20 8V18ZM12 11L4 6H20L12 11Z"/></svg>
+          </div>
+          <div class="contact-details">
+            <span class="contact-label">Email</span>
+            <span class="contact-text">[email@domain.com]</span>
+          </div>
+        </div>
+
+        <!-- PHONE -->
+        <div class="contact-item">
+          <div class="contact-icon">
+            <svg viewBox="0 0 24 24"><path d="M20.01 15.38C18.78 15.38 17.59 15.18 16.5 14.82C16.15 14.7 15.77 14.79 15.5 15.07L13.21 17.37C10.38 15.93 8.06 13.62 6.62 10.79L8.9 8.5C9.2 8.22 9.28 7.82 9.17 7.5C8.8 6.4 8.6 5.22 8.6 3.99C8.6 3.45 8.16 3 7.62 3H4.15C3.62 3 3 3.24 3 3.99C3 13.28 10.73 21 20.01 21C20.73 21 21 20.37 21 19.82V16.37C21 15.83 20.55 15.38 20.01 15.38Z"/></svg>
+          </div>
+          <div class="contact-details">
+            <span class="contact-label">Phone</span>
+            <span class="contact-text">[+X (XXX) XXX-XXXX]</span>
+          </div>
+        </div>
+
+        <!-- WEBSITE -->
+        <div class="contact-item">
+          <div class="contact-icon">
+            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12S6.47 22 11.99 22C17.52 22 22 17.52 22 12S17.52 2 11.99 2ZM18.92 8H15.97C15.65 6.47 15.11 5.02 14.39 3.73C16.34 4.5 17.9 5.99 18.92 8ZM12 4.04C12.83 5.26 13.48 6.58 13.91 8H10.09C10.52 6.58 11.17 5.26 12 4.04ZM4.26 14C4.09 13.36 4 12.69 4 12S4.09 10.64 4.26 10H7.64C7.56 10.66 7.5 11.32 7.5 12S7.56 13.34 7.64 14H4.26ZM5.08 16H8.03C8.35 17.53 8.89 18.98 9.61 20.27C7.66 19.5 6.1 18.01 5.08 16ZM8.03 8H5.08C6.1 5.99 7.66 4.5 9.61 3.73C8.89 5.02 8.35 6.47 8.03 8ZM12 19.96C11.17 18.74 10.52 17.42 10.09 16H13.91C13.48 17.42 12.83 18.74 12 19.96ZM14.34 14H9.66C9.57 13.34 9.5 12.68 9.5 12S9.57 10.66 9.66 10H14.34C14.43 10.66 14.5 11.32 14.5 12S14.43 13.34 14.34 14ZM14.39 20.27C15.11 18.98 15.65 17.53 15.97 16H18.92C17.9 18.01 16.34 19.5 14.39 20.27ZM16.36 14C16.44 13.34 16.5 12.68 16.5 12S16.44 10.66 16.36 10H19.74C19.91 10.64 20 11.31 20 12S19.91 13.36 19.74 14H16.36Z"/></svg>
+          </div>
+          <div class="contact-details">
+            <span class="contact-label">Website</span>
+            <span class="contact-text">[domain.com]</span>
+          </div>
+        </div>
+
+        <!-- Add more contact items following the same pattern if needed -->
+        <!-- LINKEDIN example (uncomment if needed):
+        <div class="contact-item">
+          <div class="contact-icon">
+            <svg viewBox="0 0 24 24"><path d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M18.5 18.5V13.2A3.26 3.26 0 0 0 15.24 9.94C14.39 9.94 13.4 10.46 12.92 11.24V10.13H10.13V18.5H12.92V13.57C12.92 12.8 13.54 12.17 14.31 12.17A1.4 1.4 0 0 1 15.71 13.57V18.5H18.5M6.88 8.56A1.68 1.68 0 0 0 8.56 6.88C8.56 5.95 7.81 5.19 6.88 5.19A1.69 1.69 0 0 0 5.19 6.88C5.19 7.81 5.95 8.56 6.88 8.56M8.27 18.5V10.13H5.5V18.5H8.27Z"/></svg>
+          </div>
+          <div class="contact-details">
+            <span class="contact-label">LinkedIn</span>
+            <span class="contact-text">linkedin.com/in/[handle]</span>
+          </div>
+        </div>
+        -->
+
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
+```
 
 ---
 
-## Section 17: Complete Variation Output Contract
+## Section 17: Common Anti-Patterns to Reject
 
-Every variation must include all of the following. No section may be omitted.
+These are the exact failure modes seen in low-quality outputs. Detect and reject any of these in your own output before delivering.
 
+### Anti-pattern 1: The Gradient Monogram Square
+```css
+/* BAD — do not do this */
+.logo { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #38BDF8, #6366F1); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: white; }
 ```
-### Variation [A / B / C] — [Concept Name]
+**Why it fails:** Looks like a default avatar. Has no brand meaning. Always lazy.  
+**Fix:** Build an SVG with 2–3 geometric paths.
 
-**Creative concept:** [concept type from Section 12]
-**Dimensions that differ from other variations:** [list 3+]
-
-#### Front Side
-- Layout engine used:
-- Element list with positions and weight:
-- Visual / decorative elements:
-
-#### Back Side
-- Layout engine used:
-- Element list with positions and weight:
-- Visual / decorative elements:
-
-#### Typography Pairing
-- Font 1 (headline): name, weight, size, reasoning
-- Font 2 (body/contact): name, weight, size, reasoning
-
-#### Color Palette
-- Background: hex + CMYK
-- Primary text: hex + CMYK
-- Accent: hex + CMYK
-- Usage rules:
-
-#### Spacing and Alignment
-- Grid type:
-- Whitespace strategy:
-- Padding from edges:
-
-#### Production Notes
-- Recommended finish:
-- Stock suggestion:
-- Export: PDF · PNG · SVG
-
-#### Design Reasoning
-1. Layout:
-2. Typography:
-3. Color:
-4. Visual feeling:
-5. Front/back system:
+### Anti-pattern 2: Flat Background
+```css
+/* BAD */
+.card-front { background: #0B0F19; }
+/* No ::before or ::after with radial-gradient */
 ```
+**Why it fails:** Card looks like a colored rectangle. No depth, no premium feel.  
+**Fix:** Always add `::before` and `::after` pseudo-elements with `radial-gradient`.
 
-This contract applies to every variation without exception. A variation missing any block is incomplete and must be corrected before delivery.
+### Anti-pattern 3: Single Font
+```css
+/* BAD */
+font-family: 'Inter', sans-serif; /* used everywhere */
+```
+**Why it fails:** No typographic distinction between name and contact info. Feels generic.  
+**Fix:** One display font for name/headline, one monospace or secondary sans for contact details.
+
+### Anti-pattern 4: Random Decorative Dots
+```html
+<!-- BAD — pagination-style dots with no purpose -->
+<div class="dots">
+  <span class="dot active"></span>
+  <span class="dot"></span>
+  <span class="dot"></span>
+</div>
+```
+**Why it fails:** Looks like a UI component, not a design element. Confuses the viewer.  
+**Fix:** Remove entirely. If you need a decorative element, use the accent bar pattern.
+
+### Anti-pattern 5: Centered Everything
+```css
+/* BAD */
+.card-front { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+```
+**Why it fails:** Centered layout has no tension or hierarchy. Looks like a name tag.  
+**Fix:** Use absolute positioning. Anchor company top-left, name bottom-left, accent top-right.
+
+### Anti-pattern 6: Contact Info Without Structure
+```html
+<!-- BAD -->
+<p>alex@novatech.io</p>
+<p>+1 555 123 4567</p>
+<p>novatech.io</p>
+```
+**Why it fails:** Raw text with no visual hierarchy or icon pairing. Hard to scan.  
+**Fix:** Always use icon + label + value pattern per contact item.
+
+### Anti-pattern 7: Missing Back Texture
+```css
+/* BAD */
+.card-back { background: #FFFFFF; }
+/* No background-image pattern */
+```
+**Why it fails:** Solid white back looks unfinished.  
+**Fix:** Always add the dot pattern via `background-image: radial-gradient(#CBD5E1 1px, transparent 1px)`.
 
 ---
 
 ## Section 18: Recommended Tech Stack
 
-When implementing business card designs as interactive digital previews or exportable web components, use the following stack. This guides the AI toward reliable, performant implementations.
+When implementing business card designs as interactive digital previews or exportable web components, use the following stack.
 
 ### Preferred Frontend
 - **HTML5** — semantic structure, print-media queries
 - **CSS3** — transforms, grid, custom properties, `@media print`
 - **JavaScript (ES6+)** — DOM manipulation, export logic, event handling
-
-### Optional Frameworks
-- **React** — for interactive card configurators with live preview
-- **Next.js** — for full card-builder apps with SSR and export API
-- **Vue** — for lightweight interactive card preview tools
-
-### Animation Libraries
-- **GSAP** — smooth card flip reveal animations, hover effects
-- **Framer Motion** — React-based card entry and transition animations
-- **CSS transitions** — preferred for simple hover and reveal effects (no JS overhead)
-
-### Styling
-- **TailwindCSS** — rapid layout and spacing implementation
-- **SCSS** — when custom design systems or card theme variables are needed
-- **CSS Modules** — for component-scoped card styles in React/Vue
 
 ### Export and Print
 - **html2canvas** — capture card DOM as PNG
@@ -497,14 +828,11 @@ When implementing business card designs as interactive digital previews or expor
 ### Performance
 - Hardware acceleration: `will-change: transform` on animated card elements
 - `requestAnimationFrame` for any flip or hover animation loops
-- Lazy loading card assets if multiple designs are shown
 - Avoid layout-heavy properties (`width`, `height`) in animations — use `transform` only
 
 ---
 
 ## Section 19: Reusable Code Snippets
-
-Store and reuse these patterns across all business card implementations. Do not rewrite from scratch when a verified snippet exists.
 
 ### Card Flip Reveal (CSS + JS)
 ```css
@@ -512,27 +840,17 @@ Store and reuse these patterns across all business card implementations. Do not 
   transform-style: preserve-3d;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.card-wrapper:hover .card-inner {
-  transform: rotateY(180deg);
-}
-.card-front, .card-back {
-  backface-visibility: hidden;
-  position: absolute; inset: 0;
-}
-.card-back {
-  transform: rotateY(180deg);
-}
+.card-wrapper:hover .card-inner { transform: rotateY(180deg); }
+.card-front, .card-back { backface-visibility: hidden; position: absolute; inset: 0; }
+.card-back { transform: rotateY(180deg); }
 ```
 
 ### Print Export (html2canvas + jsPDF)
 ```javascript
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-
 async function exportCardAsPDF(cardElement) {
-  const canvas = await html2canvas(cardElement, { scale: 4 }); // 4x = ~300dpi
+  const canvas = await html2canvas(cardElement, { scale: 4 });
   const imgData = canvas.toDataURL('image/png');
-  const pdf = new jsPDF({ unit: 'in', format: [3.625, 2.25] }); // with bleed
+  const pdf = new jsPDF({ unit: 'in', format: [3.625, 2.25] });
   pdf.addImage(imgData, 'PNG', 0, 0, 3.625, 2.25);
   pdf.save('business-card.pdf');
 }
@@ -557,8 +875,6 @@ function applyTheme(theme) {
   root.style.setProperty('--card-text', theme.text);
   root.style.setProperty('--card-accent', theme.accent);
 }
-
-// Usage
 applyTheme({ bg: '#0A0C10', text: '#FFFFFF', accent: '#00D4FF' });
 ```
 
@@ -566,137 +882,30 @@ applyTheme({ bg: '#0A0C10', text: '#FFFFFF', accent: '#00D4FF' });
 ```css
 @media print {
   body { margin: 0; background: white; }
-  .card {
-    width: 3.5in;
-    height: 2in;
-    page-break-inside: avoid;
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
-  }
+  .card { width: 3.5in; height: 2in; page-break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 ```
 
 ### Card Hover Depth Effect
 ```css
-.card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-.card:hover {
-  transform: translateY(-4px) scale(1.01);
-  box-shadow: 0 32px 64px rgba(0,0,0,0.5);
-}
+.card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+.card:hover { transform: translateY(-4px) scale(1.01); box-shadow: 0 32px 64px rgba(0,0,0,0.5); }
 ```
 
 ---
 
-## Section 20: Component Architecture
-
-When building a business card tool as an interactive web application, use this component structure. This ensures the AI generates consistent, maintainable code.
-
-### Main Components
-
-| Component | Responsibility |
-|---|---|
-| `CardContainer` | Wraps front and back, handles 3D flip perspective |
-| `CardFront` | Renders the front side with name, title, logo, accent |
-| `CardBack` | Renders the back side with contact info, QR, monogram |
-| `CardControls` | Flip trigger, theme switcher, export buttons |
-| `ThemeSelector` | UI for choosing Variation A / B / C or custom palette |
-| `ExportPanel` | PDF, PNG, SVG export triggers with format options |
-| `PrintSpecBadge` | Displays bleed, DPI, size info as a non-interactive overlay |
-| `QRCodeBlock` | Generates and places QR code if URL is provided |
-| `MonogramMark` | Renders initials-based logo when no logo file is available |
-
-### State Management
-
-```javascript
-const cardState = {
-  name: '',
-  title: '',
-  company: '',
-  email: '',
-  phone: '',
-  website: '',
-  socials: [],
-  qrUrl: null,
-  theme: 'A',           // 'A' | 'B' | 'C' | 'custom'
-  orientation: 'horizontal', // 'horizontal' | 'vertical'
-  isFlipped: false,
-  activeVariation: 'A',
-  exportFormat: 'PDF',  // 'PDF' | 'PNG' | 'SVG'
-};
-```
-
-### Event Contracts
-
-```javascript
-// Flip the card
-function onFlipToggle() {
-  cardState.isFlipped = !cardState.isFlipped;
-  applyFlipTransform(cardState.isFlipped);
-}
-
-// Switch variation
-function onVariationChange(variation) {
-  cardState.activeVariation = variation;
-  applyTheme(themes[variation]);
-}
-
-// Export
-function onExport(format) {
-  if (format === 'PDF') exportCardAsPDF(document.querySelector('.card-container'));
-  if (format === 'PNG') exportCardAsPNG(document.querySelector('.card-container'));
-}
-```
-
-### File Structure (when building as an app)
-```
-/src
-  /components
-    CardContainer.jsx
-    CardFront.jsx
-    CardBack.jsx
-    CardControls.jsx
-    ThemeSelector.jsx
-    ExportPanel.jsx
-    QRCodeBlock.jsx
-    MonogramMark.jsx
-  /themes
-    theme-a.js   ← Clean Tech
-    theme-b.js   ← Geometric Brand
-    theme-c.js   ← Dark Luxury
-  /utils
-    exportPDF.js
-    exportPNG.js
-    generateQR.js
-  /styles
-    card.css
-    print.css
-```
-
----
-
-## Section 21: 2026 Animation & Interaction Best Practices
-
-*Sources: web.dev (High-Performance CSS Animations), MDN (CSS Individual Transform Properties), Chrome (backface-visibility, transform-style).*
-
----
-
-### 21.1 3D Tilt on Hover (Mouse Parallax Effect)
-
-Track mouse position relative to card center and apply `rotateX` + `rotateY` for a real 3D feel. Keep angles subtle (max ±15°) to remain professional.
+## Section 20: 3D Tilt on Hover (Mouse Parallax Effect)
 
 ```javascript
 function apply3DTilt(card, e) {
   const rect = card.getBoundingClientRect();
   const cx = rect.left + rect.width / 2;
   const cy = rect.top  + rect.height / 2;
-  const dx = (e.clientX - cx) / (rect.width / 2);  // -1 → 1
-  const dy = (e.clientY - cy) / (rect.height / 2); // -1 → 1
-  const rotX = -dy * 12; // max ±12° on X axis
-  const rotY =  dx * 12; // max ±12° on Y axis
-  card.style.transform =
-    `perspective(800px) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(1.02)`;
+  const dx = (e.clientX - cx) / (rect.width / 2);
+  const dy = (e.clientY - cy) / (rect.height / 2);
+  const rotX = -dy * 12;
+  const rotY =  dx * 12;
+  card.style.transform = `perspective(800px) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(1.02)`;
 }
 
 card.addEventListener('mousemove', (e) => apply3DTilt(card, e));
@@ -704,157 +913,18 @@ card.addEventListener('mouseleave', () => {
   card.style.transition = 'transform 0.4s ease';
   card.style.transform = 'perspective(800px) rotateX(0) rotateY(0) scale(1)';
 });
-card.addEventListener('mouseenter', () => {
-  card.style.transition = 'none'; // instant during drag
-});
-```
-
-### 21.2 Holographic Shimmer Effect (CSS `conic-gradient` + mouse angle)
-
-```css
-/* Holographic foil overlay */
-.card-holo {
-  position: absolute; inset: 0; border-radius: inherit;
-  background: conic-gradient(
-    from var(--holo-angle, 0deg),
-    transparent 0%,
-    rgba(255,80,80,0.06)   10%,
-    rgba(255,200,0,0.06)   20%,
-    rgba(80,255,80,0.06)   30%,
-    rgba(0,200,255,0.06)   40%,
-    rgba(80,80,255,0.06)   50%,
-    rgba(255,0,200,0.06)   60%,
-    transparent 70%
-  );
-  mix-blend-mode: screen;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-.card-wrapper:hover .card-holo { opacity: 1; }
-```
-
-```javascript
-// Update the holo angle based on mouse position
-card.addEventListener('mousemove', (e) => {
-  const rect = card.getBoundingClientRect();
-  const angle = Math.atan2(
-    e.clientY - rect.top  - rect.height / 2,
-    e.clientX - rect.left - rect.width  / 2
-  ) * (180 / Math.PI);
-  card.style.setProperty('--holo-angle', `${angle}deg`);
-});
-```
-
-### 21.3 `@property` for Animatable Custom Properties (Chrome 85+)
-
-Use `@property` to animate CSS custom properties (which normally can't be transitioned):
-
-```css
-@property --holo-angle {
-  syntax: '<angle>';
-  inherits: false;
-  initial-value: 0deg;
-}
-@property --shimmer-pos {
-  syntax: '<percentage>';
-  inherits: false;
-  initial-value: -20%;
-}
-
-/* Now you can animate these */
-.card-holo {
-  transition: --holo-angle 0.2s ease;
-}
-```
-
-### 21.4 Individual Transform Properties for Card Hover
-
-Avoid overwriting the full transform chain with a single `transform` property. Use individal properties to layer effects:
-
-```css
-.card {
-  transition:
-    translate 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    scale 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    box-shadow 300ms ease;
-}
-.card:hover {
-  translate: 0 -6px;
-  scale: 1.02;
-  box-shadow: 0 40px 80px rgba(0,0,0,0.5);
-}
-```
-
-### 21.5 Preserve-3d Trap Avoidance
-
-From MDN: `overflow: hidden`, `opacity < 1`, `filter`, `clip-path` on a `transform-style: preserve-3d` element will flatten the 3D context. Always apply these properties to **face elements**, not the 3D wrapper:
-
-```css
-/* ✅ Correct */
-.card-inner { transform-style: preserve-3d; }
-.card-front, .card-back { overflow: hidden; } /* on faces, not wrapper */
-
-/* ❌ Wrong — kills 3D flip */
-.card-inner { transform-style: preserve-3d; overflow: hidden; }
-```
-
-### 21.6 Shimmer Loading Effect (Skeleton)
-
-When waiting for card data to load, show a shimmer:
-
-```css
-@keyframes shimmer {
-  from { background-position: -200% 0; }
-  to   { background-position:  200% 0; }
-}
-.card-skeleton {
-  background: linear-gradient(90deg, #1A1A1A 25%, #2A2A2A 50%, #1A1A1A 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease infinite;
-}
-```
-
-### 21.7 CSS `color-mix()` for Automatic Shade Generation
-
-```css
-:root {
-  --accent: #00D4FF;
-  --accent-dim:  color-mix(in srgb, var(--accent) 40%, black);
-  --accent-glow: color-mix(in srgb, var(--accent) 60%, transparent);
-}
-```
-
-### 21.8 WAAPI Card Flip (Promise-based)
-
-```javascript
-async function flipCardWAAPI(cardInner, toBack) {
-  const anim = cardInner.animate([
-    { transform: `perspective(800px) rotateY(${toBack ? 0 : 180}deg)` },
-    { transform: `perspective(800px) rotateY(${toBack ? 180 : 0}deg)` }
-  ], {
-    duration: 600,
-    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-    fill: 'forwards'
-  });
-  await anim.finished;
-}
+card.addEventListener('mouseenter', () => { card.style.transition = 'none'; });
 ```
 
 ---
 
-## Section 22: Updated Performance Checklist (2026)
-
-Based on research from web.dev and Chrome DevTools guidance, verify these points for every card implementation:
+## Section 21: Performance Checklist
 
 | Check | Method |
 |---|---|
-| Only `transform` + `opacity` animated | DevTools Performance panel — Rendering summary should show 0ms layout |
+| Only `transform` + `opacity` animated | DevTools Performance panel |
 | No `overflow:hidden` on preserve-3d wrapper | Code review |
-| `filter` applied to faces, not 3D container | Code review |
-| `will-change: transform` applied just before interaction | JavaScript event-driven, removed after |
-| GPU layer forced with `translateZ(0)` on container | CSS rule check |
-| 60fps verified on mid-range device | DevTools FPS meter |
+| `will-change: transform` applied just before interaction | JavaScript event-driven |
+| 60fps verified | DevTools FPS meter |
 | `prefers-reduced-motion` respected | `window.matchMedia` check |
-| No `setInterval` used — only `requestAnimationFrame` | Code review |
 | Individual transform properties used where possible | Code review |
