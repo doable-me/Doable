@@ -599,7 +599,7 @@ projectItemRoutes.get("/:id/connector-settings", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("userId");
 
-  const access = await requireProjectAccess(id, userId);
+  const access = await requireProjectAccess(userId, id);
   if (!access) return c.json({ error: "Not found" }, 404);
 
   const [row] = await sql<{ connector_settings: Record<string, unknown> }[]>`
@@ -623,7 +623,7 @@ projectItemRoutes.put("/:id/connector-settings", async (c) => {
   const id = c.req.param("id");
   const userId = c.get("userId");
 
-  const access = await requireProjectAccess(id, userId);
+  const access = await requireProjectAccess(userId, id);
   if (!access) return c.json({ error: "Not found" }, 404);
   if (!isRoleAtLeast(access.role, "member")) {
     return c.json({ error: "Insufficient permissions" }, 403);

@@ -17,7 +17,7 @@ import { sql } from "../db/index.js";
 import type { AuthEnv } from "../middleware/auth.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { requireProjectAccess } from "./projects/helpers.js";
-import { getInstanceMetrics } from "../runtime/metrics.js";
+import { getInstanceMetrics, type InstanceMetrics } from "../runtime/metrics.js";
 
 export const runtimeRoutes = new Hono<AuthEnv>({ strict: false });
 
@@ -242,6 +242,7 @@ workspaceRuntimeRoutes.get("/:wid/runtime/instances", async (c) => {
     state: string;
     fail_count: number;
     last_active_at: Date | null;
+    has_runtime: boolean;
   }[]>`
     SELECT
       p.id AS project_id,
@@ -253,7 +254,11 @@ workspaceRuntimeRoutes.get("/:wid/runtime/instances", async (c) => {
       -- old INNER JOIN on project_runtime hid every deployed-to-live project.
       COALESCE(pr.state, 'running') AS state,
       COALESCE(pr.fail_count, 0) AS fail_count,
-      COALESCE(pr.last_active_at, d.completed_at, d.created_at) AS last_active_at
+      COALESCE(pr.last_active_at, d.completed_at, d.created_at) AS last_active_at,
+      -- Process-backed instances have a project_runtime row + systemd unit.
+      -- Static (Caddy-served) deploys appear only via the deployments join and
+      -- have NO systemd unit, so systemd/cgroup metrics don't apply to them.
+      (pr.project_id IS NOT NULL) AS has_runtime
     FROM projects p
     LEFT JOIN project_runtime pr ON pr.project_id = p.id
     LEFT JOIN LATERAL (
@@ -270,7 +275,16 @@ workspaceRuntimeRoutes.get("/:wid/runtime/instances", async (c) => {
 
   const enriched = await Promise.all(
     rows.map(async (r) => {
-      const metrics = await getInstanceMetrics(r.project_slug);
+      // Only process-backed instances have a systemd unit worth probing.
+      // Static deploys (and any host where systemd/cgroup is unreadable) get
+      // source:"none" so their DB-recorded state is used as-is.
+      const metrics: InstanceMetrics = r.has_runtime
+        ? await getInstanceMetrics(r.project_slug)
+        : { state: "unknown", uptimeMs: null, memoryBytes: null, cpuPct: null, source: "none" };
+      // Live systemd state wins ONLY when we actually have it (source !== "none").
+      // Otherwise fall back to the DB-recorded state instead of surfacing
+      // "unknown"/"stopped" for instances that are genuinely live.
+      const state = metrics.source === "none" ? r.state : metrics.state;
       return {
         projectId: r.project_id,
         projectName: r.project_name,
@@ -279,6 +293,7 @@ workspaceRuntimeRoutes.get("/:wid/runtime/instances", async (c) => {
         failCount: r.fail_count,
         lastActiveAt: r.last_active_at,
         ...metrics,
+        state,
       };
     })
   );
