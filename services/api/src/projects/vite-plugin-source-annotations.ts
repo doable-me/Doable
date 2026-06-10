@@ -362,31 +362,42 @@ export function generatePlatformViteConfig(
 // it is regenerated on every dev-server start.
 import userConfig from "./vite.config.ts";
 
-function unwrap(config) {
-  return typeof config === "function" ? config({ command: "serve", mode: "development" }) : config;
+// Resolve the user's config regardless of its shape: a plain object, a sync
+// function, an ASYNC function, or a Promise. Modern configs (e.g. TanStack
+// Start via @lovable.dev/vite-tanstack-config) default-export
+// \`(env) => Promise<UserConfig>\`. The old sync \`unwrap\` called the function but
+// never awaited the Promise, so \`{ ...promise }\` silently dropped EVERY plugin
+// (tanstackStart, react, tailwind) and the preview rendered blank. Awaiting
+// here keeps all plugins intact for every config shape.
+async function resolveUserConfig(env) {
+  let cfg = userConfig;
+  if (typeof cfg === "function") cfg = cfg(env);
+  cfg = await cfg;
+  return cfg ?? {};
 }
 
-const base = unwrap(userConfig);
-const baseServer = base?.server ?? {};
-
-export default {
-  ...base,
-  server: {
-    ...baseServer,
-    // Local dev — let Vite use its default HMR transport (same-port WS).
-    // The platform reverse-proxy in production overrides this further down.
-    hmr: baseServer.hmr ?? true,
-  },
-  optimizeDeps: {
-    ...(base?.optimizeDeps ?? {}),
-    // @doable/* are linked zero-dependency ESM source packages. Excluding them
-    // from the dep prebundle makes Vite resolve+transform them live on every
-    // request, so a freshly (re)linked copy is always picked up. Pre-bundling
-    // them left a stale ".vite/deps" entry that survived relinks — the import
-    // would fail with 'Failed to resolve import "@doable/data"' until the cache
-    // was wiped by hand. Excluding is the reliable, cache-proof resolution.
-    exclude: [...(base?.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
-  },
+export default async (env) => {
+  const base = await resolveUserConfig(env);
+  const baseServer = base.server ?? {};
+  return {
+    ...base,
+    server: {
+      ...baseServer,
+      // Local dev — let Vite use its default HMR transport (same-port WS).
+      // The platform reverse-proxy in production overrides this further down.
+      hmr: baseServer.hmr ?? true,
+    },
+    optimizeDeps: {
+      ...(base.optimizeDeps ?? {}),
+      // @doable/* are linked zero-dependency ESM source packages. Excluding them
+      // from the dep prebundle makes Vite resolve+transform them live on every
+      // request, so a freshly (re)linked copy is always picked up. Pre-bundling
+      // them left a stale ".vite/deps" entry that survived relinks — the import
+      // would fail with 'Failed to resolve import "@doable/data"' until the cache
+      // was wiped by hand. Excluding is the reliable, cache-proof resolution.
+      exclude: [...(base.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
+    },
+  };
 };
 `;
   }
@@ -397,42 +408,53 @@ export default {
 // it is regenerated on every dev-server start (BUG-R27-011 / R27-012).
 import userConfig from "./vite.config.ts";
 
-function unwrap(config) {
-  return typeof config === "function" ? config({ command: "serve", mode: "development" }) : config;
+// Resolve the user's config regardless of its shape: a plain object, a sync
+// function, an ASYNC function, or a Promise. Modern configs (e.g. TanStack
+// Start via @lovable.dev/vite-tanstack-config) default-export
+// \`(env) => Promise<UserConfig>\`. The old sync \`unwrap\` called the function but
+// never awaited the Promise, so \`{ ...promise }\` silently dropped EVERY plugin
+// (tanstackStart, react, tailwind) and the preview rendered blank. Awaiting
+// here keeps all plugins intact for every config shape.
+async function resolveUserConfig(env) {
+  let cfg = userConfig;
+  if (typeof cfg === "function") cfg = cfg(env);
+  cfg = await cfg;
+  return cfg ?? {};
 }
 
-const base = unwrap(userConfig);
-const baseServer = base?.server ?? {};
-
-export default {
-  ...base,
-  server: {
-    ...baseServer,
-    // Platform-owned HMR transport. The browser at https://${rawDomain}/preview/${projectId}/
-    // connects to wss://${rawDomain}:443/preview/${projectId}/__hmr, which the
-    // API server's WebSocket relay routes to this Vite process. Overrides any
-    // hmr config the user (or AI) sets — they CANNOT break HMR transport.
-    hmr: {
-      clientPort: 443,
-      protocol: "wss",
-      host: ${safeHost},
-      path: ${safePath},
+export default async (env) => {
+  const base = await resolveUserConfig(env);
+  const baseServer = base.server ?? {};
+  return {
+    ...base,
+    server: {
+      ...baseServer,
+      // Platform-owned HMR transport. The browser at https://${rawDomain}/preview/${projectId}/
+      // connects to wss://${rawDomain}:443/preview/${projectId}/__hmr, which the
+      // API server's WebSocket relay routes to this Vite process. Overrides any
+      // hmr config the user (or AI) sets — they CANNOT break HMR transport.
+      hmr: {
+        clientPort: 443,
+        protocol: "wss",
+        host: ${safeHost},
+        path: ${safePath},
+      },
+      // Vite refuses upgrades whose Host header is unknown when allowedHosts is
+      // a strict array. Force-trust the platform domain so the relay handshake
+      // succeeds even if the user narrowed allowedHosts.
+      allowedHosts: true,
     },
-    // Vite refuses upgrades whose Host header is unknown when allowedHosts is
-    // a strict array. Force-trust the platform domain so the relay handshake
-    // succeeds even if the user narrowed allowedHosts.
-    allowedHosts: true,
-  },
-  optimizeDeps: {
-    ...(base?.optimizeDeps ?? {}),
-    // @doable/* are linked zero-dependency ESM source packages. Excluding them
-    // from the dep prebundle makes Vite resolve+transform them live on every
-    // request, so a freshly (re)linked copy is always picked up. Pre-bundling
-    // them left a stale ".vite/deps" entry that survived relinks — the import
-    // would fail with 'Failed to resolve import "@doable/data"' until the cache
-    // was wiped by hand. Excluding is the reliable, cache-proof resolution.
-    exclude: [...(base?.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
-  },
+    optimizeDeps: {
+      ...(base.optimizeDeps ?? {}),
+      // @doable/* are linked zero-dependency ESM source packages. Excluding them
+      // from the dep prebundle makes Vite resolve+transform them live on every
+      // request, so a freshly (re)linked copy is always picked up. Pre-bundling
+      // them left a stale ".vite/deps" entry that survived relinks — the import
+      // would fail with 'Failed to resolve import "@doable/data"' until the cache
+      // was wiped by hand. Excluding is the reliable, cache-proof resolution.
+      exclude: [...(base.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
+    },
+  };
 };
 `;
 }
