@@ -9,6 +9,7 @@ import {
   ensureSourceAnnotationsPlugin,
   ensureCanonicalHmrConfig,
 } from "./vite-plugin-source-annotations.js";
+import { ensureTailwindV4Consistency } from "./normalize-tailwind.js";
 import { linkDoableSdk } from "./link-sdk.js";
 import { spawnJailedVite } from "./vite-jail.js";
 import {
@@ -456,6 +457,20 @@ async function doStartDevServer(
     } catch (err) {
       console.warn(
         "[DevServer] Failed to write platform HMR config:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    // Reconcile the Tailwind toolchain for imported projects (e.g. Lovable
+    // ships v4 CSS — `@import "tailwindcss"` / `@theme` — on a v3 package.json,
+    // which makes postcss-import feed Tailwind's JS entry to the CSS parser and
+    // blanks the preview). Idempotent + cheap: no-ops once v4 is installed, so
+    // the one-time reinstall happens only on the first start after import.
+    try {
+      await ensureTailwindV4Consistency(projectPath);
+    } catch (err) {
+      console.warn(
+        "[DevServer] Tailwind toolchain normalize failed:",
         err instanceof Error ? err.message : err,
       );
     }
