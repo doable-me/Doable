@@ -47,7 +47,7 @@ export const RETRY_HTML = `<!doctype html>
  * Must run BEFORE any user scripts so the SPA's first connector call
  * after page load doesn't race the token arrival.
  */
-export const CONNECTOR_BRIDGE_SNIPPET = `<script>
+export const CONNECTOR_BRIDGE_SNIPPET = `<script data-cfasync="false">
 (function() {
   if (window.__doable && window.__doable.callConnector) return;
   var token = null;
@@ -69,7 +69,7 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
   function fetchTokenDirect() {
     var pid = null;
     // Extract project ID from URL path: /preview/:projectId/...
-    var m = window.location.pathname.match(/^\\/preview\\/([0-9a-f-]{36})\\//i);
+    var m = window.location.pathname.match(/\\/preview\\/([0-9a-f-]{36})\\//i);
     if (m) pid = m[1];
     if (!pid) {
       var meta = document.querySelector('meta[name="doable-project-id"]');
@@ -101,13 +101,17 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
       setToken(ev.data.token);
     }
   });
-  // Tell the host we're ready to receive a token.
-  // If standalone (no parent iframe), fetch token directly instead.
+  // Acquire the project token. We ALWAYS self-fetch it from the preview token
+  // endpoint (fetchTokenDirect) rather than depending solely on the editor
+  // host's postMessage handshake — that handshake can race the app's first AI
+  // call or never fire (e.g. the host listener regressed), which left
+  // window.__DOABLE_DATA_TOKEN unset and silently broke @doable/ai chat. The
+  // postMessage path is kept as an additional source for embedded previews;
+  // setToken is idempotent so a second token simply refreshes it.
   if (window.parent !== window) {
     try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
-  } else {
-    fetchTokenDirect();
   }
+  fetchTokenDirect();
   async function callConnector(integration, action, props) {
     var t = await awaitToken();
     var doFetch = function (theToken) {
@@ -123,9 +127,8 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
       token = null;
       if (window.parent !== window) {
         try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
-      } else {
-        fetchTokenDirect();
       }
+      fetchTokenDirect();
       var t2 = await awaitToken();
       res = await doFetch(t2);
     }
@@ -148,9 +151,8 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
       token = null;
       if (window.parent !== window) {
         try { window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*"); } catch (e) {}
-      } else {
-        fetchTokenDirect();
       }
+      fetchTokenDirect();
       var t2 = await awaitToken();
       res = await doFetch(t2);
     }
@@ -259,6 +261,61 @@ export const CONNECTOR_BRIDGE_SNIPPET = `<script>
  * (data just won't persist across reloads, which is fine for dev previews).
  * Must run BEFORE any user scripts.
  */
+/**
+ * React Fast Refresh preamble.
+ *
+ * `@vitejs/plugin-react` rewrites every React component module with a guard that
+ * THROWS `"@vitejs/plugin-react can't detect preamble. Something is wrong."`
+ * unless `window.__vite_plugin_react_preamble_installed__` was set by the
+ * plugin's `transformIndexHtml` preamble. Normally the plugin injects that
+ * preamble into index.html — but some setups never get that HTML transform and
+ * the preamble is missing, so EVERY component throws on mount → blank preview.
+ *
+ * The most common case in Doable: imported Lovable **TanStack Start** projects
+ * run as an SPA (entry `/src/main.tsx`, `disableSSR`). Their HTML is produced by
+ * the TanStack Start dev middleware, which bypasses `@vitejs/plugin-react`'s
+ * `transformIndexHtml`, so the preamble never lands. (Verified: the served HTML
+ * has no preamble, components import `/preview/<id>/@react-refresh` and throw.)
+ *
+ * We inject the standard preamble ourselves, at the START of <head>, before the
+ * app entry runs. It is:
+ *  - **safe for non-React projects** — the `@react-refresh` import is fired
+ *    fire-and-forget with a `.catch`, so a 404 is a silent no-op;
+ *  - **idempotent** — guarded on the flag, so when the plugin's own preamble is
+ *    also present this is a no-op;
+ *  - **ordering-correct** — the flag + `$RefreshReg$`/`$RefreshSig$` stubs are
+ *    set SYNCHRONOUSLY (no top-level await), so the guard passes before any
+ *    component module evaluates; `injectIntoGlobalHook` (HMR wiring) completes
+ *    a microtask later, which only affects hot-reload, not first render.
+ *
+ * `/preview/<id>/@react-refresh` is served by the project's Vite dev server
+ * under the platform base path, so the import resolves for React projects.
+ */
+export function getReactRefreshPreambleSnippet(projectId: string): string {
+  const refreshUrl = JSON.stringify(`/preview/${projectId}/@react-refresh`);
+  // CLASSIC (non-module) inline script, run synchronously during <head> parse so
+  // the flag is set BEFORE the deferred app entry module (/src/main.tsx) and any
+  // component evaluates. `data-cfasync="false"` excludes it from Cloudflare
+  // Rocket Loader, which otherwise rewrites/defers injected scripts on the
+  // public preview domain and left this preamble un-executed (flag never set →
+  // every component still threw). `injectIntoGlobalHook` is best-effort via a
+  // dynamic import (HMR wiring only); the synchronous flag + $Refresh* stubs are
+  // what make the per-component guard pass.
+  return `<script data-cfasync="false">
+(function () {
+  if (window.__vite_plugin_react_preamble_installed__) return;
+  window.$RefreshReg$ = window.$RefreshReg$ || function () {};
+  window.$RefreshSig$ = window.$RefreshSig$ || function () { return function (type) { return type; }; };
+  window.__vite_plugin_react_preamble_installed__ = true;
+  try {
+    import(${refreshUrl})
+      .then(function (m) { try { (m.default || m).injectIntoGlobalHook(window); } catch (e) {} })
+      .catch(function () {});
+  } catch (e) {}
+})();
+</script>`;
+}
+
 export function getStorageNamespaceSnippet(projectId: string): string {
   return `<script>
 (function() {

@@ -22,6 +22,7 @@ import { requireProjectAccess } from "../projects/helpers.js";
 import {
   RETRY_HTML,
   getStorageNamespaceSnippet,
+  getReactRefreshPreambleSnippet,
   ERROR_CAPTURE_SNIPPET,
   CONNECTOR_BRIDGE_SNIPPET,
 } from "./injected-scripts.js";
@@ -711,7 +712,13 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
     // switch to pass-through. Preserves Next.js streaming SSR (RSC chunks).
     const contentType = resp.headers.get("content-type") ?? "";
     if (contentType.includes("text/html") && resp.body) {
-      const storageNamespaceSnippet = getStorageNamespaceSnippet(projectId);
+      // React Fast Refresh preamble + storage namespacing both run at the very
+      // start of <head>, before any app module. The preamble must precede the
+      // app entry so @vitejs/plugin-react's per-component guard passes (missing
+      // preamble = "can't detect preamble" throw = blank preview).
+      const headStartSnippet =
+        getReactRefreshPreambleSnippet(projectId) +
+        getStorageNamespaceSnippet(projectId);
       const headSnippet =
         `<meta name="doable-project-id" content="${projectId}">` +
         `<script>${getTrackingScript(publicApiUrl)}</script>`;
@@ -730,7 +737,7 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
             { regex: /<head(?:\s[^>]*)?>/i, insertBefore: false },
             { regex: /<body[^>]*>/i, insertBefore: true },
           ],
-          snippet: storageNamespaceSnippet,
+          snippet: headStartSnippet,
         },
         // 2. Connector-bridge + error capture + tracker — at the END of
         //    <head> (before </head>) so they sit after the page's own meta
