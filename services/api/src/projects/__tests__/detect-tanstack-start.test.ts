@@ -150,4 +150,31 @@ describe("tanStackHijackViolation", () => {
     assert.equal(tanStackHijackViolation("src/components/Hero.tsx", "export default ..."), null);
     assert.equal(tanStackHijackViolation("src/index.css", "@import 'tailwindcss';"), null);
   });
+
+  // ─── __root.tsx document-shell protection ───────────────
+  const ROOT_WITH_SHELL =
+    'function RootComponent(){return(<html><head><HeadContent /></head><body><Outlet /><Scripts /></body></html>);}';
+  const ROOT_BARE = // the Marketgrove breakage — shell stripped to a bare Outlet
+    'function RootComponent(){return(<QueryClientProvider><Outlet /><Toaster /></QueryClientProvider>);}';
+
+  it("blocks stripping the document shell (<HeadContent/>) from __root.tsx", () => {
+    assert.ok(
+      tanStackHijackViolation("src/routes/__root.tsx", ROOT_BARE, ROOT_WITH_SHELL),
+      "removing HeadContent/head from an existing shell must be blocked",
+    );
+  });
+
+  it("allows editing __root.tsx as long as the shell is kept", () => {
+    const edited =
+      'function RootComponent(){return(<html><head><HeadContent /><meta name="x" /></head><body><Nav /><Outlet /><Scripts /></body></html>);}';
+    assert.equal(
+      tanStackHijackViolation("src/routes/__root.tsx", edited, ROOT_WITH_SHELL),
+      null,
+    );
+  });
+
+  it("does not block __root.tsx when there is no prior shell (first write / no currentContent)", () => {
+    assert.equal(tanStackHijackViolation("src/routes/__root.tsx", ROOT_BARE), null);
+    assert.equal(tanStackHijackViolation("src/routes/__root.tsx", ROOT_BARE, ROOT_BARE), null);
+  });
 });

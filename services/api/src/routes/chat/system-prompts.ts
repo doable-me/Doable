@@ -35,10 +35,59 @@ React / HashRouter / src/main.tsx guidance later in this prompt.
     exporting a Route via createFileRoute). Navigation uses <Link> from
     @tanstack/react-router.
   • Change shared layout → edit src/routes/__root.tsx, but KEEP its
-    createRootRoute(...) call and <Outlet/>; never convert it to a plain component.
+    createRootRoute(...) call AND its document shell
+    (<html><head><HeadContent/></head><body>…<Outlet/>…<Scripts/></body></html>).
+    <HeadContent/> injects the stylesheet <link> and <title> — if you remove it
+    (or collapse __root to a bare <Outlet/>), the WHOLE app renders UNSTYLED with
+    no title. Never strip the shell.
   • Edit visual content → edit the route/component files under src/routes/ and
     src/components/. Leave the bootstrap (start.tsx, index.html, router setup) alone.
 ═══════════════════════════════════════════════════════════════`;
+
+/**
+ * Generic guard for projects imported from an existing repo (any framework).
+ * Doable already installs deps + starts the dev server from the project's own
+ * config (preview-proxy: ensureDependencies + startDevServer) — so the AI's job
+ * is NOT to "set up" or "adapt" a project that already runs. This block exists
+ * because the post-import "analyze & set it up" prompt otherwise leads the model
+ * to rewrite working files (strip the document shell, swap the native entry for
+ * a CSR main.tsx, etc.), breaking projects that ran fine as cloned.
+ */
+const IMPORTED_PROJECT_GUARD = `═══════════════════════════════════════════════════════════════
+  📦  IMPORTED PROJECT — ALREADY INSTALLED & RUNNING  📦
+═══════════════════════════════════════════════════════════════
+This project was imported from an existing repository. Doable has ALREADY
+installed its dependencies and started its dev server using the project's OWN
+config — it builds and serves on its own. You are NOT here to "set it up",
+"adapt" it, or "make it render". Assume the imported code is correct.
+
+🚫 Do NOT:
+  • Rewrite, replace, "modernize", or reformat files that already work.
+  • Replace the framework's native entry / bootstrap / document shell / router / config
+    (e.g. do NOT create a CSR src/main.tsx or index.html for an SSR framework).
+  • Make broad refactors "to make it render" — it already renders.
+  • Migrate or rip out the app's libraries unless the user explicitly asks.
+
+✅ Do:
+  • Read files before assuming anything; treat the repo as the source of truth.
+  • Change a file ONLY if the live preview shows a CONCRETE error, and then make the
+    SMALLEST edit that fixes that specific error — nothing more.
+  • If the preview already renders, reply that the project is ready and make NO file changes.
+═══════════════════════════════════════════════════════════════`;
+
+/** True if the project was imported/connected from a GitHub repo (generic
+ * "this is existing code, not a fresh scaffold" signal). Best-effort; defaults
+ * to false so a fresh scaffold keeps today's build-from-scratch behavior. */
+async function projectIsImported(projectId: string): Promise<boolean> {
+  try {
+    const rows = await sql<{ one: number }[]>`
+      SELECT 1 AS one FROM github_connections WHERE project_id = ${projectId} LIMIT 1
+    `;
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Resolve framework_id for the project. Defaults to "vite-react" when the
@@ -74,6 +123,12 @@ export async function buildSystemPrompt(
   // src/main.tsx. Append an OVERRIDE guard so it edits routes/components only.
   if (detectTanStackStart(getProjectPath(projectId))) {
     frameworkPrompt = `${frameworkPrompt}\n\n${TANSTACK_START_GUARD}`;
+  }
+
+  // Generic, framework-agnostic: imported repos already install + run on their
+  // own config, so the AI must not rewrite working code to "set them up".
+  if (await projectIsImported(projectId)) {
+    frameworkPrompt = `${frameworkPrompt}\n\n${IMPORTED_PROJECT_GUARD}`;
   }
 
   if (mode === "plan") return buildPlanPrompt(projectContext, isScaffolded);

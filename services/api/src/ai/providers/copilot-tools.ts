@@ -163,9 +163,12 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         if (guard.isLocked(filePath)) {
           return { success: false, error: `Cannot create ${filePath} — server-side config files are locked by dovault for security.` };
         }
-        // TanStack Start bootstrap protection — block a CSR-entry hijack.
+        // TanStack Start bootstrap protection — block a CSR-entry hijack or a
+        // __root.tsx document-shell strip (needs current content for the latter).
         if (detectTanStackStart(getProjectPath(projectId))) {
-          const violation = tanStackHijackViolation(filePath, content);
+          let currentContent: string | undefined;
+          try { currentContent = await readFile(projectId, filePath); } catch { /* new file */ }
+          const violation = tanStackHijackViolation(filePath, content, currentContent);
           if (violation) return { success: false, error: violation };
         }
         const fullPath = path.join(getProjectPath(projectId), filePath);
@@ -214,9 +217,12 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         if (guard.isLocked(filePath)) {
           return { success: false, error: `Cannot edit ${filePath} — server-side config files are locked by dovault for security.` };
         }
-        // TanStack Start bootstrap protection — block a CSR-entry hijack.
+        // TanStack Start bootstrap protection — block a CSR-entry hijack or a
+        // __root.tsx document-shell strip (needs current content for the latter).
         if (detectTanStackStart(getProjectPath(projectId))) {
-          const violation = tanStackHijackViolation(filePath, content);
+          let currentContent: string | undefined;
+          try { currentContent = await readFile(projectId, filePath); } catch { /* new file */ }
+          const violation = tanStackHijackViolation(filePath, content, currentContent);
           if (violation) return { success: false, error: violation };
         }
         // Pre-write syntax check — same protection as create_file above.

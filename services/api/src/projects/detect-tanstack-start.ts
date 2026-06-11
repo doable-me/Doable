@@ -111,8 +111,31 @@ function normalizeRel(relPath: string): string {
 export function tanStackHijackViolation(
   relPath: string,
   content: string,
+  currentContent?: string,
 ): string | null {
   const rel = normalizeRel(relPath);
+
+  // src/routes/__root.tsx is the document shell for TanStack Start. It renders
+  // <html><head><HeadContent/></head><body>…<Outlet/><Scripts/></body></html>,
+  // and <HeadContent/> is what injects the stylesheet <link> and <title> into
+  // the page. A "set it up" AI step has been observed stripping that shell down
+  // to a bare <Outlet/>, which drops the stylesheet → the app renders COMPLETELY
+  // UNSTYLED with no title. Block a write that REMOVES the shell the file
+  // currently has (edits that keep <HeadContent/> pass through untouched).
+  if (rel === "src/routes/__root.tsx" && typeof currentContent === "string") {
+    const hadShell =
+      /<HeadContent\b/.test(currentContent) || /<head[\s/>]/.test(currentContent);
+    const keepsShell =
+      /<HeadContent\b/.test(content) || /<head[\s/>]/.test(content);
+    if (hadShell && !keepsShell) {
+      return (
+        "src/routes/__root.tsx must keep its TanStack Start document shell " +
+        "(<html><head><HeadContent/></head><body>…<Scripts/></body></html>). " +
+        "<HeadContent/> injects the stylesheet <link> and <title>; removing it makes the app render " +
+        "completely UNSTYLED with no title. Edit inside the shell, but never strip <HeadContent/> / the <head>."
+      );
+    }
+  }
 
   // A CSR entry has no place in a TanStack Start app — its mere creation IS
   // the hijack. (start.tsx is the entry; main.tsx is what the AI wrongly adds.)

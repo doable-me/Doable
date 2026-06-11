@@ -174,7 +174,15 @@ export async function writeProjectFile(
   // Legitimate edits to routes/components/styles pass through untouched.
   // See projects/detect-tanstack-start.ts for the precise rule.
   if (detectTanStackStart(getProjectPath(projectId))) {
-    const violation = tanStackHijackViolation(filePath, content);
+    // For the __root.tsx shell-removal check the guard needs the current
+    // on-disk content (best-effort; absent on first create).
+    let currentContent: string | undefined;
+    try {
+      currentContent = await readFile(resolveFilePath(projectId, filePath), "utf-8");
+    } catch {
+      currentContent = undefined;
+    }
+    const violation = tanStackHijackViolation(filePath, content, currentContent);
     if (violation) {
       throw new FileAccessError(violation);
     }
