@@ -3,6 +3,10 @@ import { join, dirname, relative, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { writeFileThroughYjs } from "./yjs-bridge.js";
 import { validatePathSafe } from "../projects/path-safety.js";
+import {
+  detectTanStackStart,
+  tanStackHijackViolation,
+} from "../projects/detect-tanstack-start.js";
 
 // ─── Configuration ────────────────────────────────────────
 
@@ -159,6 +163,21 @@ export async function writeProjectFile(
 
   if (Buffer.byteLength(content, "utf-8") > MAX_FILE_SIZE) {
     throw new FileAccessError("Content exceeds max file size");
+  }
+
+  // TanStack Start bootstrap protection. The single chokepoint both AI write
+  // paths converge on (native create_file/edit_file tools AND the copilot
+  // tools, which re-export this as `writeFile`). For a detected TanStack Start
+  // project, reject the specific writes that would hijack the native bootstrap
+  // (CSR src/main.tsx, rewritten src/start.*, or an index.html repointed off
+  // /src/start.tsx) — the exact corruption that blanks an imported preview.
+  // Legitimate edits to routes/components/styles pass through untouched.
+  // See projects/detect-tanstack-start.ts for the precise rule.
+  if (detectTanStackStart(getProjectPath(projectId))) {
+    const violation = tanStackHijackViolation(filePath, content);
+    if (violation) {
+      throw new FileAccessError(violation);
+    }
   }
 
   // AI scaffolds with Tailwind v4 + shadcn-style raw-HSL CSS variables need

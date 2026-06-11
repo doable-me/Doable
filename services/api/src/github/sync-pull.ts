@@ -14,6 +14,7 @@ import {
   type PullResult,
 } from "./git-ops.js";
 import { ensureRepo, isGitRepo } from "../git/init.js";
+import { invalidateTanStackStartCache } from "../projects/detect-tanstack-start.js";
 import { autoCommit } from "../git/commits.js";
 import { withProjectLock } from "../git/lock.js";
 import { execGit } from "../git/exec.js";
@@ -185,6 +186,11 @@ export async function importFromGitHub(
 
   // Clone the repo into the project path
   await gitClone(repoUrl, projectPath, opts.token, branch);
+
+  // A fresh clone may flip the project's TanStack-Start classification (e.g. a
+  // re-import after a prior CSR-corrupted state). Drop any cached detection so
+  // the bootstrap guard re-evaluates against the just-cloned files.
+  invalidateTanStackStartCache(projectPath);
 
   // Save the connection in DB
   await db.createConnection({

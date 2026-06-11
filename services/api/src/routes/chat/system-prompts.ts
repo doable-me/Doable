@@ -6,6 +6,39 @@ import { isProjectScaffolded, getProjectPath } from "../../projects/file-manager
 import { getDevServerUrl } from "../../projects/dev-server.js";
 import { sql } from "../../db/index.js";
 import { renderFrameworkPrompt } from "../../ai/framework-prompts/index.js";
+import { detectTanStackStart } from "../../projects/detect-tanstack-start.js";
+
+/**
+ * Guard block injected when the project is a TanStack Start app (e.g. a
+ * Lovable export). These rules OVERRIDE the vite-react routing/file-shape
+ * guidance below, which would otherwise push the AI to replace the native
+ * bootstrap with a CSR src/main.tsx + HashRouter — the corruption that blanks
+ * the imported preview. See projects/detect-tanstack-start.ts.
+ */
+const TANSTACK_START_GUARD = `═══════════════════════════════════════════════════════════════
+  🧩  THIS IS A TANSTACK START PROJECT — READ FIRST  🧩
+═══════════════════════════════════════════════════════════════
+This app uses TanStack Start with FILE-BASED ROUTING and a NATIVE
+bootstrap. The rules in this block OVERRIDE any conflicting Vite /
+React / HashRouter / src/main.tsx guidance later in this prompt.
+
+🚫 NEVER do any of these (they blank the preview to a white screen):
+  • Do NOT create src/main.tsx (or any createRoot / ReactDOM.render entry).
+    The entry is src/start.tsx — it already exists and is fixed infrastructure.
+  • Do NOT rewrite or stub src/start.tsx / src/start.ts.
+  • Do NOT repoint index.html away from /src/start.tsx (e.g. to /src/main.tsx).
+  • Do NOT add react-router / HashRouter / BrowserRouter. Routing is handled
+    by TanStack Router via createRootRoute / createFileRoute and routeTree.gen.ts.
+
+✅ INSTEAD, to add or change functionality:
+  • Add a page → create a file route under src/routes/ (e.g. src/routes/about.tsx
+    exporting a Route via createFileRoute). Navigation uses <Link> from
+    @tanstack/react-router.
+  • Change shared layout → edit src/routes/__root.tsx, but KEEP its
+    createRootRoute(...) call and <Outlet/>; never convert it to a plain component.
+  • Edit visual content → edit the route/component files under src/routes/ and
+    src/components/. Leave the bootstrap (start.tsx, index.html, router setup) alone.
+═══════════════════════════════════════════════════════════════`;
 
 /**
  * Resolve framework_id for the project. Defaults to "vite-react" when the
@@ -33,7 +66,15 @@ export async function buildSystemPrompt(
   const previewUrl = getDevServerUrl(projectId) ?? undefined;
   const isScaffolded = isProjectScaffolded(projectId);
   const frameworkId = await resolveFrameworkId(projectId);
-  const frameworkPrompt = renderFrameworkPrompt(frameworkId);
+  let frameworkPrompt = renderFrameworkPrompt(frameworkId);
+
+  // TanStack Start projects (imported Lovable exports) keep framework_id
+  // "vite-react" so the proven vite runtime is untouched — but the default
+  // vite-react prompt would push the AI to swap the native bootstrap for a CSR
+  // src/main.tsx. Append an OVERRIDE guard so it edits routes/components only.
+  if (detectTanStackStart(getProjectPath(projectId))) {
+    frameworkPrompt = `${frameworkPrompt}\n\n${TANSTACK_START_GUARD}`;
+  }
 
   if (mode === "plan") return buildPlanPrompt(projectContext, isScaffolded);
   if (mode === "visual-edit") return buildVisualEditPrompt(previewUrl, frameworkPrompt);

@@ -18,6 +18,10 @@ import {
 import { restartDevServer, isRunning } from "../../projects/dev-server.js";
 import { ConfigGuard } from "dovault";
 import { defaultRegistry } from "../../frameworks/registry.js";
+import {
+  detectTanStackStart,
+  tanStackHijackViolation,
+} from "../../projects/detect-tanstack-start.js";
 import { sql } from "../../db/index.js";
 import { createBashTool } from "../tools/bash.js";
 import { validateFileSyntax } from "../tools/validate-syntax.js";
@@ -159,6 +163,11 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         if (guard.isLocked(filePath)) {
           return { success: false, error: `Cannot create ${filePath} — server-side config files are locked by dovault for security.` };
         }
+        // TanStack Start bootstrap protection — block a CSR-entry hijack.
+        if (detectTanStackStart(getProjectPath(projectId))) {
+          const violation = tanStackHijackViolation(filePath, content);
+          if (violation) return { success: false, error: violation };
+        }
         const fullPath = path.join(getProjectPath(projectId), filePath);
         const alreadyExists = existsSync(fullPath);
         // Pre-write syntax check — mirrors tools/create-file.ts. Catches LLM
@@ -204,6 +213,11 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         const guard = await getConfigGuard(projectId);
         if (guard.isLocked(filePath)) {
           return { success: false, error: `Cannot edit ${filePath} — server-side config files are locked by dovault for security.` };
+        }
+        // TanStack Start bootstrap protection — block a CSR-entry hijack.
+        if (detectTanStackStart(getProjectPath(projectId))) {
+          const violation = tanStackHijackViolation(filePath, content);
+          if (violation) return { success: false, error: violation };
         }
         // Pre-write syntax check — same protection as create_file above.
         const syntaxCheck = validateFileSyntax(filePath, content);
