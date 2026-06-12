@@ -1359,10 +1359,23 @@ for t in tunnels:
         break
 " 2>/dev/null || true)
 
-    if [[ -n "$EXISTING_TUNNEL" ]]; then
+    if [[ -n "$EXISTING_TUNNEL" ]] && [[ -f "/root/.cloudflared/${EXISTING_TUNNEL}.json" ]]; then
       TUNNEL_ID="$EXISTING_TUNNEL"
       ok "Using existing tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
     else
+      # A tunnel with the DOMAIN-derived name may already exist in the Cloudflare
+      # account from a PRIOR install of this box, but its local credentials JSON
+      # is gone (the classic OS-reinstall case: the CF account keeps the tunnel,
+      # the disk that held /root/.cloudflared/<id>.json was wiped). Tunnel
+      # credentials are emitted only at creation and can NEVER be re-downloaded,
+      # so reusing that orphaned tunnel id is unrecoverable — `cloudflared` later
+      # aborts with "Tunnel credentials file not found". Delete the orphan and
+      # create a fresh tunnel (new id + new creds) so re-installs succeed OOB.
+      if [[ -n "$EXISTING_TUNNEL" ]]; then
+        warn "Tunnel '$TUNNEL_NAME' ($EXISTING_TUNNEL) exists in Cloudflare but its local credentials file is missing (OS reinstall?). Recreating with fresh credentials."
+        cloudflared tunnel cleanup "$EXISTING_TUNNEL" 2>/dev/null || true
+        cloudflared tunnel delete -f "$EXISTING_TUNNEL" 2>/dev/null || true
+      fi
       cloudflared tunnel create --output json "$TUNNEL_NAME" > /tmp/tunnel_create.json 2>&1 || \
         cloudflared tunnel create "$TUNNEL_NAME" > /tmp/tunnel_create.json 2>&1
       TUNNEL_ID=$(python3 -c "
