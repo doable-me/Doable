@@ -139,11 +139,32 @@ export async function runPipeline(
   // by PUBLISH_MODE. The chosen topology drives the URL, the build's --base,
   // and which adapter copies the files.
   const dnsMode = await getDnsMode();
-  const topology = resolvePublishTopology({
+  let topology = resolvePublishTopology({
     publishMode: process.env.PUBLISH_MODE,
     hasTunnel: !!process.env.CLOUDFLARED_TUNNEL_ID,
     dnsMode,
   });
+
+  // Framework-aware topology. A long-lived / SSR app (Next.js, Nuxt, TanStack
+  // Start, …) cannot be served as static files under the path topology — it
+  // needs a per-host reverse_proxy — so it ALWAYS publishes under the subdomain
+  // topology. Static SPAs keep the resolved topology (path is the out-of-the-box
+  // default and the only mode that serves static output on a single-domain host).
+  //
+  // This is what lets SSR apps deploy WITHOUT a global PUBLISH_MODE=subdomain —
+  // which would also force every static (vite-react) SPA onto a subdomain URL
+  // that has no static vhost and falls through to the platform site. Static
+  // deploys are therefore never affected by this branch.
+  const fwForTopology = defaultRegistry.get(
+    (project as { framework_id?: string }).framework_id ?? "vite-react",
+  );
+  const isProcessKindForTopology =
+    (fwForTopology?.adapter.capabilities.has("requires-long-lived-process") ??
+      false) ||
+    detectTanStackStart(getProjectPath(projectId));
+  if (isProcessKindForTopology && topology !== "subdomain") {
+    topology = "subdomain";
+  }
   // The deploy UI and legacy clients hardcode adapterName="doable-cloud" as a
   // default, so we can't treat its presence as an explicit topology choice.
   // Treat both unset AND the legacy "doable-cloud" default as "auto" — let the

@@ -22,6 +22,27 @@ const CADDY_ADMIN_URL =
 
 const ROUTES_PATH = "/config/apps/http/servers/srv0/routes";
 
+/**
+ * Caddy's admin API enforces a browser-CSRF guard: it rejects requests whose
+ * `Origin` (or, lacking that, `Host`) header isn't an allowed origin with HTTP
+ * 403. Node's `fetch` (undici) trips this where `curl` does not, so WITHOUT an
+ * explicit Origin every admin call from the API 403s — which silently made
+ * `caddyAdminAvailable()` report "unavailable" and skipped per-app route
+ * registration for EVERY process-kind deploy. Send the admin listener's own
+ * origin (always an allowed origin) on every request so undici is accepted.
+ */
+const ADMIN_ORIGIN = (() => {
+  try {
+    return new URL(CADDY_ADMIN_URL).origin;
+  } catch {
+    return "http://127.0.0.1:2019";
+  }
+})();
+
+function adminHeaders(extra?: Record<string, string>): Record<string, string> {
+  return { Origin: ADMIN_ORIGIN, ...(extra ?? {}) };
+}
+
 export interface AddProcessRouteInput {
   /** project slug used both for Caddy @id and unix socket path */
   slug: string;
@@ -84,7 +105,7 @@ export async function addProcessRoute(input: AddProcessRouteInput): Promise<void
   const route = buildProcessRoute(input);
   const res = await fetch(`${CADDY_ADMIN_URL}${ROUTES_PATH}/0`, {
     method: "PUT",
-    headers: { "content-type": "application/json" },
+    headers: adminHeaders({ "content-type": "application/json" }),
     body: JSON.stringify(route),
   });
   if (!res.ok) {
@@ -102,6 +123,7 @@ export async function addProcessRoute(input: AddProcessRouteInput): Promise<void
 export async function removeRoute(slug: string): Promise<boolean> {
   const res = await fetch(`${CADDY_ADMIN_URL}/id/${routeId(slug)}`, {
     method: "DELETE",
+    headers: adminHeaders(),
   });
   if (res.status === 404 || res.status === 200) return res.status === 200;
   const text = await res.text().catch(() => "");
@@ -115,7 +137,9 @@ export async function removeRoute(slug: string): Promise<boolean> {
  * (PRD 06 §6.2) on boot to reconcile against the project_runtime table.
  */
 export async function listRoutes(): Promise<CaddyRoute[]> {
-  const res = await fetch(`${CADDY_ADMIN_URL}${ROUTES_PATH}`);
+  const res = await fetch(`${CADDY_ADMIN_URL}${ROUTES_PATH}`, {
+    headers: adminHeaders(),
+  });
   if (!res.ok) {
     if (res.status === 404) return []; // no routes configured yet
     throw new CaddyAdminError(`Caddy admin GET routes failed: ${res.status}`);
@@ -130,7 +154,9 @@ export async function listRoutes(): Promise<CaddyRoute[]> {
  */
 export async function caddyAdminAvailable(): Promise<boolean> {
   try {
-    const res = await fetch(`${CADDY_ADMIN_URL}/config/`);
+    const res = await fetch(`${CADDY_ADMIN_URL}/config/`, {
+      headers: adminHeaders(),
+    });
     return res.ok || res.status === 404;
   } catch {
     return false;

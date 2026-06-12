@@ -1,5 +1,15 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { sql } from "../db/index.js";
+import { reconcileProcessAppsOnBoot, startProcessApp } from "./process-supervisor.js";
+import { getProjectPath } from "../ai/project-files.js";
+
+/** Managed detached-process apps carry a `doable-proc:<slug>:<pid>` marker in
+ *  systemd_unit instead of a real unit name. The systemd-specific loops below
+ *  (boot reconcile, idle-stop) must skip these — they're owned by
+ *  process-supervisor.ts, not systemctl. */
+function isProcessUnit(systemdUnit: string | null | undefined): boolean {
+  return typeof systemdUnit === "string" && systemdUnit.startsWith("doable-proc:");
+}
 
 interface SupervisorHandle {
   stop(): void;
@@ -17,6 +27,16 @@ interface SupervisorHandle {
  * Per devframeworkPRD/06-runtime-and-publish.md §4.4.
  */
 export function startSupervisor(): SupervisorHandle {
+  // Non-systemd deploy reconcile — runs regardless of systemd availability so
+  // process-managed apps (the unprivileged / Docker activation path) come back
+  // after a host reboot. Independent of the systemd journal watcher below.
+  reconcileProcessAppsOnBoot().catch((err) => {
+    console.warn(
+      "[runtime/supervisor] process-app reconcile failed:",
+      err instanceof Error ? err.message : err,
+    );
+  });
+
   if (process.platform !== "linux" || !hasSystemctl()) {
     console.warn("[runtime/supervisor] systemctl not available; supervisor disabled");
     return { stop: () => {} };
@@ -125,6 +145,7 @@ async function reconcileOnBoot(): Promise<void> {
     SELECT project_id, systemd_unit
     FROM project_runtime
     WHERE state IN ('running','starting') AND systemd_unit IS NOT NULL
+      AND systemd_unit NOT LIKE 'doable-proc:%'
   `;
   for (const row of rows) {
     if (!row.systemd_unit) continue;
@@ -230,7 +251,24 @@ export function startHealthCheckLoop(): { stop: () => void } {
           `;
           if (runtime && runtime.fail_count <= 5 && runtime.systemd_unit) {
             console.log(`[runtime/health] auto-restarting ${row.project_id} (fail_count=${runtime.fail_count})`);
-            spawnSync("systemctl", ["restart", runtime.systemd_unit], { stdio: "ignore" });
+            if (isProcessUnit(runtime.systemd_unit)) {
+              // Managed detached process — respawn via the process supervisor
+              // (systemctl can't touch it). Parse host:port from listen_addr.
+              const [host, portStr] = String(row.listen_addr ?? "").split(":");
+              const port = parseInt(portStr ?? "", 10);
+              if (host && Number.isFinite(port)) {
+                try {
+                  await startProcessApp({ projectDir: getProjectPath(row.project_id), host, port });
+                } catch (err) {
+                  console.warn(
+                    `[runtime/health] process restart failed for ${row.project_id}:`,
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              }
+            } else {
+              spawnSync("systemctl", ["restart", runtime.systemd_unit], { stdio: "ignore" });
+            }
             await sql`
               UPDATE project_runtime
               SET state = 'starting', last_started_at = now(), updated_at = now()
@@ -285,6 +323,7 @@ export function startIdleDetection(): { stop: () => void } {
         WHERE state = 'running'
           AND runtime_kind = 'process'
           AND systemd_unit IS NOT NULL
+          AND systemd_unit NOT LIKE 'doable-proc:%'
           AND (
             last_active_at IS NULL
             OR last_active_at < now() - interval '30 minutes'

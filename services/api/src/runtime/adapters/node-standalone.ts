@@ -5,6 +5,7 @@ import { createConnection } from "node:net";
 import path from "node:path";
 
 import { sql } from "../../db/index.js";
+import { startProcessApp, stopProcessApp } from "../process-supervisor.js";
 import type {
   HealthStatus,
   RuntimeAdapter,
@@ -89,7 +90,9 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
       egressHosts = [];
     }
 
-    if (process.platform === "linux" && hasSystemctl()) {
+    if (canManageSystemd()) {
+      // Privileged install (API runs as root): supervise via a per-app systemd
+      // unit, the most robust option when available.
       await mkdir(path.dirname(envPath), { recursive: true });
       await writeFile(envPath, renderEnvFile(this.env(ctx)), "utf-8");
       await chmod(envPath, 0o640);
@@ -107,20 +110,36 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
       // listens on PORT). Now we start the service and Caddy reverse_proxies
       // to its 127.0.0.1:PORT bind.
       run("systemctl", ["enable", "--now", `doable-app@${slug}.service`]);
-    } else {
-      // Non-systemd host (Windows / macOS / Alpine). Write the env file
-      // anyway so a dev tool or test harness can read it, then return a
-      // handle the supervisor can degrade-handle.
-      try {
-        await mkdir(path.dirname(envPath), { recursive: true });
-        await writeFile(envPath, renderEnvFile(this.env(ctx)), "utf-8");
-      } catch {
-        // /etc not writable in dev; ignore.
-      }
+
+      return {
+        id: `doable-app@${slug}.service`,
+        startedAt: new Date(),
+        listenAddr,
+        listenContract: "tcp-port",
+      };
     }
 
+    // Unprivileged install (API runs as the `doable` user) or a host with no
+    // systemd at all (Docker): the API cannot write /etc/systemd or run
+    // systemctl, so a unit can't be created. Run the built server as a managed
+    // DETACHED child process bound to 127.0.0.1:PORT — the same non-root model
+    // the preview runtime uses — and let the existing Caddy `addProcessRoute`
+    // reverse-proxy the public hostname to it. This is what makes SSR apps
+    // (TanStack Start, Next.js, …) actually deploy out-of-the-box on the
+    // secure-by-default install. The boot reconcile in process-supervisor.ts
+    // restarts it after a host reboot.
+    const host = ctx.listen.kind === "tcp-port" ? ctx.listen.host : "127.0.0.1";
+    const port = ctx.listen.kind === "tcp-port" ? ctx.listen.port : 0;
+    const pid = await startProcessApp({
+      projectDir: ctx.projectDir,
+      host,
+      port,
+      env: this.env(ctx),
+    });
     return {
-      id: `doable-app@${slug}.service`,
+      // `doable-proc:<slug>:<pid>` marks the non-systemd path so stop() and the
+      // boot reconcile route correctly.
+      id: `doable-proc:${slug}:${pid}`,
       startedAt: new Date(),
       listenAddr,
       listenContract: "tcp-port",
@@ -128,6 +147,38 @@ export const nodeStandaloneAdapter: RuntimeAdapter = {
   },
 
   async stop(handle: RuntimeHandle): Promise<void> {
+    // Non-systemd process path: id is `doable-proc:<slug>:<pid>`. Kill the
+    // CURRENT pid (a boot reconcile may have respawned it under a new pid
+    // recorded in the pidfile), looking up the project dir from the row.
+    if (handle.id.startsWith("doable-proc:")) {
+      try {
+        const rows = await sql<{ project_id: string }[]>`
+          SELECT project_id FROM project_runtime WHERE systemd_unit = ${handle.id} LIMIT 1
+        `;
+        const projectId = rows[0]?.project_id;
+        if (projectId) {
+          const { getProjectPath } = await import("../../ai/project-files.js");
+          stopProcessApp(getProjectPath(projectId));
+          return;
+        }
+      } catch {
+        /* fall through to pid kill */
+      }
+      const pid = parseInt(handle.id.split(":")[2] ?? "", 10);
+      if (Number.isFinite(pid) && pid > 0) {
+        try {
+          process.kill(-pid, "SIGTERM");
+        } catch {
+          try {
+            process.kill(pid, "SIGTERM");
+          } catch {
+            /* already gone */
+          }
+        }
+      }
+      return;
+    }
+
     const slug = handle.id.replace(/^doable-app@|\.service$/g, "");
     if (process.platform === "linux" && hasSystemctl()) {
       run("systemctl", ["stop", `doable-app@${slug}.service`], {
@@ -387,6 +438,22 @@ function hasSystemctl(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * True only when the API can actually create + control systemd units — i.e. it
+ * runs as root (can write /etc/systemd and run systemctl). The secure-by-default
+ * install runs the API as the unprivileged `doable` user, whose sudoers grant
+ * sandbox-spawn + scoped chown/chmod but NOT systemctl, so this is false and the
+ * adapter falls back to the managed detached-process path (process-supervisor).
+ */
+function canManageSystemd(): boolean {
+  return (
+    process.platform === "linux" &&
+    hasSystemctl() &&
+    typeof process.geteuid === "function" &&
+    process.geteuid() === 0
+  );
 }
 
 function run(
