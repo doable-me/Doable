@@ -9,6 +9,7 @@ import { sql } from "../db/index.js";
 import { aiSettingsQueries, platformAiDefaultsQueries } from "@doable/db";
 import type { ByokProviderConfig } from "./providers/copilot.js";
 import { ENCRYPTION_KEY } from "../lib/secrets.js";
+import { applyPlatformAiDefault } from "../routes/auth/platform-ai-bootstrap.js";
 
 const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
 const platformDefaults = platformAiDefaultsQueries(sql);
@@ -149,6 +150,44 @@ export async function resolveAiEngine(
       }
     } catch (err) {
       console.error("[Chat] Failed to resolve platform AI defaults:", err);
+    }
+  }
+
+  // Tier 5.5: Self-heal — still no usable provider/account after tiers 1–5.
+  // This is the genuinely-broken state where app generation silently produces
+  // no files ("the AI didn't edit any files"): the workspace's builder default
+  // is "GitHub Copilot / Server Default" with no connected account (the
+  // out-of-the-box default for EVERY workspace, and the state an AI-Settings
+  // save can leave behind) AND no provider has been provisioned into it.
+  //
+  // Provision / point at the platform-configured provider on demand so app
+  // generation works out of the box on EVERY install method (docker /
+  // baremetal / doable-cli): applyPlatformAiDefault sources the key from
+  // platform_config, which is env-seeded by seedAiProviderFromEnv and/or the
+  // setup wizard. Nothing here is host-specific. Idempotent and self-limiting:
+  // once the workspace has a usable default, the normal tiers resolve and this
+  // block is skipped. No-ops safely when the operator configured no key.
+  if (!selectedCopilotAccountId && !selectedProviderId && !resolvedProvider && workspaceId) {
+    try {
+      const [ws] = await sql<{ plan: string; owner_id: string }[]>`
+        SELECT plan, owner_id FROM workspaces WHERE id = ${workspaceId}
+      `;
+      if (ws?.owner_id) {
+        const healed = await applyPlatformAiDefault(workspaceId, ws.owner_id, ws.plan ?? "free");
+        if (healed) {
+          const cfg = await aiSettingsDb.getEffectiveAiConfig(workspaceId, userId);
+          if (cfg?.default_source === "custom" && cfg.default_provider_id) {
+            selectedProviderId = cfg.default_provider_id;
+            providerSource = "platform_seeded";
+            if (!resolvedModel && cfg.default_provider_model) {
+              resolvedModel = cfg.default_provider_model;
+              modelSource = "platform_seeded";
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[Chat] AI self-heal provisioning failed:", err);
     }
   }
 

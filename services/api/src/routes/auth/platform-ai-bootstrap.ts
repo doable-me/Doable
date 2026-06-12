@@ -164,30 +164,44 @@ export async function applyPlatformAiDefault(
         const providerType = ((await getConfig("setup.ai_provider")) as string | null) === "anthropic" ? "anthropic" : "openai";
         if (apiKey) {
           const resolvedBaseUrl = baseUrl || (providerType === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
-          const [created] = await sql<{ id: string }[]>`
-            INSERT INTO ai_providers (workspace_id, label, provider_type, base_url, encrypted_api_key, is_valid, added_by, scope)
-            VALUES (${workspaceId}, ${defaults.provider_model}, ${providerType}::ai_provider_type, ${resolvedBaseUrl},
-                    pgp_sym_encrypt(${apiKey}, ${ENCRYPTION_KEY}), true, ${ownerId}, 'workspace'::ai_account_scope)
-            ON CONFLICT DO NOTHING
-            RETURNING id
+          // Reuse an existing healthy provider in this workspace (same base_url)
+          // instead of inserting a duplicate. This keeps the call idempotent so
+          // the resolver's self-heal can invoke it on any broken request: a
+          // workspace that already has the provider but a stale "copilot"
+          // default just gets its default re-pointed, not a second provider.
+          const [existingProv] = await sql<{ id: string }[]>`
+            SELECT id FROM ai_providers
+            WHERE workspace_id = ${workspaceId} AND base_url = ${resolvedBaseUrl} AND is_valid = true
+            ORDER BY created_at ASC
+            LIMIT 1
           `;
-          if (created) {
-            // Update platform_ai_defaults to record this provider_id for future workspaces
+          let provisionedId = existingProv?.id ?? null;
+          if (!provisionedId) {
+            const [created] = await sql<{ id: string }[]>`
+              INSERT INTO ai_providers (workspace_id, label, provider_type, base_url, encrypted_api_key, is_valid, added_by, scope)
+              VALUES (${workspaceId}, ${defaults.provider_model}, ${providerType}::ai_provider_type, ${resolvedBaseUrl},
+                      pgp_sym_encrypt(${apiKey}, ${ENCRYPTION_KEY}), true, ${ownerId}, 'workspace'::ai_account_scope)
+              RETURNING id
+            `;
+            provisionedId = created?.id ?? null;
+          }
+          if (provisionedId) {
+            // Record this provider_id for the plan so future workspaces clone it.
             await sql`
-              UPDATE platform_ai_defaults SET provider_id = ${created.id}
+              UPDATE platform_ai_defaults SET provider_id = ${provisionedId}
               WHERE plan = ${plan} AND provider_id IS NULL
             `;
             await aiSettings.upsertSettings({
               workspaceId,
               defaultSource: "custom",
-              defaultProviderId: created.id,
+              defaultProviderId: provisionedId,
               defaultProviderModel: defaults.provider_model,
               suggestionSource: "custom",
-              suggestionProviderId: created.id,
+              suggestionProviderId: provisionedId,
               suggestionProviderModel: defaults.provider_model,
               updatedBy: ownerId,
             });
-            console.log(`[PlatformAI] Seeded BYOK provider for plan=${plan} to workspace ${workspaceId.slice(0, 8)} from platform_config`);
+            console.log(`[PlatformAI] Provisioned/linked BYOK provider for plan=${plan} to workspace ${workspaceId.slice(0, 8)} from platform_config`);
             return true;
           }
         }

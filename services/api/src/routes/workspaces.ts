@@ -9,6 +9,7 @@ import { SLUG_REGEX, SLUG_MIN_LENGTH, SLUG_MAX_LENGTH, type WorkspacePlan } from
 import { getEffectivePlanLimits } from "./admin-plan-limits.js";
 import { sendTemplatedEmail } from "../lib/email.js";
 import { ensureBuiltinConnectorsForWorkspace } from "../mcp/builtin-connectors.js";
+import { applyPlatformAiDefault } from "./auth/platform-ai-bootstrap.js";
 
 const workspaces = workspaceQueries(sql);
 const users = userQueries(sql);
@@ -140,6 +141,19 @@ workspaceRoutes.post("/", async (c) => {
 
   // Provision built-in MCP Apps (e.g., Presentation Builder).
   await ensureBuiltinConnectorsForWorkspace(workspace.id, userId);
+
+  // Apply platform AI defaults so AI/app-generation works out of the box in
+  // EVERY new workspace — not just the auto-created signup workspace (which is
+  // the only place this used to run, leaving additionally-created workspaces
+  // on the dead "Copilot / Server Default" with no provider → "the AI didn't
+  // edit any files"). Clones/provisions the platform-configured provider and
+  // sets the workspace default. Non-fatal: workspace creation still succeeds
+  // if AI isn't configured on this install.
+  try {
+    await applyPlatformAiDefault(workspace.id, userId, inheritedPlan);
+  } catch (err) {
+    console.warn(`[workspaces] Failed to apply platform AI defaults to ${workspace.id}:`, err);
+  }
 
   // If an environment was selected, clone it into the new workspace and apply
   if (parsed.data.environmentId) {
