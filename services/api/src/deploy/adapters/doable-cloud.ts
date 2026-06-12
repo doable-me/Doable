@@ -1,4 +1,4 @@
-import { mkdir, cp, rm, readdir, stat, access } from "node:fs/promises";
+import { mkdir, cp, rm, readdir, stat, access, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -6,6 +6,8 @@ import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import type { DeployAdapter, DeployInput, DeployResult } from "../adapter.js";
 import { getEffectiveCfApiToken } from "../../lib/cloudflare-token.js";
+import { detectTanStackStart } from "../../projects/detect-tanstack-start.js";
+import { TANSTACK_NODE_SERVER_ENTRY } from "../tanstack-node-server-entry.js";
 
 /**
  * Sentinel error thrown when SITES_DIR is unreachable/unwritable from the
@@ -239,6 +241,54 @@ export class DoableCloudAdapter implements DeployAdapter {
         console.log(
           `[doable-cloud] Staged Next.js standalone layout at ${distServer} ` +
             `for project ${projectId}`
+        );
+      }
+
+      // TanStack Start (imported as framework_id="vite-react"; gated on
+      // detectTanStackStart so no other dist/server shape is affected).
+      // `vite build` emits dist/client/ (static assets) + dist/server/server.js
+      // — a WinterCG web-fetch handler `{ fetch(req) }`, NOT a listening
+      // server, so the static-files path 404s. Wrap it in a platform Node
+      // entry (dist-server/index.mjs) that serves dist/client/* statically and
+      // bridges the fetch handler for SSR, so node-standalone hosts it exactly
+      // like the other SSR frameworks. The server bundle externalises some
+      // runtime deps, so production node_modules are installed into
+      // dist-server (mirrors the Hono branch). The imported project's own
+      // source is never modified — index.mjs is a generated build artifact
+      // under dist-server/.
+      const tsDist = path.join(PROJECTS_ROOT, projectId, "dist");
+      const tsServerEntry = path.join(tsDist, "server", "server.js");
+      if (
+        existsSync(tsServerEntry) &&
+        detectTanStackStart(path.join(PROJECTS_ROOT, projectId))
+      ) {
+        const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+        await rm(distServer, { recursive: true, force: true });
+        await mkdir(distServer, { recursive: true });
+        // dist/ (client + server) goes under dist-server/ so the entry's
+        // relative imports resolve and the systemd ReadWritePaths sandbox
+        // (scoped to dist-server) covers everything it reads.
+        await cp(tsDist, path.join(distServer, "dist"), { recursive: true });
+        await writeFile(
+          path.join(distServer, "index.mjs"),
+          TANSTACK_NODE_SERVER_ENTRY,
+          "utf-8",
+        );
+        // Seed package.json + lockfile then `npm install --omit=dev` inside
+        // dist-server for the deps the server bundle resolves at runtime.
+        const tsPkg = path.join(PROJECTS_ROOT, projectId, "package.json");
+        const tsLock = path.join(PROJECTS_ROOT, projectId, "package-lock.json");
+        if (existsSync(tsPkg)) {
+          await cp(tsPkg, path.join(distServer, "package.json"));
+        }
+        if (existsSync(tsLock)) {
+          await cp(tsLock, path.join(distServer, "package-lock.json"));
+        }
+        installNodeProductionDeps(distServer, projectId);
+        setupProjectUser(distServer, input.projectSlug);
+        console.log(
+          `[doable-cloud] Staged TanStack Start node-server layout at ${distServer} ` +
+            `for project ${projectId}`,
         );
       }
 

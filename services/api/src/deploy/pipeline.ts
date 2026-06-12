@@ -31,6 +31,7 @@ import { getEffectiveCfApiToken } from "../lib/cloudflare-token.js";
 import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
 import { getProjectPath } from "../ai/project-files.js";
+import { detectTanStackStart } from "../projects/detect-tanstack-start.js";
 import { ensurePublishKey, injectDataToken } from "./auto-api-key.js";
 import { linkDoableSdk } from "../projects/link-sdk.js";
 
@@ -484,7 +485,17 @@ async function registerRuntimeForDeploy(input: RegisterRuntimeInput): Promise<vo
     return;
   }
 
-  const isProcess = fwEntry.adapter.capabilities.has("requires-long-lived-process");
+  // TanStack Start projects are imported as framework_id="vite-react" (the
+  // proven Vite dev runtime is reused for preview — see
+  // projects/detect-tanstack-start.ts), so the framework adapter reports no
+  // long-lived-process capability. But their build is SSR (a web-fetch
+  // handler wrapped into a Node server by the doable-cloud staging step), so
+  // they MUST be hosted as a process via node-standalone + Caddy reverse_proxy
+  // rather than served statically. Detect from disk and force the process
+  // path. Plain vite-react SPAs are unaffected (detection returns false).
+  const isTanStack = detectTanStackStart(input.projectDir);
+  const isProcess =
+    fwEntry.adapter.capabilities.has("requires-long-lived-process") || isTanStack;
   const isPython = fwEntry.adapter.capabilities.has("ssr-python");
   // Python frameworks (Django, FastAPI) take priority over the Node default
   // because they need a uvicorn/gunicorn ExecStart, not `node`.
