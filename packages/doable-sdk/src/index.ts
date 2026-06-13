@@ -112,6 +112,21 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
       // Not in a Vite context (SSR, tests, etc.) — ignore
     }
   }
+  // Deployed mode: the publish pipeline bakes the project key into the served
+  // index.html as the runtime global `window.__DOABLE_DATA_TOKEN` (the SAME
+  // token @doable/data reads). Read it here so MCP/connector calls authenticate
+  // with the baked key. Without this, a published static site has no apiKey
+  // (VITE_DOABLE_PROJECT_KEY is only present if it happened to be inlined at
+  // build time) and TokenManager falls back to the preview-only postMessage /
+  // `/preview/:id/__doable/token` flow — which never resolves on a deployed
+  // origin, so getToken() hangs and mcp.call() emits no network request at all.
+  // In preview the global is absent, so the existing preview flow is unchanged.
+  if (!autoKey && typeof globalThis !== "undefined") {
+    const baked = (globalThis as Record<string, unknown>)["__DOABLE_DATA_TOKEN"];
+    if (typeof baked === "string" && baked.length > 0) {
+      autoKey = baked;
+    }
+  }
 
   // Auto-detect proxy URL from VITE_DOABLE_API_URL env var for deployed sites.
   // Published sites need an absolute URL because they're served from a different
