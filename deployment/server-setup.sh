@@ -1993,7 +1993,7 @@ else
     bind 127.0.0.1
 
     @has_subdomain {
-        header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\.${DOMAIN//./\\.}\$
+        header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\.${PUBLISH_WILDCARD_DOMAIN//./\\.}\$
     }
 
     handle @has_subdomain {
@@ -2013,7 +2013,7 @@ else
     }
 }
 CADDYEOF
-  ok "Caddy configured on :8080 for *.${DOMAIN} → ${INSTALL_DIR}/sites/"
+  ok "Caddy configured on :8080 for *.${PUBLISH_WILDCARD_DOMAIN} → ${INSTALL_DIR}/sites/"
 fi
 
 systemctl enable caddy
