@@ -233,10 +233,27 @@ class TokenManager {
     if (this.listening) return;
     this.listening = true;
 
+    // FIX (preview-token race): the iframe's SDK initialises as soon as the
+    // bundle loads, but the parent editor's postMessage listener is attached
+    // inside a React useEffect that fires AFTER mount. If the iframe wins the
+    // race (common), a single one-shot "doable:connector-proxy-ready" gets
+    // dropped on the floor — getToken() then hangs forever, mcp.list() never
+    // completes, and the generated chat sees an empty tool catalogue.
+    //
+    // We re-broadcast the ready message on a short interval until either the
+    // parent responds with a token (clearRetry() in the message handler
+    // below) or we hit a sane safety cap. Generic across all preview hosts —
+    // no per-project / per-server config.
+    let retryTimer: ReturnType<typeof setInterval> | null = null;
+    const clearRetry = () => {
+      if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+    };
+
     window.addEventListener("message", (ev) => {
       if (!ev.data || typeof ev.data !== "object") return;
       if (ev.data.type === "doable:connector-proxy-token" && typeof ev.data.token === "string") {
         this.token = ev.data.token;
+        clearRetry();
         const queue = this.waiters;
         this.waiters = [];
         queue.forEach((resolve) => resolve(this.token!));
@@ -245,11 +262,20 @@ class TokenManager {
 
     // If in an iframe, signal to parent that we need a token
     if (window.parent !== window) {
-      try {
-        window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*");
-      } catch {
-        // Not in iframe or cross-origin — fall through to standalone fetch
-      }
+      const postReady = () => {
+        try {
+          window.parent.postMessage({ type: "doable:connector-proxy-ready" }, "*");
+        } catch {
+          // Cross-origin block or detached parent — give up the retry loop.
+          clearRetry();
+        }
+      };
+      postReady();
+      retryTimer = setInterval(postReady, 1500);
+      // Safety cap: stop retrying after 30 s so a truly broken parent doesn't
+      // leak a forever-running interval. getToken() will keep awaiting the
+      // first token to arrive via invalidate() or a future message.
+      setTimeout(clearRetry, 30_000);
     } else {
       // Standalone mode — fetch token directly from the preview token endpoint
       this.fetchTokenDirect();
