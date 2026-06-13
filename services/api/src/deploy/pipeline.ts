@@ -309,21 +309,15 @@ export async function runPipeline(
       };
     }
 
-    // ── 3b. Bake the per-app DB token into the built index.html ──────
-    // Must run AFTER the build (operates on the emitted index.html) and BEFORE
-    // the adapter copies the output to its serving directory. Sets
-    // window.__DOABLE_DATA_TOKEN so the @doable/data SDK authenticates from the
-    // published origin. No-op for non-SPA output or when no token is available.
-    if (publishDataToken) {
-      try {
-        await injectDataToken(buildResult.outputDir, publishDataToken);
-      } catch (err) {
-        console.warn(
-          `[pipeline] Data-token injection failed for ${projectId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
+    // ── 3b. (Token injection moved to 4a, AFTER the adapter copy.) ───
+    // The per-app DB token used to be injected here, into the build output
+    // (buildResult.outputDir). That FAILS: the build runs in a sandbox under a
+    // per-project uid, so dist/index.html is owned by that sandbox uid and is
+    // NOT writable by the API process user — writeFile throws EACCES and the
+    // error was silently swallowed, so every published app shipped without its
+    // token and 401'd on /__doable/* calls. The injection now runs at 4a, on
+    // the adapter's served copy (which the API user owns), so it works across
+    // every topology and install type.
 
     // ── 4. Deploy via adapter ────────────────────────────
     await deployments.updateStatus(deployment.id, "deploying", { buildTimeMs });
@@ -341,6 +335,31 @@ export async function runPipeline(
       skipDnsRegistration: dnsMode === "wildcard",
     });
     const deployTimeMs = Date.now() - deployStart;
+
+    // ── 4a. Bake the per-app DB token into the PUBLISHED index.html ──
+    // Runs AFTER the adapter copies the build output to its serving dir. The
+    // build runs sandboxed under a per-project uid, so the emitted
+    // dist/index.html is owned by that uid and is NOT writable by the API
+    // process user (writeFile → EACCES). The adapter's copy re-creates the file
+    // owned by the API user, so injecting here — on the served copy — succeeds
+    // across every topology (path + subdomain) and install type (docker
+    // standard/secure, baremetal, doable-cli). Sets window.__DOABLE_DATA_TOKEN
+    // so the @doable/data + @doable/ai SDKs in the published app authenticate
+    // their /__doable/* calls. No-op for non-SPA output (SSR/process-kind has
+    // no static index.html) or when no token is available. The served dir comes
+    // from the adapter result (metadata.targetDir) — never a hardcoded path.
+    const servedDir = (deployResult.metadata as { targetDir?: string } | undefined)
+      ?.targetDir;
+    if (publishDataToken && servedDir) {
+      try {
+        await injectDataToken(servedDir, publishDataToken);
+      } catch (err) {
+        console.warn(
+          `[pipeline] Data-token injection failed for ${projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
 
     // ── 4b. Per-project runtime registration (PRD 06 Phase 5) ────
     // Look up the framework adapter for this project; if it requires a
