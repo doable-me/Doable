@@ -25,6 +25,7 @@ import { SUPABASE_MCP_FULL_TOOL_NAMES } from "../mcp/presets/supabase.js";
 import { sql } from "../db/index.js";
 import { connectorQueries } from "@doable/db";
 import { BUILTIN_MCP_APPS } from "../mcp/builtin-connectors.js";
+import { ensureMcpCacheFresh } from "../mcp/cache-warmer.js";
 
 /**
  * MCP tool-line extensions, keyed by integration id. Each entry returns a
@@ -152,6 +153,15 @@ const BUILTIN_CONNECTOR_NAMES = new Set(BUILTIN_MCP_APPS.map((a) => a.name));
 export async function buildConnectedMcpServersContext(
   workspaceId: string,
 ): Promise<string> {
+  // FIX (mcp-empty-cache-rootcause): probe any external MCP connector with an
+  // empty capabilities_cache RIGHT NOW, before we read the cache below. The
+  // POST /connectors auto-test is non-blocking, so a user who adds a connector
+  // and immediately generates may otherwise race past the probe and see an
+  // empty tools list — which silently degrades the prompt and makes the AI
+  // hallucinate tool names. Bounded timeouts inside the warmer prevent any
+  // single dead connector from hanging chat. Best-effort: warmer never throws.
+  await ensureMcpCacheFresh(workspaceId);
+
   let rows;
   try {
     rows = await connectorQueries(sql).listConnectors(workspaceId);
