@@ -585,6 +585,27 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
 
   window.addEventListener('load', function() {
     window.parent.postMessage({ type: 'doable-preview-loaded' }, '*');
+    // ─── Blank-mount self-heal (first-compile recovery) ──────────
+    // A freshly-generated app can paint a blank #root on its very first
+    // compile — Vite's optimizeDeps cache isn't warm yet, or the
+    // react-refresh preamble loses a startup race — even though the dev
+    // server is UP and never drops its HMR socket. The HMR-close recovery
+    // above only fires on a server restart, so this case leaves the user
+    // staring at a white preview until they manually reload. Give the app
+    // a grace window to mount; if #root is still empty AND the body has no
+    // text, force ONE reload. A sessionStorage stamp caps it to a single
+    // self-heal per 30s so a genuinely-empty/erroring app never loops.
+    setTimeout(function() {
+      try {
+        if (appMounted()) return;
+        var now = Date.now(), last = 0;
+        try { last = +(sessionStorage.getItem('__doable_blank_reload_at') || 0); } catch (e) {}
+        if (now - last > 30000) {
+          try { sessionStorage.setItem('__doable_blank_reload_at', String(now)); } catch (e) {}
+          window.location.reload();
+        }
+      } catch (e) {}
+    }, 4000);
   });
 })();
 </script>`;
