@@ -1996,6 +1996,19 @@ else
         header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\.${PUBLISH_WILDCARD_DOMAIN//./\\.}\$
     }
 
+    # AI-generated PUBLISHED apps call origin-relative /__doable/data/* and
+    # /__doable/ai/* (+ /__doable/connector-proxy/*) with a baked production
+    # token (see deploy/auto-api-key.ts). Proxy those to the API so per-app DB
+    # + Doable AI work in the DEPLOYED app, not just the preview. The baked
+    # token — not the Host — identifies the project, so one proxy correctly
+    # serves every published subdomain. MUST precede the file_server handle
+    # below, otherwise these POSTs are 405'd as static GETs and data/AI-backed
+    # apps hang on "Loading…". (Path topology gets this via the main-domain
+    # Caddy block; subdomain topology needs it here too.)
+    handle /__doable/* {
+        reverse_proxy 127.0.0.1:4000
+    }
+
     handle @has_subdomain {
         root * ${INSTALL_DIR}/sites/{re.subdomain.1}/live
         try_files {path} /index.html
