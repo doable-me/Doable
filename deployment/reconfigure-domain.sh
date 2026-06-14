@@ -303,6 +303,18 @@ if command -v caddy >/dev/null 2>&1 && [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" 
     # *.${PUB_WILDCARD} → 127.0.0.1:8080 to this block. Regenerated on every
     # domain change; do not hand-edit (re-run reconfigure-domain.sh instead).
     bind 127.0.0.1
+    # Per-app DB / auth / AI bridge. Deployed apps call origin-relative
+    # /__doable/data/*, /__doable/auth/*, /__doable/ai/* (the @doable/data &
+    # @doable/ai SDKs, with the baked window.__DOABLE_DATA_TOKEN). Without this
+    # proxy they fall through to the static file_server, get index.html (HTML),
+    # and res.json() throws "Unexpected token '<'" — so a deployed CRM hangs on
+    # "Loading…" and no data ever loads. Path is preserved (the api serves
+    # /__doable/*). MUST come before the file_server handle. (Was dropped by the
+    # pre-fix block, which is why deployed per-app-DB/AI broke after a domain
+    # reconfigure even though server-setup.sh's original block had it.)
+    handle /__doable/* {
+        reverse_proxy 127.0.0.1:4000
+    }
     @has_subdomain {
         header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\\.${PUB_RE}\$
     }
