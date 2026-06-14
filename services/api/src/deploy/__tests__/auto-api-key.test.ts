@@ -93,4 +93,40 @@ describe("detectUsedTools", () => {
     const tools = await detectUsedTools(dir);
     assert.equal(tools.includes("ai.chat"), false, '`openai.chat()` is not @doable/ai');
   });
+
+  it("flags a template-literal MCP tool name as dynamic (\"*\"), not a literal tool", async () => {
+    const dir = await makeProject({
+      "src/hook.ts":
+        "const toolName = 'list_cases';\n" +
+        "await doable.mcp.call(`mcp_discovery_mcp_${toolName}`, {});",
+    });
+    cleanups.push(dir);
+    const tools = await detectUsedTools(dir);
+    assert.ok(tools.includes("*"), "dynamic template-literal dispatch should emit the * sentinel");
+    // The un-interpolated placeholder must NOT be baked as a real tool.
+    assert.ok(
+      !tools.some((t) => t.includes("${") || t === "mcp_discovery_mcp_"),
+      `must not bake placeholder artifacts: ${JSON.stringify(tools)}`,
+    );
+  });
+
+  it("flags a variable-arg MCP dispatch as dynamic (\"*\")", async () => {
+    const dir = await makeProject({
+      "src/agent.ts":
+        "function run(tool, args) { return doable.mcp.call(tool, args); }",
+    });
+    cleanups.push(dir);
+    const tools = await detectUsedTools(dir);
+    assert.ok(tools.includes("*"), "variable-arg dispatch should emit the * sentinel");
+  });
+
+  it("keeps static MCP tool names exact (no spurious * sentinel)", async () => {
+    const dir = await makeProject({
+      "src/data.ts": 'await doable.mcp.call("mcp_discovery_mcp_list_cases_and_folders", {});',
+    });
+    cleanups.push(dir);
+    const tools = await detectUsedTools(dir);
+    assert.ok(tools.includes("mcp_discovery_mcp_list_cases_and_folders"));
+    assert.ok(!tools.includes("*"), "a static literal call must not be flagged dynamic");
+  });
 });

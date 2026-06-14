@@ -66,7 +66,24 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
         const mcpCallRegex = /\.mcp\.call\(\s*["'`]([^"'`]+)["'`]/g;
         let match;
         while ((match = mcpCallRegex.exec(content)) !== null) {
-          tools.add(match[1]!);
+          const name = match[1]!;
+          // A template-literal arg like `mcp_<conn>_${toolName}` captures the
+          // un-interpolated placeholder, NOT a real tool name. Baking it into
+          // allowed_tools never matches a real runtime call → deployed MCP 403.
+          // Treat as dynamic dispatch (handled via the "*" sentinel below).
+          if (name.includes("${")) { tools.add("*"); continue; }
+          tools.add(name);
+        }
+        // Dynamic dispatch with a VARIABLE first arg — `doable.mcp.call(toolName,
+        // …)` / `doable.mcp.call(buildName(x))`. AI assistants / ReAct chatbots do
+        // this and pass SHORT names from doable.mcp.list() at runtime, which never
+        // appear as `mcp_`-prefixed literals. We can't enumerate them at publish
+        // time, so emit the "*" sentinel → the caller mints an UNRESTRICTED key
+        // (still origin-bound + project-scoped, so this can't widen cross-app
+        // access). Without this, dynamic MCP apps work in preview (unrestricted
+        // JWT) but 403 once deployed (scoped baked key).
+        if (/\.mcp\.call\(\s*[A-Za-z_$][\w$.]*\s*[,)]/.test(content)) {
+          tools.add("*");
         }
         // Also match integrations.run("integration_id", "action_name")
         const intRegex = /\.integrations\.run\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]/g;
@@ -85,7 +102,13 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
         // still origin-bound and the MCP server rejects unknown tool names.
         const mcpNameRegex = /["'`](mcp_[A-Za-z0-9_]+)["'`]/g;
         while ((match = mcpNameRegex.exec(content)) !== null) {
-          tools.add(match[1]!);
+          const name = match[1]!;
+          // A bare connector-prefix fragment like `mcp_discovery_mcp_` is the
+          // leading half of a `mcp_<connector>_${toolName}` template — NOT a
+          // real tool. It always ends in "_". Don't bake it (it would scope the
+          // key to a tool that never exists); treat it as dynamic dispatch.
+          if (name.endsWith("_")) { tools.add("*"); continue; }
+          tools.add(name);
         }
         // Per-app database: reached via `import { db } from "@doable/data"` +
         // db.query()/db.schema(), NOT via .mcp.call(), so the patterns above miss
@@ -141,7 +164,18 @@ export async function autoProvisionApiKey(opts: {
 
   // Detect which tools the app uses
   const usedTools = await detectUsedTools(projectDir);
-  const allowedTools = usedTools.length > 0 ? usedTools : null; // null = unrestricted
+  // A "*" sentinel means the app dispatches MCP tools dynamically (variable or
+  // template-literal tool names we can't enumerate at publish time — typical of
+  // AI assistants / ReAct chatbots that pick tools from doable.mcp.list() at
+  // runtime). Mint an UNRESTRICTED key (allowed_tools = NULL): it stays
+  // origin-bound + project-scoped, so this can't widen cross-app access, and it
+  // matches the preview behaviour (preview JWT is unrestricted). Without this,
+  // such apps work in preview but every MCP call 403s once deployed.
+  const allowedTools = usedTools.includes("*")
+    ? null
+    : usedTools.length > 0
+      ? usedTools
+      : null; // null = unrestricted
 
   // Determine origin from published URL
   let allowedOrigins: string[] | null = null;
@@ -302,10 +336,19 @@ export async function ensurePublishKey(opts: {
     const current = (trow as { allowed_tools?: unknown } | undefined)?.allowed_tools;
     if (Array.isArray(current)) {
       const scanned = await detectUsedTools(opts.projectDir);
-      const merged = Array.from(new Set([...(current as string[]), ...scanned]));
-      if (merged.length > current.length) {
-        await sql`UPDATE project_api_keys SET allowed_tools = ${merged} WHERE id = ${existing[0]!.id}`;
-        console.log(`[auto-api-key] Re-scoped client key for project ${projectId}: now ${merged.length} tools`);
+      if (scanned.includes("*")) {
+        // The app now dispatches MCP tools dynamically (variable/template-literal
+        // tool names). A restricted allowlist can never match the runtime names,
+        // so every deployed MCP call would 403. Widen to unrestricted — origin
+        // binding stays, so access is still confined to this app's own key.
+        await sql`UPDATE project_api_keys SET allowed_tools = NULL WHERE id = ${existing[0]!.id}`;
+        console.log(`[auto-api-key] Re-scoped client key for project ${projectId}: dynamic MCP dispatch → unrestricted`);
+      } else {
+        const merged = Array.from(new Set([...(current as string[]), ...scanned]));
+        if (merged.length > current.length) {
+          await sql`UPDATE project_api_keys SET allowed_tools = ${merged} WHERE id = ${existing[0]!.id}`;
+          console.log(`[auto-api-key] Re-scoped client key for project ${projectId}: now ${merged.length} tools`);
+        }
       }
     }
   } catch (err) {
