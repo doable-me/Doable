@@ -297,27 +297,32 @@ if command -v caddy >/dev/null 2>&1 && [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" 
 
   cat >> "$CADDYFILE" <<CADDYBLOCK
 
+# Published-sites :8080 block — auto-managed by reconfigure-domain.sh. Kept
+# byte-for-byte identical to server-setup.sh's :8080 block (only the wildcard
+# domain differs: ${PUB_RE} here == ${PUBLISH_WILDCARD_DOMAIN//./\\.} there,
+# both render the same escaped zone) so the two can never drift. cloudflared
+# routes *.${PUB_WILDCARD} → 127.0.0.1:8080 to this block. Re-run
+# reconfigure-domain.sh to regenerate; do not hand-edit.
 :8080 {
-    # Auto-managed by reconfigure-domain.sh — serves *.${PUB_WILDCARD} published
-    # SPAs from ${INSTALL_DIR}/sites/<subdomain>/live. cloudflared routes
-    # *.${PUB_WILDCARD} → 127.0.0.1:8080 to this block. Regenerated on every
-    # domain change; do not hand-edit (re-run reconfigure-domain.sh instead).
     bind 127.0.0.1
-    # Per-app DB / auth / AI bridge. Deployed apps call origin-relative
-    # /__doable/data/*, /__doable/auth/*, /__doable/ai/* (the @doable/data &
-    # @doable/ai SDKs, with the baked window.__DOABLE_DATA_TOKEN). Without this
-    # proxy they fall through to the static file_server, get index.html (HTML),
-    # and res.json() throws "Unexpected token '<'" — so a deployed CRM hangs on
-    # "Loading…" and no data ever loads. Path is preserved (the api serves
-    # /__doable/*). MUST come before the file_server handle. (Was dropped by the
-    # pre-fix block, which is why deployed per-app-DB/AI broke after a domain
-    # reconfigure even though server-setup.sh's original block had it.)
-    handle /__doable/* {
-        reverse_proxy 127.0.0.1:4000
-    }
+
     @has_subdomain {
         header_regexp subdomain Host ^([a-z0-9][-a-z0-9]*)\\.${PUB_RE}\$
     }
+
+    # AI-generated PUBLISHED apps call origin-relative /__doable/data/* and
+    # /__doable/ai/* (+ /__doable/connector-proxy/*) with a baked production
+    # token (see deploy/auto-api-key.ts). Proxy those to the API so per-app DB
+    # + Doable AI work in the DEPLOYED app, not just the preview. The baked
+    # token — not the Host — identifies the project, so one proxy correctly
+    # serves every published subdomain. MUST precede the file_server handle
+    # below, otherwise these POSTs are 405'd as static GETs and data/AI-backed
+    # apps hang on "Loading…". (Path topology gets this via the main-domain
+    # Caddy block; subdomain topology needs it here too.)
+    handle /__doable/* {
+        reverse_proxy 127.0.0.1:4000
+    }
+
     handle @has_subdomain {
         root * ${INSTALL_DIR}/sites/{re.subdomain.1}/live
         try_files {path} /index.html
@@ -329,6 +334,7 @@ if command -v caddy >/dev/null 2>&1 && [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" 
         }
         encode gzip
     }
+
     handle {
         respond "Not Found" 404
     }
