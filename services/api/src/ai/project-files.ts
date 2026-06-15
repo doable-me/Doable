@@ -7,6 +7,7 @@ import {
   detectTanStackStart,
   tanStackHijackViolation,
 } from "../projects/detect-tanstack-start.js";
+import { handRolledMcpAgentViolation } from "../projects/detect-mcp-agent-misuse.js";
 
 // ─── Configuration ────────────────────────────────────────
 
@@ -186,6 +187,18 @@ export async function writeProjectFile(
     if (violation) {
       throw new FileAccessError(violation);
     }
+  }
+
+  // MCP assistant guard. Same single chokepoint: reject a generated source file
+  // that hand-rolls an MCP tool-calling loop (ai.chat + doable.mcp.call + manual
+  // tool-call parsing / [TOOL_CALL] scraping) instead of using the robust
+  // runMcpAgent helper from @doable/ai. Guidance alone doesn't stop the model
+  // from writing its own fragile parser, which leaks raw JSON / hallucinated
+  // data; this forces the working path. Generic to any MCP server/workspace/
+  // project — see projects/detect-mcp-agent-misuse.ts for the precise rule.
+  const mcpAgentViolation = handRolledMcpAgentViolation(filePath, content);
+  if (mcpAgentViolation) {
+    throw new FileAccessError(mcpAgentViolation);
   }
 
   // AI scaffolds with Tailwind v4 + shadcn-style raw-HSL CSS variables need
