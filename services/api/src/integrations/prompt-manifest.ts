@@ -179,11 +179,14 @@ export async function buildConnectedMcpServersContext(
   if (external.length === 0) return "";
 
   const MAX_TOOLS = 24;
+  // Cumulative budget for the real-response-shape lines across ALL connectors,
+  // so a tool-rich read-only server can't blow up the system prompt.
+  let shapeCharBudget = 12_000;
   const lines: string[] = [];
   for (const row of external) {
     const safeName = row.name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
     const cache = row.capabilities_cache as
-      | { tools?: { list?: Array<{ name: string; description?: string }> } }
+      | { tools?: { list?: Array<{ name: string; description?: string; outputShape?: string }> } }
       | null;
     const toolList = cache?.tools?.list ?? [];
     lines.push(`- **${row.name}**${row.description ? ` — ${row.description}` : ""}`);
@@ -200,6 +203,14 @@ export async function buildConnectedMcpServersContext(
         ? ` — ${tool.description.replace(/\s+/g, " ").slice(0, 140)}`
         : "";
       lines.push(`    - \`${full}\`${desc}`);
+      // Real response shape, observed by actually calling the tool at probe time.
+      // The generator MUST bind to these EXACT keys — this is what eliminates the
+      // "guessed key names → dashboard shows 0 despite a 200 response" failure.
+      if (tool.outputShape && shapeCharBudget > 0) {
+        const shape = tool.outputShape.replace(/\s+/g, " ").slice(0, 1000);
+        lines.push(`        ↳ REAL response shape (bind to these EXACT keys): ${shape}`);
+        shapeCharBudget -= shape.length;
+      }
     }
     if (toolList.length > MAX_TOOLS) {
       lines.push(
@@ -224,7 +235,7 @@ export async function buildConnectedMcpServersContext(
     "RULES — MANDATORY whenever the user asks for a dashboard, report, view, or to \"show the data\":",
     "1. You MUST generate React components that call `doable.mcp.call(...)` at runtime and render the returned data as dashboards, tables, charts, and cards ON THE PAGE (with loading and error states).",
     "2. DO NOT merely call the MCP tool yourself and show its response in chat. DO NOT bake the tool's output into the code as a hardcoded/static constant — the live preview AND the deployed site must fetch fresh data.",
-    "3. **🔎 ALWAYS INSPECT THE REAL RESPONSE SHAPE FIRST — NEVER GUESS FIELD NAMES.** Before you write any component that renders a tool's data, CALL that tool ONCE during this build (the `mcp_…` tools are callable to you here) and read the ACTUAL JSON it returns, then map the EXACT keys you observed. EVERY MCP server returns a DIFFERENT shape — do not assume key names from the tool's name or description. The payload is usually WRAPPED, with the useful arrays/objects/totals NESTED under `data` at keys that vary per server (the rows could be at `data.items`, `data.results`, `data.records`, `data.rows`, `data.list`, or a domain-specific key; totals/counts at `data.summary`, `data.pagination`, `data.total`, etc.). Use ONLY the exact keys you saw in the real response — never an invented or expected name. Mirror the real keys verbatim; if unsure, probe again rather than guess. Then build the UI around live `doable.mcp.call` calls.",
+    "3. **🔎 BIND TO THE REAL RESPONSE SHAPE — NEVER GUESS FIELD NAMES.** Each tool above may show a `↳ REAL response shape` line — that is the ACTUAL JSON the tool returns, ALREADY captured for you. ⛔ Do NOT try to call, probe, curl, bash, or otherwise invoke the MCP tools yourself during this build — you cannot, and attempting it wastes the entire build. Just write the React code that calls `doable.mcp.call(...)` at RUNTIME and binds to the shown keys. When a shape is shown you MUST map your UI to those EXACT keys (e.g. if it shows `result.data = { openCases: array, closedCases: array }`, read `result.data.openCases` — NOT a guessed `result.data.cases`). EVERY MCP server returns a DIFFERENT shape — never assume key names from the tool's name/description and never invent friendlier names. The payload is WRAPPED: the real arrays/objects/totals are NESTED under `result.data` at the keys shown (they vary per server — `openCases`, `items`, `results`, `records`, `rows`, `holds`, etc.; per-row fields likewise vary, e.g. `statusId`/`isActive` rather than `status`). Mirror the shown keys verbatim, at every nesting level. For any tool WITHOUT a shown shape, do NOT block the build trying to discover it — assume the wrapper `{ success, data }`, render whatever array/object `data` actually contains by reading defensively (try the obvious container keys), and `console.log(result.data)` so the real shape is visible at runtime; never hardcode a guessed name.",
     "4. Use the EXACT `mcp_…` tool names listed above — that is how the runtime proxy resolves the connector + tool. `@doable/sdk` is pre-linked: import it directly, never add it to package.json, and never hardcode the MCP server URL or credentials.",
     "5. This works identically in the live preview and the deployed site — the auth token / project key is injected automatically.",
     "6. **🔐 HANDLE AUTH/ERRORS GRACEFULLY — never show raw errors to end-users.** `doable.mcp.call` returns `{ success, data, error }` and does NOT throw. Show a loading state while a call is in flight. If a result is not successful and `error.code === 'AUTH_REQUIRED'`, render a clean centered panel telling the user the data source needs to be connected, with a Sign in button that opens `error.loginUrl` (when present) in a new tab — never a raw error and never a silently-empty dashboard. For any other failure show a small inline Retry affordance. Never surface 401/404 codes, stack traces, or the phrase 'authentication error' to end-users.",

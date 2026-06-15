@@ -27,7 +27,7 @@ import { sql } from "../db/index.js";
 import { connectorQueries, type McpConnectorRow } from "@doable/db";
 import { BUILTIN_MCP_APPS } from "./builtin-connectors.js";
 import { getConnectorManager } from "./connector-manager.js";
-import type { McpConnectorConfig } from "./types.js";
+import type { McpConnectorConfig, McpToolDefinition } from "./types.js";
 
 const connectors = connectorQueries(sql);
 const BUILTIN_CONNECTOR_NAMES = new Set(BUILTIN_MCP_APPS.map((a) => a.name));
@@ -36,16 +36,162 @@ const BUILTIN_CONNECTOR_NAMES = new Set(BUILTIN_MCP_APPS.map((a) => a.name));
  *  waits long enough for a normal MCP server to respond, but never holds chat
  *  hostage if the server is dead. */
 const DEFAULT_PER_CONNECTOR_TIMEOUT_MS = 8_000;
-const DEFAULT_TOTAL_TIMEOUT_MS = 12_000;
+// Allow extra wall-clock for the output-shape sampling phase below. Bounded so a
+// dead/slow connector can never hold chat hostage; this only ever blocks ONCE
+// per connector (the captured shapes are cached and reused forever after).
+const DEFAULT_TOTAL_TIMEOUT_MS = 28_000;
+
+/** Output-shape sampling budgets (see captureOutputShapes). */
+const SHAPE_PHASE_TIMEOUT_MS = 14_000; // overall cap for sampling all tools of one connector
+const SHAPE_PER_CALL_TIMEOUT_MS = 4_000; // cap for a single sample tool call
+const MAX_SAMPLE_TOOLS = 14; // never sample more than this many tools per connector
+
+/** A cached tool entry. `outputShape` is a compact, human/LLM-readable summary of
+ *  the REAL response observed when the tool was sampled at probe time — this is
+ *  what lets the generator bind to actual response keys instead of guessing. */
+interface CachedTool {
+  name: string;
+  description?: string;
+  outputShape?: string;
+}
 
 interface CacheTools {
-  tools?: { list?: Array<{ name: string; description?: string }> };
+  tools?: { list?: Array<CachedTool>; shapesV1?: boolean };
 }
 
 function isCacheEmpty(row: McpConnectorRow): boolean {
   const cache = row.capabilities_cache as CacheTools | null;
   const list = cache?.tools?.list;
   return !Array.isArray(list) || list.length === 0;
+}
+
+/**
+ * A connector needs (re)warming if its tool list is empty OR the list predates
+ * the output-shape capture (no `shapesV1` marker). The latter ensures connectors
+ * that were probed before this feature shipped get their real response shapes
+ * captured exactly once on the next generation, then cached.
+ */
+function needsWarming(row: McpConnectorRow): boolean {
+  if (isCacheEmpty(row)) return true;
+  const cache = row.capabilities_cache as CacheTools | null;
+  return cache?.tools?.shapesV1 !== true;
+}
+
+// ─── Generic output-shape sampling (server-agnostic) ──────────────────────────
+
+/** Tool-name heuristics: only ever SAMPLE tools that look read-only, so probing
+ *  can never trigger a mutation on the user's MCP server. A write match always
+ *  wins over a read match. */
+const READ_NAME_RE =
+  /(^|[_-])(list|get|query|search|fetch|read|find|show|describe|count|summary|summarize|view|lookup|retrieve|explore|browse|stat|status|detail|details|info|all)([_-]|$)/i;
+const WRITE_NAME_RE =
+  /(^|[_-])(create|update|delete|remove|write|set|add|insert|put|post|send|patch|drop|modify|edit|upload|cancel|approve|reject|execute|run|trigger|apply|release|assign|revoke|disable|enable|move|copy|rename|restore|purge|archive|import|export|sync|register|provision|deploy|start|stop|restart|kill|destroy|reset|generate|submit|publish|share|grant|invite|login|logout|authorize)([_-]|$)/i;
+
+export function isLikelyReadOnly(tool: McpToolDefinition): boolean {
+  // Respect an explicit MCP readOnlyHint annotation when present (most reliable).
+  const ann = (tool as { annotations?: { readOnlyHint?: boolean } }).annotations;
+  if (ann?.readOnlyHint === true) return true;
+  if (ann?.readOnlyHint === false) return false;
+  if (WRITE_NAME_RE.test(tool.name)) return false;
+  return READ_NAME_RE.test(tool.name);
+}
+
+/** Derive the MINIMAL set of args needed to satisfy a tool's required inputs, so
+ *  read tools that require a param (e.g. an enum `type`) can still be sampled.
+ *  Optional params are omitted. Never invents free-text values beyond "". */
+export function deriveSafeArgs(inputSchema: McpToolDefinition["inputSchema"]): Record<string, unknown> {
+  const props = (inputSchema?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = Array.isArray(inputSchema?.required) ? inputSchema.required : [];
+  const args: Record<string, unknown> = {};
+  for (const key of required) {
+    const spec = props[key] ?? {};
+    if (Array.isArray(spec.enum) && spec.enum.length > 0) { args[key] = spec.enum[0]; continue; }
+    if (spec.default !== undefined) { args[key] = spec.default; continue; }
+    switch (spec.type) {
+      case "number": case "integer": args[key] = 1; break;
+      case "boolean": args[key] = false; break;
+      case "array": args[key] = []; break;
+      case "object": args[key] = {}; break;
+      default: args[key] = ""; // string / unknown — best effort
+    }
+  }
+  return args;
+}
+
+/** Build a compact, depth-limited shape summary of a real response value. Keeps
+ *  KEY NAMES + types + array lengths (the bug was wrong key names), strips the
+ *  LLM-only `_meta` blob, and never embeds bulk row data. */
+export function summarizeShape(value: unknown, depth = 0): string {
+  if (value === null || value === undefined) return value === null ? "null" : "undefined";
+  if (Array.isArray(value)) {
+    const inner = value.length > 0 ? summarizeShape(value[0], depth + 1) : "any";
+    return `array[${value.length}] of ${inner}`;
+  }
+  const t = typeof value;
+  if (t === "object") {
+    if (depth >= 3) return "object";
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj).filter((k) => k !== "_meta");
+    if (keys.length === 0) return "object";
+    const shown = keys.slice(0, 24);
+    const parts = shown.map((k) => `${k}: ${summarizeShape(obj[k], depth + 1)}`);
+    if (keys.length > shown.length) parts.push(`…+${keys.length - shown.length} more`);
+    return `{ ${parts.join(", ")} }`;
+  }
+  return t; // string | number | boolean | bigint | symbol | function
+}
+
+/** Sample a single tool's real output and return a compact shape string, or
+ *  undefined on any failure (never throws). The proxy wraps results as
+ *  `{ success, data }`, so we summarize from the parsed `data`. */
+async function sampleToolShape(
+  config: McpConnectorConfig,
+  tool: McpToolDefinition,
+): Promise<string | undefined> {
+  try {
+    const manager = getConnectorManager();
+    const args = deriveSafeArgs(tool.inputSchema);
+    const res = await withTimeout(
+      manager.callTool(config, tool.name, args),
+      SHAPE_PER_CALL_TIMEOUT_MS,
+      `[mcp-cache-warmer] sample ${config.name}/${tool.name}`,
+    );
+    if (res.isError) return undefined;
+    const text = res.content
+      .filter((it): it is { type: "text"; text: string } => it.type === "text")
+      .map((it) => it.text)
+      .join("\n");
+    if (!text) return undefined;
+    let data: unknown;
+    try { data = JSON.parse(text); } catch { return undefined; } // non-JSON → not bindable
+    let shape = `result.data = ${summarizeShape(data, 0)}`;
+    if (shape.length > 1200) shape = shape.slice(0, 1200) + " …}";
+    return shape;
+  } catch {
+    return undefined; // timeout, auth, validation — degrade to the no-shape line
+  }
+}
+
+/** Capture real output shapes for the read-only tools of one connector,
+ *  concurrently and time-bounded. Returns a name→shape map (possibly empty). */
+async function captureOutputShapes(
+  config: McpConnectorConfig,
+  tools: McpToolDefinition[],
+): Promise<Record<string, string>> {
+  const sampleable = tools.filter(isLikelyReadOnly).slice(0, MAX_SAMPLE_TOOLS);
+  if (sampleable.length === 0) return {};
+  const shapes: Record<string, string> = {};
+  await withTimeout(
+    Promise.allSettled(
+      sampleable.map(async (tool) => {
+        const shape = await sampleToolShape(config, tool);
+        if (shape) shapes[tool.name] = shape;
+      }),
+    ).then(() => undefined),
+    SHAPE_PHASE_TIMEOUT_MS,
+    `[mcp-cache-warmer] shape phase ${config.name}`,
+  ).catch(() => {}); // partial results are fine
+  return shapes;
 }
 
 function isExternal(row: McpConnectorRow): boolean {
@@ -98,16 +244,35 @@ async function probeAndPersist(row: McpConnectorRow, perConnectorTimeoutMs: numb
     `[mcp-cache-warmer] probe ${config.name}`,
   );
   if (result.success && result.tools) {
+    // Capture REAL output shapes for read-only tools so the generator binds to
+    // actual response keys instead of guessing (the "shows 0 despite 200" bug).
+    // Best-effort + time-bounded; degrades to no-shape lines on any failure.
+    let shapes: Record<string, string> = {};
+    try {
+      shapes = await captureOutputShapes(config, result.tools);
+    } catch (err) {
+      console.warn(
+        `[mcp-cache-warmer] shape capture failed for ${config.name}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+    const shapeCount = Object.keys(shapes).length;
     await connectors.updateConnectorStatus(row.id, "active", {
       capabilities: {
         tools: {
           count: result.tools.length,
-          list: result.tools.map((t) => ({ name: t.name, description: t.description })),
+          // `shapesV1` marks that output-shape capture was ATTEMPTED, so we never
+          // re-sample this connector on every subsequent generation.
+          shapesV1: true,
+          list: result.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            ...(shapes[t.name] ? { outputShape: shapes[t.name] } : {}),
+          })),
         },
       },
     });
     console.log(
-      `[mcp-cache-warmer] populated ${config.name}: ${result.tools.length} tools`,
+      `[mcp-cache-warmer] populated ${config.name}: ${result.tools.length} tools, ${shapeCount} shape(s) captured`,
     );
   } else if (!result.success) {
     // Don't downgrade status — the cache simply stays empty for this call.
@@ -145,7 +310,7 @@ export async function ensureMcpCacheFresh(
     return;
   }
 
-  const stale = rows.filter((r) => isExternal(r) && isCacheEmpty(r));
+  const stale = rows.filter((r) => isExternal(r) && needsWarming(r));
   if (stale.length === 0) return;
 
   console.log(
