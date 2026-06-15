@@ -405,16 +405,17 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
     }, '*');
   }
 
-  // TUNNEL-MODE FALSE POSITIVE: Vite's HMR client logs "[vite] failed to connect
-  // to websocket" (via console.error) and may flash a transient "server connection
-  // lost" overlay when its live-reload websocket can't reach the dev server. In
-  // tunnel mode the preview is served cross-origin (cloudflared -> api -> per-project
-  // Vite) and the HMR ws relay can be momentarily unreachable through the sandboxed
-  // cross-origin handshake. This is a connectivity/infra warning, NOT a code/render
-  // defect — the app is already mounted and rendering. Reporting it to the editor's
-  // auto-fix loop is a false positive: the model can't fix infra, so it burns all
-  // attempts and the user sees "Auto-fix paused ... after N attempts". Drop it when
-  // the app has actually mounted content (#root has children or the body has text).
+  // HMR-TRANSPORT NOISE — ALWAYS DROPPED (never gated on app-mounted state).
+  // Vite's HMR client logs "[vite] failed to connect to websocket" (via
+  // console.error) and may flash a transient "server connection lost" overlay when
+  // its live-reload websocket can't reach the dev server. This is purely a
+  // connectivity/infra signal about the HMR socket — it is NEVER an app code or
+  // render defect, so the model can never fix it. Feeding it to the editor's
+  // auto-fix loop is always a false positive: the model burns every attempt and
+  // (worse) keeps "deploying a fresh preview" in a loop, which re-blanks the iframe
+  // and re-fires the error while unmounted. We previously suppressed this ONLY when
+  // appMounted() was true, but a PERMANENTLY-failing HMR socket (e.g. a misrouted
+  // relay) fires while unmounted too, so the loop survived. Drop it unconditionally.
   var HMR_WS_RE = /failed to connect to websocket|\\[vite\\][^\\n]*websocket|server connection lost|websocket connection[^\\n]*fail|websocket closed without opened|websocket is closed before the connection is established/i;
   // CONNECTOR-AUTH FALSE POSITIVE: @doable/data and @doable/ai authenticate with
   // a connector JWT (globalThis.__DOABLE_DATA_TOKEN) that the bridge injects
@@ -439,7 +440,7 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
 
   function captureError(msg, source, line, col, stack) {
     if (msg && (msg.includes('ResizeObserver') || msg.includes('Script error') && !source)) return;
-    if (msg && HMR_WS_RE.test(String(msg)) && appMounted()) return;
+    if (msg && HMR_WS_RE.test(String(msg))) return;
     if (msg && CONNECTOR_AUTH_RE.test(String(msg))) return;
     errors.push({
       message: String(msg || 'Unknown error'),

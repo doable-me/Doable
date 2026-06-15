@@ -346,9 +346,6 @@ export function generatePlatformViteConfig(
     !rawDomain.includes("localhost") &&
     !rawDomain.startsWith("127.") &&
     !rawDomain.startsWith("0.");
-  // Escape any embedded quotes/backslashes in the host string before JSON-stringifying;
-  // the value lands inside a JS string literal in the generated file.
-  const safeHost = JSON.stringify(rawDomain);
   const safePath = JSON.stringify(`/preview/${projectId}/__hmr`);
 
   if (!isPublic) {
@@ -429,14 +426,19 @@ export default async (env) => {
     ...base,
     server: {
       ...baseServer,
-      // Platform-owned HMR transport. The browser at https://${rawDomain}/preview/${projectId}/
-      // connects to wss://${rawDomain}:443/preview/${projectId}/__hmr, which the
-      // API server's WebSocket relay routes to this Vite process. Overrides any
-      // hmr config the user (or AI) sets — they CANNOT break HMR transport.
+      // Platform-owned HMR transport, routed through the API's WebSocket relay.
+      // We deliberately DO NOT pin \`host\`: Vite's HMR client falls back to
+      // \`location.hostname\`, i.e. the EXACT host that served this preview iframe
+      // (the per-install preview host, a custom domain, or the apex — whatever the
+      // browser actually loaded). Hard-coding DOABLE_DOMAIN broke HMR on every
+      // install whose preview host differs from the publish apex (subdomain /
+      // custom-domain installs): the browser opened wss://<apex>/... instead of the
+      // serving host, the relay never matched, and Vite logged "failed to connect
+      // to websocket" forever. Omitting host is generic + correct for all topologies.
+      // Overrides any hmr config the user (or AI) sets — they CANNOT break HMR.
       hmr: {
         clientPort: 443,
         protocol: "wss",
-        host: ${safeHost},
         path: ${safePath},
       },
       // Vite refuses upgrades whose Host header is unknown when allowedHosts is

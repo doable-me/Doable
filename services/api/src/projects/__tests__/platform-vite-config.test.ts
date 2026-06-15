@@ -33,8 +33,26 @@ test("public-domain branch still pins the relay HMR transport + base plugins sur
   const code = generatePlatformViteConfig("proj-xyz", { domain: "zantaz.doable.me" });
   // Platform HMR override is applied on top of the awaited base.
   assert.match(code, /protocol: "wss"/);
+  assert.match(code, /clientPort: 443/);
+  assert.match(code, /path: "\/preview\/proj-xyz\/__hmr"/);
   assert.match(code, /allowedHosts: true/);
   // base is spread FIRST so user plugins are preserved, then server/optimizeDeps overridden.
   assert.match(code, /\.\.\.base,/);
   assert.match(code, /exclude: \[\.\.\.\(base\.optimizeDeps\?\.exclude \?\? \[\]\), "@doable\/sdk", "@doable\/data"\]/);
+});
+
+test("public-domain branch does NOT pin hmr.host — falls back to the preview's own location.hostname", () => {
+  // Regression for the cross-host HMR bug: hard-coding host to DOABLE_DOMAIN
+  // (the publish apex) broke HMR on every install whose preview host differs
+  // (subdomain / custom-domain). The generated config must NOT emit a `host:`
+  // key in the hmr block, so Vite's client uses location.hostname (the exact
+  // host that served the preview iframe) for the websocket — generic everywhere.
+  const code = generatePlatformViteConfig("proj-xyz", { domain: "zantaz.doable.me" });
+  assert.doesNotMatch(code, /host: "zantaz\.doable\.me"/);
+  // No `host:` property inside the hmr transport block at all.
+  const hmrBlock = code.slice(code.indexOf("hmr: {"), code.indexOf("path:", code.indexOf("hmr: {")) + 40);
+  assert.doesNotMatch(hmrBlock, /\bhost:/);
+  // Also true for the apex install — host is never pinned regardless of domain.
+  const apex = generatePlatformViteConfig("proj-xyz", { domain: "doable.me" });
+  assert.doesNotMatch(apex, /host: "doable\.me"/);
 });
