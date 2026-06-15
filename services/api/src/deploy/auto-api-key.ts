@@ -85,6 +85,19 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
         if (/\.mcp\.call\(\s*[A-Za-z_$][\w$.]*\s*[,)]/.test(content)) {
           tools.add("*");
         }
+        // Agent-based MCP dispatch: the platform's `runMcpAgent({ mcp, … })`
+        // ReAct helper (the recommended way to build an in-app MCP chatbot) calls
+        // `mcp.call(<toolName>, …)` for tools it discovers/picks at RUNTIME — the
+        // call lives inside @doable/ai (node_modules), so no `mcp_…` literal ever
+        // appears in the app's own src and none of the patterns above fire. The
+        // published key would then omit every MCP tool and 403 at runtime (works
+        // in preview only, where the JWT is unrestricted). Treat any use of the
+        // agent as dynamic dispatch → "*" sentinel → UNRESTRICTED key (still
+        // origin-bound + project-scoped, so it can't widen cross-app access).
+        // Generic by construction: keys off the helper, never a server/tool name.
+        if (/\brunMcpAgent\b/.test(content)) {
+          tools.add("*");
+        }
         // Also match integrations.run("integration_id", "action_name")
         const intRegex = /\.integrations\.run\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]/g;
         while ((match = intRegex.exec(content)) !== null) {

@@ -120,6 +120,35 @@ describe("detectUsedTools", () => {
     assert.ok(tools.includes("*"), "variable-arg dispatch should emit the * sentinel");
   });
 
+  it("flags a PURE runMcpAgent assistant as dynamic (\"*\") — the deployed-403 regression", async () => {
+    // Reproduces 0bfac055: the chatbot dispatches MCP tools only via the
+    // platform's runMcpAgent helper, so no `mcp_…` literal exists in src. Without
+    // the * sentinel the published key gets {ai.chat} and every MCP call 403s.
+    const dir = await makeProject({
+      "src/App.tsx": `
+        const { runMcpAgent } = await import("@doable/ai");
+        const { createDoableClient } = await import("@doable/sdk");
+        const doable = createDoableClient();
+        const { answer } = await runMcpAgent({ mcp: doable.mcp, ai, messages });
+      `,
+    });
+    cleanups.push(dir);
+    const tools = await detectUsedTools(dir);
+    assert.ok(tools.includes("*"), "runMcpAgent dispatch must emit the * sentinel");
+    assert.ok(tools.includes("ai.chat"), "still grants ai.chat for the @doable/ai import");
+    // No bogus mcp_ literal should have been baked.
+    assert.ok(!tools.some((t) => t.startsWith("mcp_")), `must not bake an mcp literal: ${JSON.stringify(tools)}`);
+  });
+
+  it("is generic — runMcpAgent flags dynamic regardless of server/tool names", async () => {
+    const dir = await makeProject({
+      "src/Bot.tsx": 'import { runMcpAgent } from "@doable/ai";\nexport const go = (mcp) => runMcpAgent({ mcp });',
+    });
+    cleanups.push(dir);
+    const tools = await detectUsedTools(dir);
+    assert.ok(tools.includes("*"));
+  });
+
   it("keeps static MCP tool names exact (no spurious * sentinel)", async () => {
     const dir = await makeProject({
       "src/data.ts": 'await doable.mcp.call("mcp_discovery_mcp_list_cases_and_folders", {});',
