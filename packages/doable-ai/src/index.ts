@@ -17,7 +17,15 @@
  *
  *   // Batch embeddings
  *   const { vectors } = await ai.embed(["semantic search text"]);
+ *
+ *   // MCP tool-calling assistant (ReAct loop over connected MCP tools)
+ *   import { runMcpAgent } from "@doable/ai";
+ *   import { createDoableClient } from "@doable/sdk";
+ *   const doable = createDoableClient();
+ *   const { answer } = await runMcpAgent({ mcp: doable.mcp, prompt: "how many cases?" });
  */
+
+import { stripThinking } from "./thinking.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -330,6 +338,282 @@ export const ai = new DoableAiClient({ token: "" });
 
 export function createAiClient(opts: AiClientOptions): DoableAiClient {
   return new DoableAiClient(opts);
+}
+
+// ── MCP tool-calling assistant (ReAct loop) ────────────────────────────────
+//
+// Generated "AI assistant / chatbot over MCP" apps need a model↔tool loop:
+// the model decides which connected MCP tool to call, the app calls it, feeds
+// the REAL result back, and the model answers from that data. Hand-written
+// versions of this loop are the #1 source of broken MCP chatbots — a greedy
+// `/\{[\s\S]*\}/` match spans the first "{" to the LAST "}", so the moment the
+// model emits more than one tool-call object (or wraps it in prose) JSON.parse
+// throws, the tool never executes, and the model's fabricated text leaks to the
+// UI as if it were real data. `runMcpAgent` centralises a robust version here
+// so every generated app gets it for free — no per-app parsing code.
+
+/**
+ * Structural shape of the MCP client returned by
+ * `createDoableClient().mcp` in @doable/sdk. Declared structurally so
+ * @doable/ai stays dependency-free (no import of @doable/sdk).
+ */
+export interface McpClientLike {
+  list(): Promise<{
+    success: boolean;
+    data: Array<{
+      fullName?: string;
+      name?: string;
+      connectorName?: string;
+      toolName?: string;
+      description?: string;
+    }>;
+    error: { code: string; message: string } | null;
+  }>;
+  call(
+    toolName: string,
+    args?: Record<string, unknown>,
+  ): Promise<{
+    success: boolean;
+    data: unknown;
+    error: { code: string; message: string; loginUrl?: string } | null;
+  }>;
+}
+
+export interface McpToolInvocation {
+  tool: string;
+  args: Record<string, unknown>;
+}
+
+export interface RunMcpAgentOptions {
+  /** MCP client — pass `createDoableClient().mcp` from @doable/sdk. */
+  mcp: McpClientLike;
+  /** The user's message/question for this turn. */
+  prompt: string;
+  /** Extra domain/system instructions prepended to the agent system prompt. */
+  system?: string;
+  /** Prior conversation turns (user/assistant) — excludes the system message. */
+  history?: ChatMessage[];
+  /** AI client to use. Defaults to the shared `ai` singleton. */
+  client?: DoableAiClient;
+  /** Max tool-call rounds before forcing a final answer. Default 6. */
+  maxSteps?: number;
+  /** Fires right before each MCP tool executes (for a "calling X…" indicator). */
+  onToolCall?: (ev: McpToolInvocation) => void;
+  /** Fires after each MCP tool returns. */
+  onToolResult?: (ev: McpToolInvocation & { success: boolean }) => void;
+  /** Max characters of a single tool result fed back to the model. Default 6000. */
+  maxToolResultChars?: number;
+}
+
+export interface RunMcpAgentResult {
+  /** The assistant's final natural-language answer (markdown). */
+  answer: string;
+  /** Tool fullNames that were executed, in call order. */
+  toolsUsed: string[];
+  /** Full transcript (system + turns) — pass back as `history` to continue. */
+  messages: ChatMessage[];
+  /** True when an MCP tool reported it needs (re)authentication. */
+  authRequired: boolean;
+  /** A login URL when the MCP server requires (re)auth. */
+  loginUrl?: string;
+}
+
+/**
+ * Extract the FIRST valid `{"tool":…,"args":…}` object from model output.
+ *
+ * Strips `[TOOL_CALL]`/`[/TOOL_CALL]` wrappers, then scans BALANCED-BRACE
+ * candidates (string-literal aware) and `JSON.parse`s each, returning the first
+ * that has a string `tool` field. Robust to multiple JSON objects, surrounding
+ * prose, and code fences — unlike a greedy `/\{[\s\S]*\}/` match.
+ *
+ * Exported so apps/tests can reuse it, but generated apps normally just call
+ * `runMcpAgent` and never touch this directly.
+ */
+export function extractMcpToolCall(
+  text: string,
+): { tool: string; args: Record<string, unknown> } | null {
+  const t = text.replace(/\[\/?TOOL_CALL\]/gi, "");
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] !== "{") continue;
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = i; j < t.length; j++) {
+      const ch = t[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          try {
+            const obj = JSON.parse(t.slice(i, j + 1)) as Record<string, unknown>;
+            if (obj && typeof obj === "object" && typeof obj.tool === "string") {
+              const args =
+                obj.args && typeof obj.args === "object" && !Array.isArray(obj.args)
+                  ? (obj.args as Record<string, unknown>)
+                  : {};
+              return { tool: obj.tool, args };
+            }
+          } catch {
+            // not valid JSON — keep scanning from the next "{"
+          }
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Run a model↔MCP-tool ReAct loop and return a final answer composed from REAL
+ * tool results. The single robust entry point for AI-assistant / chatbot apps
+ * built over connected MCP servers — generic to ANY MCP server, workspace, or
+ * project. Generated apps should call this instead of writing their own
+ * tool-call parsing/loop.
+ *
+ * Flow: discover tools via `mcp.list()` → build a system prompt with the tool
+ * catalogue → loop: `ai.chatSync` → extract first tool call → `mcp.call` →
+ * feed the real `TOOL_RESULT` back → repeat until the model answers in prose
+ * (or `maxSteps` is hit). Never fabricates data; if a tool errors, the error is
+ * fed back so the model can recover or explain.
+ */
+export async function runMcpAgent(
+  opts: RunMcpAgentOptions,
+): Promise<RunMcpAgentResult> {
+  const client = opts.client ?? ai;
+  const maxSteps = opts.maxSteps ?? 6;
+  const maxChars = opts.maxToolResultChars ?? 6000;
+  const toolsUsed: string[] = [];
+  let authRequired = false;
+  let loginUrl: string | undefined;
+
+  // 1. Discover tools at runtime — never hardcode tool names.
+  let toolCatalog = "";
+  try {
+    const listed = await opts.mcp.list();
+    if (listed.success && Array.isArray(listed.data)) {
+      toolCatalog = listed.data
+        .map((tl) => {
+          const name = tl.fullName || tl.name || "";
+          const desc = (tl.description || "").replace(/\s+/g, " ").slice(0, 200);
+          return name ? `- ${name}${desc ? `: ${desc}` : ""}` : "";
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+  } catch {
+    // Listing failed — the loop still runs; the model can answer directly.
+  }
+
+  const system =
+    (opts.system ? opts.system.trim() + "\n\n" : "") +
+    "You are an assistant that answers using ONLY real data returned by MCP tools. " +
+    "NEVER invent, guess, or use placeholder/mock data.\n\n" +
+    "AVAILABLE MCP TOOLS (call by EXACT name):\n" +
+    (toolCatalog || "(none discovered — answer from the conversation only)") +
+    "\n\n" +
+    "To call a tool, reply with ONLY a single JSON object and nothing else:\n" +
+    '{"tool":"<exact_tool_name>","args":{ ...arguments }}\n\n' +
+    "After each tool call you receive a message starting with TOOL_RESULT containing the real data. " +
+    "You may call multiple tools (one per reply) before answering. " +
+    "When you have enough information, reply with the FINAL answer in clear natural language " +
+    "(markdown tables/bullets welcome) and DO NOT include any JSON tool call in that final reply.";
+
+  const messages: ChatMessage[] = [
+    { role: "system", content: system },
+    ...(opts.history ?? []),
+    { role: "user", content: opts.prompt },
+  ];
+
+  let answer = "";
+
+  for (let step = 0; step < maxSteps; step++) {
+    const { content } = await client.chatSync(messages);
+    const reply = stripThinking(content).visible.trim();
+
+    const call = extractMcpToolCall(reply);
+    if (!call) {
+      // No tool call — this is the model's final natural-language answer.
+      answer = reply;
+      break;
+    }
+
+    // Record the tool call as an assistant turn for conversation context.
+    messages.push({
+      role: "assistant",
+      content: JSON.stringify({ tool: call.tool, args: call.args }),
+    });
+    opts.onToolCall?.({ tool: call.tool, args: call.args });
+
+    let result: Awaited<ReturnType<McpClientLike["call"]>>;
+    try {
+      result = await opts.mcp.call(call.tool, call.args);
+    } catch (err) {
+      opts.onToolResult?.({ tool: call.tool, args: call.args, success: false });
+      messages.push({
+        role: "user",
+        content: `TOOL_ERROR for ${call.tool}: ${err instanceof Error ? err.message : "tool call threw"}. Do not retry identically; try a different tool/args or explain the issue to the user.`,
+      });
+      continue;
+    }
+
+    toolsUsed.push(call.tool);
+    opts.onToolResult?.({ tool: call.tool, args: call.args, success: !!result.success });
+
+    if (!result.success) {
+      if (result.error?.loginUrl) {
+        authRequired = true;
+        loginUrl = result.error.loginUrl;
+      }
+      messages.push({
+        role: "user",
+        content: `TOOL_ERROR for ${call.tool}: ${result.error?.message ?? "tool call failed"}${result.error?.loginUrl ? ` (login required: ${result.error.loginUrl})` : ""}. Do not retry identically; try different args/tool or explain to the user.`,
+      });
+      continue;
+    }
+
+    let resultStr: string;
+    try {
+      resultStr = JSON.stringify(result.data);
+    } catch {
+      resultStr = String(result.data);
+    }
+    if (resultStr.length > maxChars) {
+      resultStr = resultStr.slice(0, maxChars) + " …(truncated)";
+    }
+    messages.push({
+      role: "user",
+      content: `TOOL_RESULT for ${call.tool}:\n${resultStr}\n\nUse ONLY this real data. If you have enough information, give the final answer now in natural language (no JSON). Otherwise call another tool.`,
+    });
+  }
+
+  if (!answer) {
+    // Hit the step cap without a plain answer — force a final prose answer.
+    messages.push({
+      role: "user",
+      content:
+        "Provide your best FINAL answer now using the real tool data above, in natural language. Do NOT output any JSON tool call.",
+    });
+    try {
+      const { content } = await client.chatSync(messages);
+      answer = stripThinking(content).visible.trim();
+    } catch {
+      answer = "";
+    }
+    if (!answer) {
+      answer =
+        "I gathered the data but couldn't compose a final answer. Please try rephrasing your question.";
+    }
+  }
+
+  return { answer, toolsUsed, messages, authRequired, loginUrl };
 }
 
 // ── Thinking-tag helpers (exported for generated apps + Doable's own UI) ───
