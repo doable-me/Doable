@@ -7,6 +7,7 @@ import {
   startDevServer,
   isRunning,
   touchActivity,
+  noteUnresolvedImports,
 } from "../../projects/dev-server.js";
 import { isProjectScaffolded, ensureDependencies } from "../../projects/file-manager.js";
 import { VISUAL_EDIT_BRIDGE_INLINE } from "../../visual-edit-bridge-inline.js";
@@ -702,6 +703,40 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
         "application/javascript; charset=utf-8",
       );
       return new Response(resp.body, {
+        status: resp.status,
+        headers: responseHeaders,
+      });
+    }
+
+    // Missing-dependency auto-install (Vite import-analysis path). When user
+    // code imports a package that isn't installed (commonly an import added by
+    // a LIVE file edit after the dev server is already up — react-router-dom,
+    // axios, etc.), Vite answers the failing module request with an HTTP 500
+    // whose body is `Failed to resolve import "<pkg>" from "<file>"`. The
+    // dev-server's pre-spawn scan only runs at boot, and this per-request
+    // transform error doesn't reliably reach the child's stderr — so the proxy
+    // is the one place that always sees it. Peek the (tiny) error body, feed it
+    // to the same generic batch-installer the stderr path uses, and return the
+    // original error untouched. queueMissingDepInstall dedups per package, so
+    // repeated 500s for the same failing module never race-spawn npm. Recovery
+    // rides the existing blank self-heal → "Installing dependency"/"Restarting
+    // preview…" overlay (unbounded 3s meta-refresh) once the install restarts
+    // vite. Scoped to status 500 (the import-analysis error) so the 502/504
+    // reload-recovery branch below is left completely untouched.
+    if (looksLikeJsPath && resp.status === 500 && resp.body) {
+      const errBody = await resp.text();
+      const queued = noteUnresolvedImports(projectId, errBody);
+      if (queued.length > 0) {
+        console.log(
+          `[preview-proxy] queued auto-install of ${queued.join(", ")} for project ${projectId} (vite import-analysis 500 on ${originalPath})`,
+        );
+      }
+      responseHeaders.set(
+        "content-type",
+        "application/javascript; charset=utf-8",
+      );
+      responseHeaders.delete("content-length");
+      return new Response(errBody, {
         status: resp.status,
         headers: responseHeaders,
       });

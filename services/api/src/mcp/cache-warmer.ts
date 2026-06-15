@@ -56,7 +56,11 @@ interface CachedTool {
 }
 
 interface CacheTools {
-  tools?: { list?: Array<CachedTool>; shapesV1?: boolean };
+  // shapesV2 supersedes shapesV1: V1 captured types-only structural shapes; V2
+  // additionally unions per-record fields and embeds the REAL enum/example
+  // values seen in the live data. Bumping the marker forces a one-time
+  // re-capture of connectors warmed under V1 so they gain the richer shape.
+  tools?: { list?: Array<CachedTool>; shapesV1?: boolean; shapesV2?: boolean };
 }
 
 function isCacheEmpty(row: McpConnectorRow): boolean {
@@ -67,14 +71,15 @@ function isCacheEmpty(row: McpConnectorRow): boolean {
 
 /**
  * A connector needs (re)warming if its tool list is empty OR the list predates
- * the output-shape capture (no `shapesV1` marker). The latter ensures connectors
- * that were probed before this feature shipped get their real response shapes
+ * the current output-shape capture (no `shapesV2` marker). This ensures
+ * connectors probed before this feature — INCLUDING those captured under the
+ * older types-only `shapesV1` — get their real (value-annotated) response shapes
  * captured exactly once on the next generation, then cached.
  */
 function needsWarming(row: McpConnectorRow): boolean {
   if (isCacheEmpty(row)) return true;
   const cache = row.capabilities_cache as CacheTools | null;
-  return cache?.tools?.shapesV1 !== true;
+  return cache?.tools?.shapesV2 !== true;
 }
 
 // ─── Generic output-shape sampling (server-agnostic) ──────────────────────────
@@ -118,27 +123,124 @@ export function deriveSafeArgs(inputSchema: McpToolDefinition["inputSchema"]): R
   return args;
 }
 
-/** Build a compact, depth-limited shape summary of a real response value. Keeps
- *  KEY NAMES + types + array lengths (the bug was wrong key names), strips the
- *  LLM-only `_meta` blob, and never embeds bulk row data. */
-export function summarizeShape(value: unknown, depth = 0): string {
-  if (value === null || value === undefined) return value === null ? "null" : "undefined";
-  if (Array.isArray(value)) {
-    const inner = value.length > 0 ? summarizeShape(value[0], depth + 1) : "any";
-    return `array[${value.length}] of ${inner}`;
+// ─── Shape + real-value description tuning ────────────────────────────────────
+const MAX_DEPTH = 3; // don't descend past this many object levels
+const MAX_KEYS = 24; // cap fields shown per object (unioned across records)
+const SAMPLE_RECORDS = 16; // array items inspected to union keys + collect values
+const ENUM_MAX = 6; // ≤ this many distinct primitive values → list them as an enum
+const EXAMPLE_STR_MAX = 40; // truncate string examples to this many chars
+
+/** Format a single primitive value for a prompt hint (strings quoted+truncated). */
+function fmtValue(v: unknown): string {
+  if (typeof v === "string") {
+    const s = v.length > EXAMPLE_STR_MAX ? v.slice(0, EXAMPLE_STR_MAX) + "…" : v;
+    return JSON.stringify(s);
   }
-  const t = typeof value;
-  if (t === "object") {
-    if (depth >= 3) return "object";
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj).filter((k) => k !== "_meta");
+  if (typeof v === "bigint") return `${v.toString()}n`;
+  return String(v);
+}
+
+/**
+ * Annotate a primitive field with the REAL values observed in the live data —
+ * this is what lets the generator map status/enum/flag fields to actual values
+ * instead of guessing labels (the "status: Unknown / Active=0" bug). Discovered
+ * purely from the sampled response — NEVER a hardcoded field name or value.
+ *   - 1 distinct value      → `type (e.g. <value>)`
+ *   - 2..ENUM_MAX distinct  → `type (values: a | b | c)`   (a real enum)
+ *   - many distinct         → `type (e.g. <one value>)`
+ */
+function annotatePrimitive(values: unknown[]): string {
+  const prims = values.filter((v) => v === null || typeof v !== "object");
+  if (prims.length === 0) return "any";
+  const nonNull = prims.find((v) => v !== null);
+  const type = nonNull === undefined ? "null" : typeof nonNull;
+  const seen = new Set<string>();
+  const distinct: unknown[] = [];
+  for (const v of prims) {
+    if (v === null) continue;
+    const key = typeof v === "string" ? `s:${v}` : `${typeof v}:${String(v)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    distinct.push(v);
+    if (distinct.length > ENUM_MAX + 1) break;
+  }
+  if (distinct.length === 0) return type; // all-null
+  if (distinct.length === 1) return `${type} (e.g. ${fmtValue(distinct[0])})`;
+  if (distinct.length <= ENUM_MAX)
+    return `${type} (values: ${distinct.map(fmtValue).join(" | ")})`;
+  return `${type} (e.g. ${fmtValue(distinct[0])})`;
+}
+
+/**
+ * Describe one logical "slot" given ALL real samples of it (e.g. the value of a
+ * given field across many array records). Unions object keys across records (so
+ * a field absent from the first row is still surfaced), recurses into arrays,
+ * and annotates primitive leaves with real enum/example values. `_meta` is
+ * always stripped. Bulk row data is never embedded — only key names, types, and
+ * a small distinct-value sample.
+ */
+function describeValues(values: unknown[], depth: number): string {
+  const defined = values.filter((v) => v !== undefined);
+  if (defined.length === 0) return "any";
+
+  // Arrays — describe element shape from a flattened sample, report max length.
+  const arrays = defined.filter(Array.isArray) as unknown[][];
+  if (arrays.length > 0 && arrays.length === defined.length) {
+    const maxLen = Math.max(...arrays.map((a) => a.length));
+    if (maxLen === 0) return "array[0] of any";
+    const items = arrays.flat().slice(0, SAMPLE_RECORDS);
+    return `array[${maxLen}] of ${describeValues(items, depth + 1)}`;
+  }
+
+  // Objects — union keys across all sampled records.
+  const objs = defined.filter(
+    (v): v is Record<string, unknown> =>
+      v !== null && typeof v === "object" && !Array.isArray(v),
+  );
+  if (objs.length === defined.length) {
+    if (depth >= MAX_DEPTH) return "object";
+    const keys: string[] = [];
+    for (const o of objs)
+      for (const k of Object.keys(o))
+        if (k !== "_meta" && !keys.includes(k)) keys.push(k);
     if (keys.length === 0) return "object";
-    const shown = keys.slice(0, 24);
-    const parts = shown.map((k) => `${k}: ${summarizeShape(obj[k], depth + 1)}`);
-    if (keys.length > shown.length) parts.push(`…+${keys.length - shown.length} more`);
+    const shown = keys.slice(0, MAX_KEYS);
+    const parts = shown.map(
+      (k) => `${k}: ${describeValues(objs.map((o) => o[k]), depth + 1)}`,
+    );
+    if (keys.length > shown.length)
+      parts.push(`…+${keys.length - shown.length} more`);
     return `{ ${parts.join(", ")} }`;
   }
-  return t; // string | number | boolean | bigint | symbol | function
+
+  // Primitives (or a mix) → type + real-value hint.
+  return annotatePrimitive(defined);
+}
+
+/**
+ * Build a compact, depth-limited shape summary of a real response value. Keeps
+ * KEY NAMES + types + array lengths (the original bug was wrong key names),
+ * unions per-record fields, annotates primitive leaves with the REAL enum /
+ * example VALUES seen in the data (so the generator binds status/flag/count
+ * fields to actual values), strips the LLM-only `_meta` blob, and never embeds
+ * bulk row data. A standalone primitive returns its bare type (no value hint) so
+ * the summary of a scalar response stays terse.
+ */
+export function summarizeShape(value: unknown, depth = 0): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "array[0] of any";
+    return describeValues([value], depth);
+  }
+  if (typeof value === "object") {
+    const keys = Object.keys(value as Record<string, unknown>).filter(
+      (k) => k !== "_meta",
+    );
+    if (keys.length === 0) return "object";
+    return describeValues([value], depth);
+  }
+  return typeof value; // string | number | boolean | bigint | symbol | function
 }
 
 /** Sample a single tool's real output and return a compact shape string, or
@@ -165,7 +267,10 @@ async function sampleToolShape(
     let data: unknown;
     try { data = JSON.parse(text); } catch { return undefined; } // non-JSON → not bindable
     let shape = `result.data = ${summarizeShape(data, 0)}`;
-    if (shape.length > 1200) shape = shape.slice(0, 1200) + " …}";
+    // Richer (key-unioned + real enum/example values) descriptions run longer
+    // than the original types-only summary, so allow more headroom here; the
+    // prompt-manifest applies its own per-tool + cumulative budget downstream.
+    if (shape.length > 2200) shape = shape.slice(0, 2200) + " …}";
     return shape;
   } catch {
     return undefined; // timeout, auth, validation — degrade to the no-shape line
@@ -260,9 +365,10 @@ async function probeAndPersist(row: McpConnectorRow, perConnectorTimeoutMs: numb
       capabilities: {
         tools: {
           count: result.tools.length,
-          // `shapesV1` marks that output-shape capture was ATTEMPTED, so we never
-          // re-sample this connector on every subsequent generation.
-          shapesV1: true,
+          // `shapesV2` marks that the value-annotated output-shape capture was
+          // ATTEMPTED, so we never re-sample this connector on every subsequent
+          // generation. (Supersedes the older types-only `shapesV1`.)
+          shapesV2: true,
           list: result.tools.map((t) => ({
             name: t.name,
             description: t.description,

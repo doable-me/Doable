@@ -1,7 +1,7 @@
 
 import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
-import { statSync } from "node:fs";
+import { statSync, rmSync } from "node:fs";
 import { readFile as fsReadFile, readdir as fsReaddir } from "node:fs/promises";
 import { join as pathJoin } from "node:path";
 import { getProjectPath } from "../ai/project-files.js";
@@ -133,8 +133,14 @@ export function clearRestartingOverlay(projectId: string): void {
 /** npm package name validation per https://github.com/npm/validate-npm-package-name */
 const NPM_PKG_NAME_RE = /^(@[a-z0-9-]+\/)?[a-z0-9][a-z0-9-_.]{0,213}$/;
 
-/** Could not resolve "<pkg>" — esbuild's missing-dep diagnostic from optimizeDeps. */
-const MISSING_DEP_RE = /Could not resolve "([^"]+)"/g;
+/**
+ * Could not resolve "<pkg>" — esbuild's missing-dep diagnostic from optimizeDeps.
+ * The `\\?` tolerates a JSON-escaped quote: Vite's HTTP 500 error page embeds the
+ * message inside a JSON string (`Could not resolve \"<pkg>\"`), whereas terminal
+ * stderr uses a bare quote — match both so the proxy-body path and the stderr
+ * path feed the same installer. The capture stops at the next quote OR backslash.
+ */
+const MISSING_DEP_RE = /Could not resolve\s+\\?"([^"\\]+)/g;
 
 /**
  * Failed to resolve import "<pkg>" from "<file>" — Vite's module-resolution
@@ -142,8 +148,204 @@ const MISSING_DEP_RE = /Could not resolve "([^"]+)"/g;
  * esbuild's optimizeDeps; fires when user code imports a package not in
  * node_modules). Captures relative paths too — caller MUST validate the
  * capture against NPM_PKG_NAME_RE which already excludes "/", ".", "..".
+ *
+ * The `\\?` tolerates a JSON-escaped quote. This is the one that mattered for
+ * the live-edit case: Vite answers the failing module request with an HTML 500
+ * whose body embeds the message inside a JSON string literal —
+ * `Failed to resolve import \"<pkg>\" from \"src/App.tsx\"` — so a regex keyed on
+ * a bare `"` never matched the proxy-observed body and nothing auto-installed.
+ * Matching the optional backslash makes the version-independent proxy path work
+ * while still matching the bare-quote form Vite prints to stderr.
  */
-const MISSING_IMPORT_RE = /Failed to resolve import "([^"]+)"/g;
+const MISSING_IMPORT_RE = /Failed to resolve import\s+\\?"([^"\\]+)/g;
+
+/**
+ * Spawn the actual `npm install <pkg1> <pkg2> …` for a debounced batch and, on
+ * success, SIGTERM the running dev server so the next preview request respawns
+ * it with the dep available. Module-level (keyed by projectId) so BOTH triggers
+ * feed the same pipeline:
+ *   1. the dev-server's own stderr (esbuild / vite resolver), AND
+ *   2. the preview-proxy, which sees Vite's HTTP 500 "Failed to resolve import"
+ *      response body directly — the version-independent path that catches naked
+ *      imports added by a LIVE file edit after the server is already up (the
+ *      pre-spawn scan only runs at boot, and the per-request transform error
+ *      doesn't reliably reach the child's stderr).
+ *
+ * One install per batch keeps the dev-server restart count low when several
+ * imports fail at once (e.g. App.tsx imports lodash + dayjs + uuid, none in
+ * package.json — without batching that's 3 sequential installs + 3 restarts +
+ * 3 overlay flashes; now it's one of each).
+ */
+function runInstallBatch(projectId: string, pkgs: string[]): void {
+  if (pkgs.length === 0) return;
+  const projectPath = getProjectPath(projectId);
+  const label = pkgs.join(", ");
+  console.log(
+    `[DevServer] auto-installing missing dep${pkgs.length > 1 ? "s" : ""} "${label}" for project ${projectId}`,
+  );
+  installingPeerDep.set(projectId, { pkg: label, startedAt: Date.now() });
+  // Remove the link-sdk'd @doable/* scope before installing. npm reorganizes
+  // node_modules during any install and chokes on the linked @doable packages
+  // with `ENOTEMPTY: rename node_modules/@doable/data -> …`, which aborts the
+  // WHOLE install so the requested package never lands. @doable is re-linked
+  // right after (the restart path's linkDoableSdk on success, the explicit
+  // linkDoableSdk on failure), so dropping it here is safe and makes the
+  // install resilient. Best-effort.
+  try {
+    rmSync(pathJoin(projectPath, "node_modules", "@doable"), {
+      recursive: true,
+      force: true,
+    });
+  } catch {
+    // ignore — install proceeds; linkDoableSdk re-creates the scope after
+  }
+  // --legacy-peer-deps: generated apps pin React 19 while many app-code libs
+  //   still declare a React ^16–18 peer range; without this npm ERESOLVE-fails.
+  // NODE_ENV=development + --include=dev: the api container defaults to
+  //   NODE_ENV=production, under which `npm install` prunes the scaffold's
+  //   devDeps (vite, plugin-react, typescript) and the next vite spawn dies.
+  const npmChild = nodeSpawn(
+    "npm",
+    ["install", ...pkgs, "--legacy-peer-deps", "--no-audit", "--no-fund", "--include=dev"],
+    {
+      cwd: projectPath,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, NODE_ENV: "development" },
+    },
+  );
+  let npmStderr = "";
+  npmChild.stderr?.on("data", (d: Buffer) => {
+    npmStderr += d.toString();
+  });
+  const npmTimer = setTimeout(() => {
+    try {
+      npmChild.kill("SIGTERM");
+    } catch {
+      // process may have already exited
+    }
+  }, 60_000);
+  npmChild.on("exit", (code) => {
+    clearTimeout(npmTimer);
+    if (code === 0) {
+      console.log(
+        `[DevServer] auto-installed "${label}" for project ${projectId} — restarting dev server`,
+      );
+      // Replace the in-flight overlay with a "Restarting preview…" placeholder
+      // so the iframe doesn't flash blank between SIGTERM + the next vite ready.
+      // markReady() clears this entry; the preview-proxy's overlay path
+      // (unbounded 3s meta-refresh) carries the iframe across the restart. If
+      // vite hits ANOTHER missing-dep on respawn, the next queueMissingDepInstall
+      // overwrites the placeholder with the real install label.
+      installingPeerDep.set(projectId, {
+        pkg: "Restarting preview…",
+        startedAt: Date.now(),
+      });
+      try {
+        servers.get(projectId)?.process.kill("SIGTERM");
+      } catch {
+        // already dead — the proxy's "Restarting preview…" path will respawn it
+      }
+    } else {
+      installingPeerDep.delete(projectId);
+      console.warn(
+        `[DevServer] npm install "${label}" failed for project ${projectId} (exit ${code}): ${npmStderr.slice(-500)}`,
+      );
+      // A failed npm install can still have pruned the link-sdk'd @doable/*
+      // packages (extraneous to package.json). Re-link so their imports stay
+      // resolvable even though we did NOT restart the dev server here.
+      linkDoableSdk(projectPath).catch(() => {});
+    }
+  });
+  npmChild.on("error", (err) => {
+    clearTimeout(npmTimer);
+    installingPeerDep.delete(projectId);
+    console.warn(
+      `[DevServer] npm install "${label}" spawn error for project ${projectId}: ${err.message}`,
+    );
+  });
+}
+
+/**
+ * Queue a missing-dep into the per-project 500 ms batch window. The window
+ * resets on every new dep added, so a back-to-back burst collapses into one
+ * install command. Deduplicated per project so duplicate diagnostics (repeated
+ * stderr chunks, repeated 500s from the same failing module request) never
+ * race-spawn npm. Exported for the preview-proxy reactive path.
+ */
+export function queueMissingDepInstall(projectId: string, pkg: string): void {
+  if (!pkg || !NPM_PKG_NAME_RE.test(pkg)) return;
+  // @doable/* packages are link-sdk'd into node_modules (they are NOT on npm).
+  // NEVER auto-install them: `npm install @doable/data` 404s AND npm prunes the
+  // link-sdk'd copies (absent from package.json), making the import unresolvable
+  // — the exact failure that pushed generated apps to localStorage instead of
+  // the inbuilt DB. linkDoableSdk re-links them on dev-server (re)start.
+  if (pkg.startsWith("@doable/")) return;
+  let attempted = peerDepInstallAttempts.get(projectId);
+  if (!attempted) {
+    attempted = new Set<string>();
+    peerDepInstallAttempts.set(projectId, attempted);
+  }
+  if (attempted.has(pkg)) return;
+  attempted.add(pkg);
+
+  let batch = pendingInstallBatch.get(projectId);
+  if (!batch) {
+    batch = { pkgs: new Set<string>(), timer: setTimeout(() => {}, 0) };
+    clearTimeout(batch.timer);
+    pendingInstallBatch.set(projectId, batch);
+  } else {
+    clearTimeout(batch.timer);
+  }
+  batch.pkgs.add(pkg);
+  batch.timer = setTimeout(() => {
+    const pending = pendingInstallBatch.get(projectId);
+    if (!pending) return;
+    pendingInstallBatch.delete(projectId);
+    runInstallBatch(projectId, Array.from(pending.pkgs));
+  }, 500);
+}
+
+/**
+ * Scan arbitrary build/transform output for BOTH missing-dependency diagnostics
+ * and queue an auto-install for each real npm package found:
+ *   1. esbuild optimizeDeps: `Could not resolve "<pkg>"`
+ *   2. vite module resolver: `Failed to resolve import "<pkg>" from "<file>"`
+ * The NPM_PKG_NAME_RE validator inside queueMissingDepInstall filters out
+ * relative-path captures like "./MissingComponent". Generic: works for ANY
+ * missing package, not a hardcoded list. Exported so the preview-proxy can feed
+ * it the body of a Vite 500 response (the import-analysis path that does not
+ * reliably reach the dev-server's stderr). Returns the packages it queued.
+ */
+export function noteUnresolvedImports(
+  projectId: string,
+  output: string,
+): string[] {
+  const pkgs = extractUnresolvedPackages(output);
+  for (const pkg of pkgs) queueMissingDepInstall(projectId, pkg);
+  return pkgs;
+}
+
+/**
+ * Pure extractor (no side effects): pull the set of REAL, installable npm
+ * package names out of build/transform output, from both diagnostics. Filters
+ * relative-path captures ("./Foo") via NPM_PKG_NAME_RE and excludes the
+ * link-sdk'd @doable/* scope (never on npm). Exported for unit testing and
+ * reuse. Generic — matches any package name, not a hardcoded list.
+ */
+export function extractUnresolvedPackages(output: string): string[] {
+  const found = new Set<string>();
+  for (const re of [MISSING_DEP_RE, MISSING_IMPORT_RE]) {
+    re.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(output)) !== null) {
+      const pkg = match[1];
+      if (pkg && NPM_PKG_NAME_RE.test(pkg) && !pkg.startsWith("@doable/")) {
+        found.add(pkg);
+      }
+    }
+  }
+  return [...found];
+}
 
 /**
  * Start a Vite dev server for the given project.
@@ -246,24 +448,11 @@ const SCANNABLE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 async function detectMissingPeerDeps(
   projectPath: string,
 ): Promise<string[]> {
-  let installedDeps: Set<string>;
+  // Require a package.json so we only scan real projects; its contents no
+  // longer gate the missing-check (resolvability in node_modules is the sole
+  // signal — see the loop below).
   try {
-    const pkgJsonRaw = await fsReadFile(
-      pathJoin(projectPath, "package.json"),
-      "utf-8",
-    );
-    const pkgJson = JSON.parse(pkgJsonRaw) as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-      peerDependencies?: Record<string, string>;
-      optionalDependencies?: Record<string, string>;
-    };
-    installedDeps = new Set([
-      ...Object.keys(pkgJson.dependencies ?? {}),
-      ...Object.keys(pkgJson.devDependencies ?? {}),
-      ...Object.keys(pkgJson.peerDependencies ?? {}),
-      ...Object.keys(pkgJson.optionalDependencies ?? {}),
-    ]);
+    await fsReadFile(pathJoin(projectPath, "package.json"), "utf-8");
   } catch {
     return [];
   }
@@ -322,7 +511,13 @@ async function detectMissingPeerDeps(
 
   const missing: string[] = [];
   for (const pkg of specifiers) {
-    if (installedDeps.has(pkg)) continue;
+    // A package is "missing" iff it can't be resolved in node_modules — even
+    // when it IS declared in package.json. An AI edit that adds a dep line but
+    // never runs the install (or an interrupted install) leaves a declared-yet-
+    // absent package that Vite still fails to resolve; relying on
+    // installedDeps.has(pkg) alone would skip it and blank the preview.
+    // @doable/* are link-sdk'd separately — never npm-install them here.
+    if (pkg.startsWith("@doable/")) continue;
     try {
       statSync(pathJoin(projectPath, "node_modules", pkg));
     } catch {
@@ -707,9 +902,21 @@ async function doStartDevServer(
         // preview-proxy ensureDependencies fires the recovery install.
         // Forcing NODE_ENV=development + --include=dev keeps devDeps in
         // place and makes the install purely additive.
+        // Drop the linked @doable/* scope so npm's node_modules reorg doesn't
+        // ENOTEMPTY-abort the install; the post-install linkDoableSdk below
+        // re-creates it before Vite spawns. --legacy-peer-deps lets React
+        // ^16–18-peered libs install into the React-19 app. (See runInstallBatch.)
+        try {
+          rmSync(pathJoin(projectPath, "node_modules", "@doable"), {
+            recursive: true,
+            force: true,
+          });
+        } catch {
+          // ignore
+        }
         const npmChild = nodeSpawn(
           "npm",
-          ["install", ...upfrontMissing, "--no-audit", "--no-fund", "--include=dev"],
+          ["install", ...upfrontMissing, "--legacy-peer-deps", "--no-audit", "--no-fund", "--include=dev"],
           {
             cwd: projectPath,
             stdio: ["ignore", "pipe", "pipe"],
@@ -878,141 +1085,22 @@ async function doStartDevServer(
   };
 
   child.stdout?.on("data", (data: Buffer) => {
-    outputBuffer += data.toString();
+    const chunk = data.toString();
+    outputBuffer += chunk;
+    // Vite logs the import-analysis "Failed to resolve import" diagnostic to
+    // stdout in some versions — scan here too so the auto-install fires
+    // regardless of which stream it lands on.
+    noteUnresolvedImports(projectId, chunk);
   });
-
-  // Spawn the actual `npm install <pkg1> <pkg2> …` for a debounced batch.
-  // One install per batch keeps the dev-server restart count low when several
-  // imports fail at once (e.g. App.tsx imports lodash + dayjs + uuid that
-  // none of which are in package.json — pre-batching this caused 3 sequential
-  // installs + 3 restarts + 3 overlay flashes; now it's one of each).
-  const runInstallBatch = (pkgs: string[]): void => {
-    if (pkgs.length === 0) return;
-    const label = pkgs.join(", ");
-    console.log(
-      `[DevServer] auto-installing missing peer dep${pkgs.length > 1 ? "s" : ""} "${label}" for project ${projectId}`,
-    );
-    installingPeerDep.set(projectId, { pkg: label, startedAt: Date.now() });
-    // Same NODE_ENV=development + --include=dev guard as the pre-spawn batch
-    // installer above — without it the api container's NODE_ENV=production
-    // makes `npm install` prune the scaffold's devDeps (vite, plugin-react,
-    // typescript) and the restart spawn dies with Cannot find module.
-    const npmChild = nodeSpawn(
-      "npm",
-      ["install", ...pkgs, "--no-audit", "--no-fund", "--include=dev"],
-      {
-        cwd: projectPath,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, NODE_ENV: "development" },
-      },
-    );
-    let npmStderr = "";
-    npmChild.stderr?.on("data", (d: Buffer) => {
-      npmStderr += d.toString();
-    });
-    const npmTimer = setTimeout(() => {
-      try {
-        npmChild.kill("SIGTERM");
-      } catch {
-        // process may have already exited
-      }
-    }, 60_000);
-    npmChild.on("exit", (code) => {
-      clearTimeout(npmTimer);
-      if (code === 0) {
-        console.log(
-          `[DevServer] auto-installed "${label}" for project ${projectId} — restarting dev server`,
-        );
-        // Replace the in-flight overlay with a "Restarting preview…" placeholder
-        // so the iframe doesn't flash blank between SIGTERM + the next vite
-        // ready. markReady() at line ~482 clears this entry. If vite hits
-        // ANOTHER missing-dep on respawn, the new tryInstallPeerDep overwrites
-        // the placeholder with the real install label.
-        installingPeerDep.set(projectId, {
-          pkg: "Restarting preview…",
-          startedAt: Date.now(),
-        });
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // already dead
-        }
-      } else {
-        installingPeerDep.delete(projectId);
-        console.warn(
-          `[DevServer] npm install "${label}" failed for project ${projectId} (exit ${code}): ${npmStderr.slice(-500)}`,
-        );
-        // A failed npm install can still have pruned the link-sdk'd @doable/*
-        // packages (extraneous to package.json). Re-link so their imports stay
-        // resolvable even though we did NOT restart the dev server here.
-        linkDoableSdk(projectPath).catch(() => {});
-      }
-    });
-    npmChild.on("error", (err) => {
-      clearTimeout(npmTimer);
-      installingPeerDep.delete(projectId);
-      console.warn(
-        `[DevServer] npm install "${label}" spawn error for project ${projectId}: ${err.message}`,
-      );
-    });
-  };
-
-  // Queue a missing-dep into the per-project 500 ms batch window. The window
-  // resets on every new dep added, so a back-to-back stderr burst collapses
-  // into one install command.
-  const tryInstallPeerDep = (pkg: string): void => {
-    if (!pkg || !NPM_PKG_NAME_RE.test(pkg)) return;
-    // @doable/* packages are link-sdk'd into node_modules (they are NOT on
-    // npm). NEVER auto-install them: `npm install @doable/data` 404s AND npm
-    // prunes the link-sdk'd copies (they're absent from package.json), which
-    // makes the @doable/data import unresolvable ("Failed to resolve import
-    // @doable/data") — the exact failure that pushed generated apps to fall
-    // back to localStorage instead of the inbuilt DB. linkDoableSdk re-links
-    // them on dev-server (re)start.
-    if (pkg.startsWith("@doable/")) return;
-    let attempted = peerDepInstallAttempts.get(projectId);
-    if (!attempted) {
-      attempted = new Set<string>();
-      peerDepInstallAttempts.set(projectId, attempted);
-    }
-    if (attempted.has(pkg)) return;
-    attempted.add(pkg);
-
-    let batch = pendingInstallBatch.get(projectId);
-    if (!batch) {
-      batch = { pkgs: new Set<string>(), timer: setTimeout(() => {}, 0) };
-      clearTimeout(batch.timer);
-      pendingInstallBatch.set(projectId, batch);
-    } else {
-      clearTimeout(batch.timer);
-    }
-    batch.pkgs.add(pkg);
-    batch.timer = setTimeout(() => {
-      const pending = pendingInstallBatch.get(projectId);
-      if (!pending) return;
-      pendingInstallBatch.delete(projectId);
-      runInstallBatch(Array.from(pending.pkgs));
-    }, 500);
-  };
 
   child.stderr?.on("data", (data: Buffer) => {
     const chunk = data.toString();
     outputBuffer += chunk;
-    // Auto-install missing peer deps from BOTH vite paths:
-    //   1. esbuild optimizeDeps: `Could not resolve "<pkg>"`
-    //   2. vite module resolver: `Failed to resolve import "<pkg>" from "<file>"`
-    // Both feed the same dedup/install pipeline. The npm-name validator
-    // inside tryInstallPeerDep filters out relative-path captures like
-    // "./MissingComponent" that Vite emits via the second regex.
-    let match: RegExpExecArray | null;
-    MISSING_DEP_RE.lastIndex = 0;
-    while ((match = MISSING_DEP_RE.exec(chunk)) !== null) {
-      if (match[1]) tryInstallPeerDep(match[1]);
-    }
-    MISSING_IMPORT_RE.lastIndex = 0;
-    while ((match = MISSING_IMPORT_RE.exec(chunk)) !== null) {
-      if (match[1]) tryInstallPeerDep(match[1]);
-    }
+    // Auto-install missing deps from BOTH vite paths (esbuild optimizeDeps
+    // `Could not resolve "<pkg>"` + vite resolver `Failed to resolve import`).
+    // The npm-name validator inside queueMissingDepInstall filters out
+    // relative-path captures like "./MissingComponent".
+    noteUnresolvedImports(projectId, chunk);
   });
 
   child.on("error", (err) => {

@@ -138,3 +138,55 @@ test("isLikelyReadOnly respects explicit readOnlyHint annotation over the name",
   // A write-named tool explicitly flagged read-only MAY be sampled.
   assert.equal(isLikelyReadOnly(tool("run_report", { readOnlyHint: true })), true);
 });
+
+// ─── Fix B: real enum/example values + per-record key union ────────────────────
+
+test("summarizeShape annotates a low-cardinality field with its REAL enum values", () => {
+  // Many holds with a small set of distinct statusIds → emitted as a real enum.
+  const holds = {
+    holds: [
+      { holdName: "H1", statusId: 1, isActive: true },
+      { holdName: "H2", statusId: 2, isActive: false },
+      { holdName: "H3", statusId: 1, isActive: true },
+      { holdName: "H4", statusId: 3, isActive: false },
+    ],
+  };
+  const shape = summarizeShape(holds);
+  // statusId's actual distinct values (1,2,3) must be surfaced as an enum so the
+  // generator maps status against REAL values, not a guessed string.
+  assert.match(shape, /statusId: number \(values: [^)]*1[^)]*\)/);
+  assert.match(shape, /isActive: boolean \(values: [^)]*(true|false)[^)]*\)/);
+  // Still preserves the structural type (back-compat with the bind-to-keys rule).
+  assert.match(shape, /statusId: number/);
+});
+
+test("summarizeShape shows a single example for a unique-valued field", () => {
+  const data = { summary: { totalCases: 54 } };
+  const shape = summarizeShape(data);
+  // Nested summary path + the real total value, so KPIs bind to the real count.
+  assert.match(shape, /summary: \{ totalCases: number \(e\.g\. 54\) \}/);
+});
+
+test("summarizeShape unions keys across records (field absent from row 0 still shown)", () => {
+  // The first record lacks `archived`; a later one has it. The union must surface
+  // it so the generator doesn't miss a column that only some rows carry.
+  const data = {
+    items: [
+      { id: 1, name: "A" },
+      { id: 2, name: "B", archived: true },
+    ],
+  };
+  const shape = summarizeShape(data);
+  assert.match(shape, /items: array\[2\]/);
+  assert.match(shape, /\bid: number/);
+  assert.match(shape, /\bname: string/);
+  assert.match(shape, /\barchived: boolean/);
+});
+
+test("summarizeShape truncates long string examples and never leaks bulk data", () => {
+  const data = { rows: [{ note: "x".repeat(500) }] };
+  const shape = summarizeShape(data);
+  // The full 500-char value must not be embedded — only a truncated example.
+  assert.ok(!shape.includes("x".repeat(100)), "must not embed the bulk string");
+  assert.match(shape, /note: string \(e\.g\. "x+…"\)/);
+});

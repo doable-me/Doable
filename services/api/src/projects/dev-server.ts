@@ -14,6 +14,7 @@ export {
   startDevServer,
   getInstallingPeerDep,
   clearRestartingOverlay,
+  noteUnresolvedImports,
 } from "./dev-server-start.js";
 export {
   stopDevServer,
