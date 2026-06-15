@@ -2,6 +2,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { presentPrewarmTargets } from "./flaky-peer-deps.js";
 
 // ─── Plugin Code Generator ──────────────────────────────
 
@@ -334,8 +335,14 @@ function transformAstroMarkup(code, filePath) {
  */
 export function generatePlatformViteConfig(
   projectId: string,
-  options: { domain?: string | undefined } = {},
+  options: { domain?: string | undefined; prewarm?: string[] | undefined } = {},
 ): string {
+  // Pre-warm list: heavy/flaky deps (e.g. recharts + react-is) the project
+  // actually has, force-bundled at server start so the first preview load never
+  // hits Vite's lazy-optimize 504 race (which throws the import → blank preview).
+  // Already intersected with the project's deps by the caller, so it's safe to
+  // pass straight to optimizeDeps.include.
+  const safeInclude = JSON.stringify(Array.isArray(options.prewarm) ? options.prewarm : []);
   // Resolve the domain we'll advertise to the browser. The browser-side Vite
   // HMR client reads this verbatim to build `new WebSocket("wss://<host>:443/preview/<id>/__hmr")`.
   // Production paths set DOABLE_DOMAIN=doable.me; dev/staging set it to the
@@ -392,6 +399,9 @@ export default async (env) => {
       // them left a stale ".vite/deps" entry that survived relinks — the import
       // would fail with 'Failed to resolve import "@doable/data"' until the cache
       // was wiped by hand. Excluding is the reliable, cache-proof resolution.
+      // Pre-bundle known heavy/flaky deps at startup so the first preview load
+      // never races Vite's lazy optimize (a 504 there throws the import → blank).
+      include: [...(base.optimizeDeps?.include ?? []), ...${safeInclude}],
       exclude: [...(base.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
     },
   };
@@ -454,6 +464,9 @@ export default async (env) => {
       // them left a stale ".vite/deps" entry that survived relinks — the import
       // would fail with 'Failed to resolve import "@doable/data"' until the cache
       // was wiped by hand. Excluding is the reliable, cache-proof resolution.
+      // Pre-bundle known heavy/flaky deps at startup so the first preview load
+      // never races Vite's lazy optimize (a 504 there throws the import → blank).
+      include: [...(base.optimizeDeps?.include ?? []), ...${safeInclude}],
       exclude: [...(base.optimizeDeps?.exclude ?? []), "@doable/sdk", "@doable/data"],
     },
   };
@@ -471,7 +484,24 @@ export async function ensureCanonicalHmrConfig(
   projectId: string,
 ): Promise<void> {
   const targetPath = join(projectPath, "vite.config.platform.mjs");
-  const nextContent = generatePlatformViteConfig(projectId);
+
+  // Compute the optimizeDeps pre-warm list: the flaky/heavy deps the project
+  // actually depends on (e.g. recharts, react-is). Intersecting with the real
+  // dependency set keeps the generated config safe (never force-includes an
+  // absent package, which Vite would error on).
+  let prewarm: string[] = [];
+  try {
+    const pkgRaw = await readFile(join(projectPath, "package.json"), "utf-8");
+    const pkg = JSON.parse(pkgRaw) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    prewarm = presentPrewarmTargets({ ...pkg.devDependencies, ...pkg.dependencies });
+  } catch {
+    prewarm = [];
+  }
+
+  const nextContent = generatePlatformViteConfig(projectId, { prewarm });
 
   let prevContent: string | null = null;
   if (existsSync(targetPath)) {

@@ -56,3 +56,15 @@ test("public-domain branch does NOT pin hmr.host — falls back to the preview's
   const apex = generatePlatformViteConfig("proj-xyz", { domain: "doable.me" });
   assert.doesNotMatch(apex, /host: "doable\.me"/);
 });
+
+test("optimizeDeps.include carries the pre-warm list (prevents first-load 504 race)", () => {
+  const code = generatePlatformViteConfig("proj-xyz", {
+    domain: "zantaz.doable.me",
+    prewarm: ["recharts", "react-is"],
+  });
+  // include line present and seeded with the project's flaky/heavy deps
+  assert.match(code, /include: \[\.\.\.\(base\.optimizeDeps\?\.include \?\? \[\]\), \.\.\.\["recharts","react-is"\]\]/);
+  // empty prewarm → still emits a valid (empty) include, never force-including absent pkgs
+  const none = generatePlatformViteConfig("proj-xyz", { domain: "zantaz.doable.me" });
+  assert.match(none, /include: \[\.\.\.\(base\.optimizeDeps\?\.include \?\? \[\]\), \.\.\.\[\]\]/);
+});

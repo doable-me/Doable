@@ -598,12 +598,22 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
     // self-heal per 30s so a genuinely-empty/erroring app never loops.
     setTimeout(function() {
       try {
-        if (appMounted()) return;
-        var now = Date.now(), last = 0;
-        try { last = +(sessionStorage.getItem('__doable_blank_reload_at') || 0); } catch (e) {}
-        if (now - last > 30000) {
-          try { sessionStorage.setItem('__doable_blank_reload_at', String(now)); } catch (e) {}
-          window.location.reload();
+        if (appMounted()) {
+          // Mounted — clear the counter so a LATER blank (e.g. after a deploy)
+          // gets a fresh set of recovery reloads.
+          try { sessionStorage.removeItem('__doable_blank_reloads'); } catch (e) {}
+          return;
+        }
+        // Bounded auto-recovery. A freshly-generated app can stay blank for the
+        // first few seconds while Vite finishes optimizing heavy deps (e.g.
+        // recharts) and serves transient 504s on the dep request — the import
+        // throws, nothing mounts. Reload a few times to ride that window out;
+        // cap at 3 so a genuinely-erroring app never loops forever.
+        var n = 0;
+        try { n = +(sessionStorage.getItem('__doable_blank_reloads') || 0); } catch (e) {}
+        if (n < 3) {
+          try { sessionStorage.setItem('__doable_blank_reloads', String(n + 1)); } catch (e) {}
+          setTimeout(function() { window.location.reload(); }, 1500);
         }
       } catch (e) {}
     }, 4000);

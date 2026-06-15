@@ -10,6 +10,7 @@ import {
   ensureCanonicalHmrConfig,
 } from "./vite-plugin-source-annotations.js";
 import { ensureTailwindV4Consistency } from "./normalize-tailwind.js";
+import { ensureFlakyPeerDeps } from "./normalize-peer-deps.js";
 import { linkDoableSdk } from "./link-sdk.js";
 import { spawnJailedVite } from "./vite-jail.js";
 import {
@@ -471,6 +472,18 @@ async function doStartDevServer(
     } catch (err) {
       console.warn(
         "[DevServer] Tailwind toolchain normalize failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    // Repair flaky peer deps (e.g. recharts → react-is) BEFORE Vite boots, so
+    // its optimizeDeps scan bundles them instead of 504-ing on a missing/corrupt
+    // peer → blank preview. Idempotent + cheap: no-ops once the peers are valid.
+    try {
+      await ensureFlakyPeerDeps(projectPath);
+    } catch (err) {
+      console.warn(
+        "[DevServer] flaky peer-dep normalize failed:",
         err instanceof Error ? err.message : err,
       );
     }
