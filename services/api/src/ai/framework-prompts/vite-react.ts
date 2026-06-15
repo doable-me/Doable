@@ -53,6 +53,7 @@ export const viteReactPrompt: FrameworkPrompt = {
     "   // in your chat send handler (userText = the user's message):",
     "   const { answer, toolsUsed } = await runMcpAgent({ mcp: doable.mcp, prompt: userText });",
     "   // render `answer` as markdown. Optional: { system, history, onToolCall, onToolResult } for app context + a 'calling…' indicator.",
+    "   `runMcpAgent` returns a CLEAN final `answer` (tool results incorporated, thinking already stripped) — render it directly. Do NOT write your own thinking / `<reasoning>` stripper or a regex over the answer; if you truly need one, import `stripThinking` from `@doable/ai`. Never hand-write a regex literal for stripping (a stray unescaped `/` breaks the build).",
     "   ```",
     "   RULES:",
     "   - Tool names use the AI-prefixed format: `mcp_{connectorName}_{toolName}` (all lowercase, non-alphanumeric → underscore)",

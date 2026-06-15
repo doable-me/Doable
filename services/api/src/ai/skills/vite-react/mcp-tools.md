@@ -110,6 +110,13 @@ function Assistant() {
 Render `answer` (markdown). If `authRequired` is true, prompt the user to sign in
 to the MCP server (`loginUrl`).
 
+`answer` is already CLEAN — tool results are incorporated and model "thinking" is
+already stripped. Render it directly. Do NOT write your own thinking /
+`<reasoning>` stripper or any regex over the answer. If you genuinely need to
+strip thinking from some other text, import `stripThinking` from `@doable/ai` —
+never hand-write a regex literal for it (a single unescaped `/` is an "Invalid
+regular expression flag" build error that white-screens the app).
+
 ### Why you must NOT hand-roll the loop
 
 A hand-written assistant that does
