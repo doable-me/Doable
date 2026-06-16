@@ -185,7 +185,15 @@ export function ImportGitHubProjectDialog({
       // Step 2: Clone the repo — must complete before editor opens
       // (editor scaffold would create blank files and conflict with clone)
       setImportingStatus(`Cloning ${repo.fullName}...`);
-      await apiImportGitHubRepo(projectId, owner!, name!, repo.defaultBranch);
+      const importRes = await apiImportGitHubRepo(projectId, owner!, name!, repo.defaultBranch);
+
+      // Gap #7: the imported app uses Supabase but no Supabase connection exists
+      // yet. Stash a flag the editor reads on load to open the "connect Supabase"
+      // dialog automatically — so the user is prompted instead of the app
+      // silently showing "Supabase is not configured".
+      if (importRes?.supabaseSetupRequired) {
+        sessionStorage.setItem(`doable_supabase_setup_required_${projectId}`, "1");
+      }
 
       // Step 3: Store auto-setup prompt so the AI configures the project
       const setupPrompt = [

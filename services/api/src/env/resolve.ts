@@ -50,20 +50,22 @@ export async function resolveProjectEnvVars(
     // Use the project's workspace_id when caller didn't pass one explicitly.
     const wsId = workspaceId ?? project.workspace_id;
 
-    // Only consult the vault when we have a userId — vault scoping is
-    // (workspace, project, user) and we cannot meaningfully look up
-    // user-scoped credentials without it.
-    if (userId) {
-      try {
-        const { env: vaultEnv } = await resolveVaultEnv(wsId, projectId, userId);
-        // user env_vars LAST → user wins over vault.
-        return { ...vaultEnv, ...userEnvVars };
-      } catch (err) {
-        console.warn(
-          `[env-vars] vault-bridge failed for project ${projectId}, falling back to user env_vars only:`,
-          err,
-        );
-      }
+    // Always consult the vault. Connector creds connected at WORKSPACE or
+    // PROJECT scope (e.g. a Supabase project connected to THIS project) are
+    // user-independent, so they MUST resolve even without a userId — the lazy
+    // preview-proxy auto-start path has none, and gating on userId there was
+    // the reason a connected Supabase app showed no data until restarted from a
+    // user-scoped route. getEffective only adds user-scoped connections when a
+    // userId is supplied, so passing undefined never leaks another user's creds.
+    try {
+      const { env: vaultEnv } = await resolveVaultEnv(wsId, projectId, userId);
+      // user env_vars LAST → user wins over vault.
+      return { ...vaultEnv, ...userEnvVars };
+    } catch (err) {
+      console.warn(
+        `[env-vars] vault-bridge failed for project ${projectId}, falling back to user env_vars only:`,
+        err,
+      );
     }
 
     return userEnvVars;
@@ -98,20 +100,20 @@ export async function resolveProjectEnvWithManifest(
 
     const wsId = workspaceId ?? project.workspace_id;
 
-    if (userId) {
-      try {
-        const { env: vaultEnv, manifest } = await resolveVaultEnv(
-          wsId,
-          projectId,
-          userId,
-        );
-        return { env: { ...vaultEnv, ...userEnvVars }, manifest };
-      } catch (err) {
-        console.warn(
-          `[env-vars] vault-bridge failed for project ${projectId}, falling back to user env_vars only:`,
-          err,
-        );
-      }
+    // Resolve vault env regardless of userId (workspace/project-scoped
+    // connections are user-independent). See resolveProjectEnvVars above.
+    try {
+      const { env: vaultEnv, manifest } = await resolveVaultEnv(
+        wsId,
+        projectId,
+        userId,
+      );
+      return { env: { ...vaultEnv, ...userEnvVars }, manifest };
+    } catch (err) {
+      console.warn(
+        `[env-vars] vault-bridge failed for project ${projectId}, falling back to user env_vars only:`,
+        err,
+      );
     }
 
     return { env: userEnvVars, manifest: [] };

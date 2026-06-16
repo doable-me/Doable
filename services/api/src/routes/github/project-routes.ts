@@ -244,7 +244,40 @@ githubProjectRoutes.post("/:projectId/github/import", async (c) => {
       }
     );
 
-    return c.json({ data: result }, 201);
+    // Gap #7 — Supabase import auto-connect. If the imported app talks to
+    // Supabase (VITE_SUPABASE_* / @supabase/supabase-js / process.env.SUPABASE_*)
+    // but no Supabase connection is effective for this project, tell the
+    // frontend to prompt the user to connect Supabase. Doable then injects the
+    // connection's env into the sandbox (gap #4) so the app works — instead of
+    // the app silently rendering "Supabase is not configured". Best-effort:
+    // never fail the import if detection/lookup throws.
+    let supabaseSetupRequired = false;
+    try {
+      const { detectSupabaseUsage } = await import(
+        "../../projects/detect-supabase-usage.js"
+      );
+      if (await detectSupabaseUsage(projectPath)) {
+        const [proj] = await sql<{ workspace_id: string }[]>`
+          SELECT workspace_id FROM projects WHERE id = ${projectId}
+        `;
+        const wsId = proj?.workspace_id;
+        if (wsId) {
+          const { credentialVault } = await import(
+            "../../integrations/credential-vault.js"
+          );
+          const conns = await credentialVault.getEffective(wsId, projectId, userId);
+          const hasSupabase = conns.some((cn) => cn.integration_id === "supabase");
+          supabaseSetupRequired = !hasSupabase;
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[github-import] Supabase usage detection failed for ${projectId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    return c.json({ data: result, supabaseSetupRequired }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: "Failed to import from GitHub", message }, 500);

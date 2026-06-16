@@ -3595,6 +3595,21 @@ function EditorPageInner() {
       }
     }
 
+    // Gap #7: a just-imported project that uses Supabase but has no Supabase
+    // connection yet. Open the connect-Supabase dialog automatically so the
+    // user is prompted (and Doable then injects the creds into the sandbox)
+    // instead of the app silently rendering "Supabase is not configured".
+    // One-shot: consume the flag so it never re-opens on later mounts.
+    const supabaseSetupKey = `doable_supabase_setup_required_${resolvedProjectId}`;
+    if (sessionStorage.getItem(supabaseSetupKey) === "1") {
+      sessionStorage.removeItem(supabaseSetupKey);
+      setSupabaseProvisionRequest({
+        name: "",
+        reason:
+          "This imported app uses Supabase. Connect your Supabase project so it can read and write real data — no manual .env editing needed.",
+      });
+    }
+
     // ── Strategy 2: fallback — read from sessionStorage / URL param ──
     const storageKey = `doable_initial_prompt_${resolvedProjectId}`;
     const stored = sessionStorage.getItem(storageKey);

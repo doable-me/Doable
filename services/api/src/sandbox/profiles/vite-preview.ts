@@ -102,6 +102,12 @@ export function vitePreviewProfile(ctx: SpawnContext, sys: SystemRules): Sandbox
     env: {
       allowlist: ["PATH", "LANG", "LC_ALL", "HOME", "TERM", "NODE_ENV"],
       inject: {
+        // Connector-resolved env (e.g. VITE_SUPABASE_URL / *_ANON_KEY + SSR
+        // variants) threaded in from SpawnContext.extraEnv. Spread FIRST so the
+        // platform infra vars below always win on conflict — a connector can
+        // never override PATH/HOME/NODE_ENV/etc. bwrap --setenv's each one, so
+        // both Vite's import.meta.env.VITE_* and process.env.* (SSR) see them.
+        ...(ctx.extraEnv ?? {}),
         HOME: "/work",
         PWD: "/work",
         USER: "preview",

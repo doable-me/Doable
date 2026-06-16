@@ -8,6 +8,7 @@ import {
   tanStackHijackViolation,
 } from "../projects/detect-tanstack-start.js";
 import { handRolledMcpAgentViolation } from "../projects/detect-mcp-agent-misuse.js";
+import { supabaseDataMisuseViolation } from "../projects/detect-supabase-data-misuse.js";
 
 // ─── Configuration ────────────────────────────────────────
 
@@ -199,6 +200,22 @@ export async function writeProjectFile(
   const mcpAgentViolation = handRolledMcpAgentViolation(filePath, content);
   if (mcpAgentViolation) {
     throw new FileAccessError(mcpAgentViolation);
+  }
+
+  // Supabase-backed data guard. Same single chokepoint: when this project's
+  // database is a connected Supabase project (§0e), reject a source file that
+  // pulls in the inbuilt per-app DB (`@doable/data`) — otherwise the model's
+  // regression silently writes the user's records to a throwaway PGlite DB and
+  // their connected Supabase stays empty. The check is cheap (DB lookup only
+  // runs when the file actually imports @doable/data) and fails open. Generic to
+  // any workspace/project/Supabase ref — see projects/detect-supabase-data-misuse.ts.
+  const supabaseDataViolation = await supabaseDataMisuseViolation(
+    projectId,
+    filePath,
+    content,
+  );
+  if (supabaseDataViolation) {
+    throw new FileAccessError(supabaseDataViolation);
   }
 
   // AI scaffolds with Tailwind v4 + shadcn-style raw-HSL CSS variables need

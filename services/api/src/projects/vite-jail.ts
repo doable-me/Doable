@@ -98,6 +98,17 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
       | "staging"
       | "prod"
       | undefined) ?? "dev";
+    // Forward the framework adapter's resolved env (connector creds like
+    // VITE_SUPABASE_URL / *_ANON_KEY + SSR variants, plus DOABLE_PROJECT_ID /
+    // DOABLE_PROXY_URL) INTO the sandbox. The bwrap backend runs --clearenv and
+    // only re-emits the profile allowlist+inject, so without this the
+    // vault-resolved Supabase env never reaches the sandboxed dev server — the
+    // root cause of "imported/generated Supabase app shows no data" (gap #4).
+    // Filter to defined string values; the profile's own infra vars win.
+    const sandboxExtraEnv: Record<string, string> = {};
+    for (const [k, v] of Object.entries(opts.env)) {
+      if (typeof v === "string") sandboxExtraEnv[k] = v;
+    }
     const spawnCtx = {
       projectId: opts.projectId,
       workspaceId: null,
@@ -106,6 +117,7 @@ export async function spawnJailedVite(opts: SpawnJailedViteOpts): Promise<Jailed
       hardening,
       // Pass host-side uid so bwrap's inside-NS uid matches the project dir owner.
       hostUid: typeof opts.uid === "number" ? opts.uid : undefined,
+      extraEnv: sandboxExtraEnv,
     };
 
     // Rewrite host absolute paths in args to the jail-internal /work prefix.

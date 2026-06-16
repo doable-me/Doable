@@ -842,8 +842,8 @@ async function doStartDevServer(
     console.warn("[DevServer] Failed to resolve env vars:", err);
   }
 
-  // For Next.js: alias VITE_* → NEXT_PUBLIC_* and expose bare SUPABASE_URL
-  // so server-side code can reach it without a client prefix.
+  // For Next.js: alias VITE_* → NEXT_PUBLIC_* so the client bundle picks them
+  // up under the framework's own public-env prefix.
   if (adapter.id === "nextjs-app") {
     for (const [key, value] of Object.entries(userEnvVars)) {
       if (key.startsWith("VITE_") && value) {
@@ -851,10 +851,20 @@ async function doStartDevServer(
         if (!userEnvVars[nextKey]) userEnvVars[nextKey] = value;
       }
     }
-    // Also expose SUPABASE_URL (bare, for server-side) from VITE_SUPABASE_URL
-    if (userEnvVars["VITE_SUPABASE_URL"] && !userEnvVars["SUPABASE_URL"]) {
-      userEnvVars["SUPABASE_URL"] = userEnvVars["VITE_SUPABASE_URL"];
-    }
+  }
+
+  // Expose BARE Supabase vars (no client prefix) for server-side reads in EVERY
+  // framework — imported Lovable apps (TanStack Start SSR, Next.js Server
+  // Actions, etc.) read `process.env.SUPABASE_URL / SUPABASE_ANON_KEY /
+  // SUPABASE_SERVICE_ROLE_KEY` on the server. The vault already maps
+  // SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (server envKeyMap), but the bare
+  // SUPABASE_ANON_KEY has no vault mapping (anon is browser-safe → mapped as
+  // VITE_SUPABASE_ANON_KEY), so derive it here. Generic, connection-agnostic.
+  if (userEnvVars["VITE_SUPABASE_URL"] && !userEnvVars["SUPABASE_URL"]) {
+    userEnvVars["SUPABASE_URL"] = userEnvVars["VITE_SUPABASE_URL"];
+  }
+  if (userEnvVars["VITE_SUPABASE_ANON_KEY"] && !userEnvVars["SUPABASE_ANON_KEY"]) {
+    userEnvVars["SUPABASE_ANON_KEY"] = userEnvVars["VITE_SUPABASE_ANON_KEY"];
   }
 
   const devCtx = createDevContext({

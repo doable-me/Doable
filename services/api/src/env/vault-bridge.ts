@@ -67,7 +67,7 @@ export interface ResolveVaultEnvResult {
 export async function resolveVaultEnv(
   workspaceId: string,
   projectId: string | undefined,
-  userId: string,
+  userId?: string,
 ): Promise<ResolveVaultEnvResult> {
   const env: Record<string, string> = {};
   const manifest: IntegrationEnvManifest[] = [];

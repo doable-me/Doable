@@ -19,6 +19,17 @@ export interface SpawnContext {
   hardening: "off" | "dev" | "staging" | "prod";
   /** Host-side sandbox uid; profiles use this for bwrap --uid so inside-uid matches the file owner. */
   hostUid?: number;
+  /**
+   * Extra env vars to inject INTO the sandbox (e.g. connector-resolved
+   * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY + SSR variants). The bwrap
+   * backend runs `--clearenv` and only re-emits the profile's allowlist +
+   * inject, so without threading these here the vault-resolved credentials
+   * never reach the sandboxed dev server. Profiles merge this into
+   * `env.inject` with the profile's own infra vars (PATH/HOME/NODE_ENV/…)
+   * winning on conflict. Values are project-scoped, browser-safe-or-server
+   * connector creds — NOT host secrets. See env/vault-bridge.ts.
+   */
+  extraEnv?: Record<string, string>;
 }
 
 export type ProfileKey = "ai-bash" | "vite-preview" | "install" | "build" | string;

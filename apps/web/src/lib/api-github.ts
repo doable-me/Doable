@@ -39,7 +39,12 @@ export async function apiImportGitHubRepo(
   repoOwner: string,
   repoName: string,
   branch: string
-): Promise<{ data: { filesChanged: number; commitSha: string } }> {
+): Promise<{
+  data: { filesChanged: number; commitSha: string };
+  // Gap #7: backend sets this when the imported app uses Supabase but no
+  // Supabase connection exists yet → the UI should prompt the user to connect.
+  supabaseSetupRequired?: boolean;
+}> {
   return apiFetch(`/${projectId}/github/import`, {
     method: "POST",
     body: JSON.stringify({ repoOwner, repoName, branch }),
