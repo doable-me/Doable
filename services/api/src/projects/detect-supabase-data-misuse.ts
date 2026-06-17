@@ -117,3 +117,59 @@ export async function supabaseDataMisuseViolation(
     "NOT `data.migrate`. See framework prompt §0e."
   );
 }
+
+/** True when the file imports the Supabase JS client package directly. */
+function usesSupabaseClientPackage(content: string): boolean {
+  return /["'`]@supabase\/supabase-js["'`]/.test(content);
+}
+
+/**
+ * Deterministic guard for the provision RACE. `provision_supabase` only OPENS a
+ * user-gated "Connect Supabase" dialog and returns immediately — the connection
+ * (and thus the DB credentials + a real project ref) does not exist until the
+ * user completes it. The model frequently races ahead in the SAME turn: it calls
+ * `provision_supabase`, then `run_supabase_migration` (which fails — "no project
+ * ref"), then writes the `@supabase/supabase-js` client + components — leaving a
+ * half-built app whose tables were never created. The user then has to re-prompt
+ * ("use supabase") to make it work, so it looks intermittent.
+ *
+ * We stop the race at the single write chokepoint: a source file that imports
+ * `@supabase/supabase-js` while NO supabase connection exists for the project is
+ * REJECTED with a STOP-and-wait message. This forces the turn to end after
+ * provisioning. When the user finishes the dialog, the editor automatically
+ * restarts the dev server and re-prompts the agent ("Supabase provisioning
+ * complete…", see apps/web .../editor/[projectId]/page.tsx onClose) — and by then
+ * the connection IS present, so `isProjectSupabaseBacked` is true and this guard
+ * allows the write. Net: migrations + client code only run once the DB is real.
+ *
+ * Fast-path (only looks up the DB when the file imports the client package) and
+ * fail-open (never blocks on infra error), exactly like the sibling guard.
+ */
+export async function supabaseNotConnectedViolation(
+  projectId: string,
+  relPath: string,
+  content: string,
+): Promise<string | null> {
+  if (!isInspectableSource(relPath)) return null;
+  if (typeof content !== "string" || content.length === 0) return null;
+
+  // Fast path — only candidate files import the Supabase client package.
+  if (!usesSupabaseClientPackage(content)) return null;
+
+  // If a Supabase connection already exists for this project, the write is fine.
+  if (await isProjectSupabaseBacked(projectId)) return null;
+
+  return (
+    "Supabase is NOT connected to this project yet. `provision_supabase` only opens " +
+    "the Connect-Supabase dialog for the user — the database connection is not ready " +
+    "until they complete it, so you CANNOT write Supabase client code or run " +
+    "migrations yet (a migration now fails with 'no project ref' and leaves the app " +
+    "referencing tables that were never created).\n\n" +
+    "STOP this turn now: do not write `@supabase/supabase-js` code and do not call " +
+    "run_supabase_migration. End with a short message asking the user to finish " +
+    "connecting Supabase in the dialog. Doable will then restart the dev server and " +
+    "automatically re-prompt you with 'Supabase provisioning complete' — ONLY THEN " +
+    "create tables with run_supabase_migration and write the client code using " +
+    "import.meta.env.VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY."
+  );
+}

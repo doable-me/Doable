@@ -8,7 +8,7 @@ import {
   tanStackHijackViolation,
 } from "../projects/detect-tanstack-start.js";
 import { handRolledMcpAgentViolation } from "../projects/detect-mcp-agent-misuse.js";
-import { supabaseDataMisuseViolation } from "../projects/detect-supabase-data-misuse.js";
+import { supabaseDataMisuseViolation, supabaseNotConnectedViolation } from "../projects/detect-supabase-data-misuse.js";
 
 // ─── Configuration ────────────────────────────────────────
 
@@ -216,6 +216,22 @@ export async function writeProjectFile(
   );
   if (supabaseDataViolation) {
     throw new FileAccessError(supabaseDataViolation);
+  }
+
+  // Supabase provision-RACE guard. Same chokepoint: if this file imports the
+  // `@supabase/supabase-js` client but NO supabase connection exists yet for the
+  // project, the model raced ahead of the user-gated Connect-Supabase dialog —
+  // reject the write so the turn stops cleanly. The editor auto-resumes the build
+  // after the user connects (creds live), so the retry succeeds. Cheap (DB lookup
+  // only when the file imports the client package) and fails open. See
+  // projects/detect-supabase-data-misuse.ts: supabaseNotConnectedViolation.
+  const supabaseNotConnected = await supabaseNotConnectedViolation(
+    projectId,
+    filePath,
+    content,
+  );
+  if (supabaseNotConnected) {
+    throw new FileAccessError(supabaseNotConnected);
   }
 
   // AI scaffolds with Tailwind v4 + shadcn-style raw-HSL CSS variables need
