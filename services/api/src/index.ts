@@ -298,6 +298,19 @@ app.use(
       "x-doable-data-api",
       "x-doable-app-user",
       "x-doable-surface",
+      // The GitHub integration sends the user's freshly-minted OAuth token in
+      // an `X-GitHub-Token` header right after the OAuth callback (the web hook
+      // reads it out of the return URL into state, then attaches it to every
+      // API call — see apps/web .../use-github.ts). On the default split-origin
+      // topology (web `<host>` → api `<host>-api`) that custom header forces a
+      // CORS preflight; omitting it here made the browser block the request with
+      // a bare "Failed to fetch" the moment a user (re)connected GitHub. The
+      // server already accepts this header on the GitHub routes (project-routes
+      // `X-GitHub-Token`, account-routes), so allow-listing it for CORS only
+      // lets the browser do what the API already supports. Same-origin/path
+      // installs never preflight, so this is a no-op there — no topology change,
+      // and the origin allow-list / credentials checks above are untouched.
+      "X-GitHub-Token",
     ],
     maxAge: 86400,
   })
