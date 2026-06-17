@@ -221,7 +221,50 @@ integrationEnhancedAuthRoutes.get("/integrations/enhanced-auth/callback", async 
     const module = await getEnhancedAuthModule(ea.providerKey);
     if (!module) throw new Error("Enhanced auth module not found");
 
+    // Persist the raw OAuth token as the mgmt-API sibling NOW — before the user
+    // picks a resource. Provisioner flows (e.g. Supabase "Create project": list
+    // orgs / create a brand-new project) need only this management token, not a
+    // pre-existing resource. Without an early store, a fresh account with ZERO
+    // existing resources dead-ended at "No resources found": the token was saved
+    // only on /complete (which never runs when there's nothing to pick), so the
+    // provisioner's org listing stayed 412 and the user could never create one.
+    await storeMgmtTokenSibling(ea.oauthIntegrationKey, {
+      workspaceId,
+      userId,
+      scope: scope as "workspace" | "project" | "user",
+      accessToken,
+      refreshToken: tokenData.refresh_token as string | undefined,
+      expiresAt: computeExpiresAt(tokenData),
+      displayName: `${def.displayName} Management API`,
+    });
+
     const resources = await module.listResources(accessToken);
+
+    // No existing resource to select (e.g. brand-new Supabase account). The mgmt
+    // token is already stored above, so signal success + close the popup instead
+    // of dead-ending — the opener (provisioner dialog) then lists orgs and lets
+    // the user create a fresh project.
+    if (resources.length === 0) {
+      await deleteEnhancedAuthSession(sessionKey);
+      return c.html(`<!DOCTYPE html><html><head><title>Connected</title></head><body>
+        <p>Signed in to ${def.displayName.replace(/[<>]/g, "")}. This window will close automatically…</p>
+        <script>
+          try {
+            if (window.opener) window.opener.postMessage({
+              type: "doable:enhanced-auth-complete",
+              integrationId: ${JSON.stringify(integrationId)},
+              status: "success"
+            }, "*");
+          } catch (e) {}
+          try {
+            localStorage.setItem("doable_enhanced_auth_complete", JSON.stringify({
+              integrationId: ${JSON.stringify(integrationId)}, status: "success", at: Date.now()
+            }));
+          } catch (e) {}
+          setTimeout(function(){ window.close(); }, 500);
+        </script>
+      </body></html>`);
+    }
 
     const resourceListHtml = resources.map((r) =>
       `<button type="submit" name="resourceId" value="${r.id}" style="display:block;width:100%;text-align:left;padding:12px 16px;margin:6px 0;border:1px solid #333;border-radius:8px;background:#1a1a2e;color:#eee;cursor:pointer;font-size:14px;">
