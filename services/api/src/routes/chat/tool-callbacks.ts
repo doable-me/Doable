@@ -346,6 +346,13 @@ export function createToolProgressCallbacks(
       if (toolName === "provision_supabase") {
         const a = (args as Record<string, unknown>) ?? {};
         const name = typeof a.name === "string" ? a.name : "";
+        // The provision tool only OPENS the Connect-Supabase dialog and returns;
+        // the DB connection isn't live until the user completes it. Flag the turn
+        // so handleAutoContinue does NOT nudge the model to keep building — that
+        // nudge is what made it race ahead and fall back to per-app PGlite while
+        // Supabase was still unconnected. The editor re-prompts ("Supabase
+        // provisioning complete") once the connection exists.
+        state.awaitingSupabaseProvision = true;
         stream.writeSSE({ data: JSON.stringify({
           type: "provision_supabase_required",
           data: { name, reason: "" },

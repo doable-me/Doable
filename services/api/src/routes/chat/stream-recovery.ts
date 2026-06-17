@@ -123,6 +123,18 @@ export async function handleAutoContinue(
     return;
   }
 
+  // If `provision_supabase` opened the Connect-Supabase dialog this turn, the
+  // DB connection is not live until the user completes it. Auto-continuing here
+  // nudges the model to keep building while Supabase is still unconnected — at
+  // which point the race-guard blocks @supabase/supabase-js but NOT @doable/data,
+  // so the model falls back to the per-app PGlite DB and builds the whole app in
+  // the wrong database. End the turn and wait for the editor's "Supabase
+  // provisioning complete" re-prompt, which fires once the connection exists.
+  if (state.awaitingSupabaseProvision) {
+    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — awaiting Supabase provision dialog`);
+    return;
+  }
+
   // BUG-VISUAL-EDIT-001: a Visual Edit turn arrives with full selector
   // context, so 3 read-only cycles is too tight a ceiling — the model often
   // legitimately needs 3-4 reads to locate the JSX before committing the

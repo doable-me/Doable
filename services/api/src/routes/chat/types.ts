@@ -39,6 +39,15 @@ export interface ChatStreamState {
   deferredError: string | undefined;
   /** True if an MCP interactive widget was shown — auto-continue must NOT fire. */
   awaitingMcpWidget: boolean;
+  /**
+   * True once `provision_supabase` opened the Connect-Supabase dialog this turn.
+   * The DB connection does not exist until the user completes that dialog, so
+   * auto-continue must NOT fire — otherwise the nudged model races ahead and,
+   * finding Supabase still unconnected, falls back to the per-app PGlite DB
+   * (`@doable/data`) and builds the whole app there. The turn must end and wait
+   * for the editor's "Supabase provisioning complete" re-prompt instead.
+   */
+  awaitingSupabaseProvision: boolean;
   /** Artifacts produced by a tool, keyed by toolName, awaiting attachment to the next tool_result for that tool. */
   pendingArtifacts: Map<string, Array<{ url: string; fileName: string; mimeType: string; sizeBytes: number }>>;
   /** Buffer for detecting untagged reasoning at the start of model output. */
@@ -104,6 +113,7 @@ export function createInitialState(): ChatStreamState {
     friendlyLastTool: undefined,
     deferredError: undefined,
     awaitingMcpWidget: false,
+    awaitingSupabaseProvision: false,
     pendingArtifacts: new Map(),
     leadingTextBuffer: "",
     leadingTextFlushed: false,
