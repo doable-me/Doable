@@ -65,7 +65,17 @@ export async function execGit(
   opts?: ExecOpts
 ): Promise<ExecResult> {
   try {
-    const { stdout, stderr } = await execFileAsync("git", args, {
+    // Trust the project dir regardless of its on-disk owner. Generated/imported
+    // project trees get chowned to a per-project sandbox UID (dev-uid-allocator,
+    // so the bwrap-jailed Vite can read/write them — see projects/dev-server-start.ts),
+    // but the API runs git as the `doable` user. Without this, every git op in
+    // such a repo dies with `fatal: detected dubious ownership in repository`
+    // and GitHub connect/push fails. Scoping safe.directory to THIS projectPath
+    // (per-call) is the exact exception git itself suggests — narrower than a
+    // global `safe.directory=*` and works on any install (docker/baremetal/cli)
+    // no matter which uid owns the dir.
+    const gitArgs = ["-c", `safe.directory=${projectPath}`, ...args];
+    const { stdout, stderr } = await execFileAsync("git", gitArgs, {
       cwd: projectPath,
       timeout: opts?.timeout ?? 30_000,
       maxBuffer: 10 * 1024 * 1024, // 10 MB
