@@ -487,6 +487,14 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
           if (!result.ok) {
             return { success: false, error: `Migration failed: ${result.error}` };
           }
+          // Any DDL just changed the project's schema — drop the cached table set
+          // so the SCHEMA-FIRST write-guard sees newly-created tables immediately.
+          try {
+            const { invalidateSupabaseTableCache } = await import(
+              "../../projects/detect-supabase-data-misuse.js"
+            );
+            invalidateSupabaseTableCache(projectId);
+          } catch { /* non-critical */ }
           return { success: true, message: "Migration executed successfully.", rows: result.rows };
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

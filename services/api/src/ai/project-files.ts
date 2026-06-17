@@ -8,7 +8,7 @@ import {
   tanStackHijackViolation,
 } from "../projects/detect-tanstack-start.js";
 import { handRolledMcpAgentViolation } from "../projects/detect-mcp-agent-misuse.js";
-import { supabaseDataMisuseViolation, supabaseNotConnectedViolation } from "../projects/detect-supabase-data-misuse.js";
+import { supabaseDataMisuseViolation, supabaseNotConnectedViolation, supabaseMissingTableViolation } from "../projects/detect-supabase-data-misuse.js";
 
 // ─── Configuration ────────────────────────────────────────
 
@@ -232,6 +232,23 @@ export async function writeProjectFile(
   );
   if (supabaseNotConnected) {
     throw new FileAccessError(supabaseNotConnected);
+  }
+
+  // Supabase SCHEMA-FIRST guard. Same chokepoint: when a Supabase-backed project
+  // writes app code that queries a table via `supabase.from('<table>')` that does
+  // NOT exist in the connected Supabase project, reject the write — otherwise the
+  // app ships querying a non-existent relation, every Supabase REST call 404s, and
+  // no data can be read/stored (the user just sees an app that won't save). Forces
+  // run_supabase_migration to create the table FIRST (§0e). Cheap (live table
+  // listing cached + only checked for files that query a literal table) and fails
+  // open. See projects/detect-supabase-data-misuse.ts: supabaseMissingTableViolation.
+  const supabaseMissingTable = await supabaseMissingTableViolation(
+    projectId,
+    filePath,
+    content,
+  );
+  if (supabaseMissingTable) {
+    throw new FileAccessError(supabaseMissingTable);
   }
 
   // AI scaffolds with Tailwind v4 + shadcn-style raw-HSL CSS variables need

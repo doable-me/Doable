@@ -173,3 +173,169 @@ export async function supabaseNotConnectedViolation(
     "import.meta.env.VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY."
   );
 }
+
+// ─── Schema-first enforcement: block querying tables that don't exist yet ─────
+//
+// Root-cause class (traced on a real demo app): a Supabase-backed app ships
+// client code that queries `supabase.from('<table>')`, but run_supabase_migration
+// never created that table in the connected project. Supabase's PostgREST then
+// 404s every call ("relation does not exist") and no data can be read or stored
+// — with no clear signal to the user. §0e mandates "SCHEMA FIRST", but that is
+// only model GUIDANCE; nothing verified the table actually existed before the
+// query code was written, so generated apps could ship referencing tables that
+// don't exist.
+//
+// This guard makes it DETERMINISTIC: when a Supabase-backed project writes app
+// code that queries a literal table via `.from('<table>')`, we check the LIVE
+// Supabase project (Management API) for that table and REJECT the write if it is
+// missing, instructing the model to run_supabase_migration first. Net: query
+// code can only be written once the table truly exists.
+//
+// Cheap + fail-open: only fires for files that query a literal table on a
+// Supabase-backed project; the (one) Management-API table listing is cached per
+// project with a short TTL and invalidated after each migration; ANY failure
+// (no mgmt token, API error, dynamic table name) returns null so a legitimate
+// write is never blocked on infra trouble.
+
+const SUPABASE_MGMT_API = "https://api.supabase.com";
+
+/** Extract table names from `.from('<table>')` / `.from("<table>")` calls. */
+function extractQueriedTables(content: string): string[] {
+  const out = new Set<string>();
+  const re = /\.from\(\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    if (m[1]) out.add(m[1]);
+  }
+  return [...out];
+}
+
+interface TableCacheEntry { tables: Set<string>; at: number }
+const tableCache = new Map<string, TableCacheEntry>();
+const TABLE_CACHE_TTL_MS = 15_000;
+
+/**
+ * Drop the cached Supabase table set for a project. Call this right after a
+ * successful run_supabase_migration so newly-created tables are visible to the
+ * very next write (instead of waiting out the TTL).
+ */
+export function invalidateSupabaseTableCache(projectId: string): void {
+  tableCache.delete(projectId);
+}
+
+/**
+ * Resolve { projectRef, accessToken } for a project's connected Supabase, or
+ * null if it can't be determined. projectRef comes from the (non-secret)
+ * `supabase` connection metadata; the management OAuth token is decrypted via
+ * the credential vault under the workspace owner (whoever connected Supabase).
+ */
+async function resolveSupabaseMgmt(
+  projectId: string,
+): Promise<{ projectRef: string; accessToken: string } | null> {
+  const rows = await sql<{ project_ref: string; workspace_id: string; owner_id: string }[]>`
+    SELECT ic.metadata->>'projectRef' AS project_ref, p.workspace_id, w.owner_id
+    FROM integration_connections ic
+    JOIN projects p ON p.workspace_id = ic.workspace_id
+    JOIN workspaces w ON w.id = p.workspace_id
+    WHERE p.id = ${projectId}
+      AND ic.integration_id = 'supabase'
+      AND ic.metadata->>'projectRef' IS NOT NULL
+    ORDER BY (ic.scope = 'project') DESC
+    LIMIT 1
+  `;
+  const projectRef = rows[0]?.project_ref;
+  const ownerId = rows[0]?.owner_id;
+  const workspaceId = rows[0]?.workspace_id;
+  if (!projectRef || !ownerId || !workspaceId) return null;
+
+  // Dynamic import mirrors the run_supabase_migration handler — avoids a static
+  // import cycle and only loads the vault on the (rare) candidate-write path.
+  const { credentialVault } = await import("../integrations/credential-vault.js");
+  const mgmtConn = await credentialVault.get(ownerId, "supabase-mgmt", workspaceId, projectId);
+  const accessToken = (mgmtConn?.credentials as Record<string, unknown> | null)?.access_token as
+    | string
+    | undefined;
+  if (!accessToken) return null;
+  return { projectRef, accessToken };
+}
+
+/**
+ * Live set of `public` table names in the connected Supabase project, cached
+ * per project with a short TTL. Returns null when it can't be resolved (so the
+ * caller fails open).
+ */
+async function listSupabaseTables(projectId: string): Promise<Set<string> | null> {
+  const cached = tableCache.get(projectId);
+  if (cached && Date.now() - cached.at < TABLE_CACHE_TTL_MS) return cached.tables;
+
+  const ctx = await resolveSupabaseMgmt(projectId);
+  if (!ctx) return null;
+
+  const res = await fetch(`${SUPABASE_MGMT_API}/v1/projects/${ctx.projectRef}/database/query`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${ctx.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "select tablename from pg_tables where schemaname='public'" }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as Array<{ tablename?: string }>;
+  const tables = new Set(
+    data.map((r) => r.tablename).filter((t): t is string => typeof t === "string" && t.length > 0),
+  );
+  tableCache.set(projectId, { tables, at: Date.now() });
+  return tables;
+}
+
+/**
+ * Return a human-readable reason when `content` queries a Supabase table that
+ * does not exist in the project's connected Supabase project (so the app would
+ * 404 on every call), or `null` when the file is fine.
+ *
+ * Fast (only inspects files that query a literal table) and fail-open (never
+ * blocks a write on infra failure / unresolvable credentials).
+ */
+export async function supabaseMissingTableViolation(
+  projectId: string,
+  relPath: string,
+  content: string,
+): Promise<string | null> {
+  if (!isInspectableSource(relPath)) return null;
+  if (typeof content !== "string" || content.length === 0) return null;
+
+  // Fast path — only files that query a literal Supabase table are candidates,
+  // and only when the Supabase client is actually in play in this file.
+  const queried = extractQueriedTables(content);
+  if (queried.length === 0) return null;
+  if (!/["'`]@supabase\/supabase-js["'`]/.test(content) && !/\bsupabase\b/.test(content)) return null;
+
+  if (!(await isProjectSupabaseBacked(projectId))) return null;
+
+  let existing: Set<string> | null;
+  try {
+    existing = await listSupabaseTables(projectId);
+  } catch (err) {
+    console.warn(
+      `[supabase-schema-guard] table listing failed for ${projectId} — failing open:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+  if (!existing) return null; // couldn't resolve creds / tables — fail open
+
+  const missing = queried.filter((t) => !existing!.has(t));
+  if (missing.length === 0) return null;
+
+  const quoted = missing.map((t) => `'${t}'`).join(", ");
+  const plural = missing.length > 1;
+  const have = [...existing].sort();
+  return (
+    `This file queries the Supabase table(s) ${quoted} via \`.from(...)\`, but ` +
+    `${plural ? "they do" : "it does"} NOT exist in your connected Supabase project yet — so every ` +
+    `query would 404 ("relation does not exist") and no data could be read or stored.\n\n` +
+    `⛔ SCHEMA FIRST (framework prompt §0e): call \`run_supabase_migration\` with the full ` +
+    `\`CREATE TABLE IF NOT EXISTS <name> (...)\` DDL (plus any RLS policy) for ${quoted} BEFORE ` +
+    `writing code that queries ${plural ? "them" : "it"}, then write this file again. ` +
+    (have.length
+      ? `Tables that currently exist in your project: ${have.join(", ")}.`
+      : `Your Supabase project currently has no tables.`)
+  );
+}
