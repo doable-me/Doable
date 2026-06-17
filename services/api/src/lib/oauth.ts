@@ -149,6 +149,48 @@ export async function getGitHubRepoAuthUrl(state?: string): Promise<string> {
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
+// ─── Revoke a GitHub OAuth grant (used by "Switch account") ─
+//
+// Deleting Doable's stored token alone does NOT revoke the authorization on
+// github.com. GitHub OAuth Apps have no `prompt=select_account`, so the next
+// authorize call — with an active github.com session and an existing grant —
+// silently re-issues a token for the SAME account with no chooser. That's why
+// "Switch account" appeared to do nothing. Revoking the grant via the GitHub
+// app endpoint forces GitHub to show its authorization/account screen on the
+// next connect, which is where the user can actually pick a different account.
+//
+// Generic + platform-level: uses the same client_id/client_secret every flow
+// resolves at call time, so it works on any install (env or setup-wizard
+// creds) and for every project. Best-effort: returns false instead of throwing
+// so a revoke failure (network, missing creds) can never block the disconnect.
+export async function revokeGitHubGrant(accessToken: string): Promise<boolean> {
+  if (!accessToken) return false;
+  const clientId = await getGitHubClientId();
+  const clientSecret = await getGitHubClientSecret();
+  if (!clientId || !clientSecret) return false;
+  try {
+    const res = await fetch(
+      `https://api.github.com/applications/${clientId}/grant`,
+      {
+        method: "DELETE",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization:
+            "Basic " +
+            Buffer.from(`${clientId}:${clientSecret}`).toString("base64"),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ access_token: accessToken }),
+      },
+    );
+    // 204 = grant revoked; 404 = no such grant (already gone) — both mean the
+    // github.com authorization is no longer present, so treat as success.
+    return res.status === 204 || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Google OAuth ──────────────────────────────────────────
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";

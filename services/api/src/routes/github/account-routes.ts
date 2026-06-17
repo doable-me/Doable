@@ -4,6 +4,7 @@ import { sql } from "../../db/index.js";
 import { githubQueries } from "@doable/db/queries/github.js";
 import { type AuthEnv } from "../../middleware/auth.js";
 import { authMiddlewareWithRls as authMiddleware } from "../../middleware/rls.js";
+import { revokeGitHubGrant } from "../../lib/oauth.js";
 
 const db = githubQueries(sql);
 
@@ -73,8 +74,24 @@ githubAccountRoutes.delete("/github/disconnect", async (c) => {
   const userId = c.get("userId");
 
   try {
+    // Revoke the GitHub-side OAuth grant BEFORE dropping the local token, so
+    // "Switch account" actually lets the user choose a different account. Without
+    // this, deleting only the local token leaves the github.com authorization
+    // intact and the next OAuth silently reconnects the SAME account (no
+    // chooser) — see revokeGitHubGrant. Best-effort: a revoke failure must never
+    // block the disconnect, so we swallow errors and still delete locally.
+    let grantRevoked = false;
+    try {
+      const userToken = await db.findUserToken(userId);
+      if (userToken?.access_token) {
+        grantRevoked = await revokeGitHubGrant(userToken.access_token);
+      }
+    } catch {
+      // ignore — fall through to the local delete below
+    }
+
     await db.deleteUserToken(userId);
-    return c.json({ data: { disconnected: true } });
+    return c.json({ data: { disconnected: true, grantRevoked } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: "Failed to disconnect GitHub", message }, 500);
