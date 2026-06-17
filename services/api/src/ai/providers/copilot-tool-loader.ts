@@ -183,7 +183,7 @@ async function loadMcpTools(
 
     // Progressive loading: when many MCP tools exist, inject a discovery
     // meta-tool instead of all definitions. All tools remain callable.
-    const PROGRESSIVE_THRESHOLD = 20;
+    const PROGRESSIVE_THRESHOLD = 100;
     if (resolvedTools.length > PROGRESSIVE_THRESHOLD) {
       const mcpTools = createMcpTools(resolvedTools, manager, configs, projectId);
       const metaTool = createToolDiscoveryMetaTool(resolvedTools, mcpTools);

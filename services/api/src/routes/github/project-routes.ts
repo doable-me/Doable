@@ -246,29 +246,35 @@ githubProjectRoutes.post("/:projectId/github/import", async (c) => {
 
     // Gap #7 — Supabase import auto-connect. If the imported app talks to
     // Supabase (VITE_SUPABASE_* / @supabase/supabase-js / process.env.SUPABASE_*)
-    // but no Supabase connection is effective for this project, tell the
-    // frontend to prompt the user to connect Supabase. Doable then injects the
-    // connection's env into the sandbox (gap #4) so the app works — instead of
-    // the app silently rendering "Supabase is not configured". Best-effort:
-    // never fail the import if detection/lookup throws.
+    // but THIS project has no PROJECT-SCOPED Supabase connection, tell the
+    // frontend to prompt the user to connect Supabase. Connecting creates a
+    // project-scoped connection whose env reaches the sandboxed dev server on
+    // EVERY start path (gap #4) — instead of the app silently rendering
+    // "Supabase is not configured".
+    //
+    // We deliberately require a PROJECT-scoped connection, not merely any
+    // effective (user/workspace-scoped) one: a user-scoped connection only
+    // resolves when the dev server is started with that userId (the editor
+    // path), NOT on the lazy preview-proxy auto-start that has no userId — so an
+    // import on an account that already connected Supabase elsewhere would get
+    // neither a prompt nor working creds (it would render "not configured" after
+    // any lazy restart). Prompting binds a project-scoped connection that always
+    // resolves. Best-effort: never fail the import if detection/lookup throws.
     let supabaseSetupRequired = false;
     try {
       const { detectSupabaseUsage } = await import(
         "../../projects/detect-supabase-usage.js"
       );
       if (await detectSupabaseUsage(projectPath)) {
-        const [proj] = await sql<{ workspace_id: string }[]>`
-          SELECT workspace_id FROM projects WHERE id = ${projectId}
+        const projConn = await sql`
+          SELECT 1 FROM integration_connections
+          WHERE integration_id = 'supabase'
+            AND scope = 'project'
+            AND project_id = ${projectId}
+            AND status = 'active'
+          LIMIT 1
         `;
-        const wsId = proj?.workspace_id;
-        if (wsId) {
-          const { credentialVault } = await import(
-            "../../integrations/credential-vault.js"
-          );
-          const conns = await credentialVault.getEffective(wsId, projectId, userId);
-          const hasSupabase = conns.some((cn) => cn.integration_id === "supabase");
-          supabaseSetupRequired = !hasSupabase;
-        }
+        supabaseSetupRequired = projConn.length === 0;
       }
     } catch (err) {
       console.warn(
