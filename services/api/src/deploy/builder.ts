@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, stat, writeFile, rm } from "node:fs/promises";
 
 import { createVault, Tracer as VaultTracer } from "dovault";
 import type { Vault } from "dovault";
@@ -166,6 +166,44 @@ export async function runBuild(
       );
     } catch (err) {
       onLog?.(`WARN: Failed to resolve env vars: ${err}\n`);
+    }
+  }
+
+  // ── Inject connector VITE_* vars into the production build via a Vite env
+  // file (deployed-Supabase-app fix).
+  //
+  // Vite inlines `import.meta.env.VITE_*` at BUILD time. On baremetal the API
+  // runs unprivileged, so the build spawn always takes the
+  // `sudo -n sandbox-spawn …` path; sudo's env_reset (and the bwrap --clearenv
+  // jail) strip the inherited process env, so the resolved VITE_SUPABASE_URL /
+  // _ANON_KEY never reach `vite build` → the bundle ships with empty values and
+  // `const supabase = url ? createClient(url,key) : null` collapses to null +
+  // dead-code-elimination. (The PREVIEW path survives this because it injects
+  // the same vars as bwrap `--setenv` argv — see vite-jail.ts.)
+  //
+  // Writing them to `.env.production.local` is spawn-path-independent: Vite
+  // auto-loads it from the project root (which IS the jail root) with highest
+  // precedence, and ONLY in production mode — the dev server (mode=development)
+  // never reads it. Anon keys / project URLs are public-by-design (they ship in
+  // the client bundle regardless), so persisting them here is not a leak. We
+  // rewrite it every build so it can't go stale, and drop it when the project
+  // has no connector vars (e.g. Supabase was disconnected).
+  if (opts?.projectId) {
+    const viteEnvFile = path.join(projectDir, ".env.production.local");
+    try {
+      const viteLines = Object.entries(userEnvVars)
+        .filter(([k, v]) => k.startsWith("VITE_") && typeof v === "string")
+        .map(([k, v]) => `${k}=${v}`);
+      if (viteLines.length > 0) {
+        await writeFile(viteEnvFile, `${viteLines.join("\n")}\n`, "utf8");
+        onLog?.(
+          `Injected ${viteLines.length} connector VITE_* var(s) into .env.production.local\n`,
+        );
+      } else if (existsSync(viteEnvFile)) {
+        await rm(viteEnvFile, { force: true });
+      }
+    } catch (err) {
+      onLog?.(`WARN: Failed to write .env.production.local: ${err}\n`);
     }
   }
 
