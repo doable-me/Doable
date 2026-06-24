@@ -302,12 +302,34 @@ export const AI_ML_PART1: Record<string, IntegrationDefinition> = {
     piecePackage: "@activepieces/piece-elevenlabs",
     displayName: "ElevenLabs",
     description:
-      "Generate realistic speech, transcribe audio, and manage voices with ElevenLabs.",
+      "Generate realistic speech and manage voices with ElevenLabs.",
     logoUrl: "https://cdn.activepieces.com/pieces/elevenlabs.png",
     category: "ai_ml",
     tags: ["speech", "tts", "voice", "audio", "ai"],
-    authType: "secret_text",
-    actions: ["text_to_speech", "speech_to_text", "list_voices"],
+    authType: "custom_auth",
+    customAuthFields: [
+      {
+        name: "region",
+        displayName: "Region",
+        description: "Select your ElevenLabs account region",
+        type: "dropdown",
+        required: true,
+        options: [
+          { label: "Default (api.elevenlabs.io)", value: "default" },
+          { label: "US (api.us.elevenlabs.io)", value: "us" },
+          { label: "EU (api.eu.elevenlabs.io)", value: "eu" },
+        ],
+      },
+      {
+        name: "apiKey",
+        displayName: "API Key",
+        description:
+          "Your ElevenLabs API key. Required permissions: user:read, text_to_speech, voices:read, models",
+        type: "secret",
+        required: true,
+      },
+    ],
+    actions: ["elevenlabs-text-to-speech", "custom_api_call"],
     tier: "built_in",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,
