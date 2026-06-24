@@ -33,7 +33,7 @@
  */
 
 import { Hono, type Context } from "hono";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -528,6 +528,58 @@ connectorProxyRoutes.options("/__doable/connector-proxy/*", (c) => {
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "content-type, authorization, x-doable-project-id",
       "Access-Control-Max-Age": "86400",
+    },
+  });
+});
+
+// ─── Integration File Serving ──────────────────────────
+// Serves files written by integration actions (e.g. ElevenLabs TTS MP3s).
+// DoableFilesService writes to DATA_DIR/integration-files/<uuid>.<ext>
+// and returns a URL like /files/integration/<uuid>.<ext>.
+// No auth required — files are content-addressed (UUID) and ephemeral.
+
+const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
+
+const MIME: Record<string, string> = {
+  ".mp3": "audio/mpeg",
+  ".mp4": "audio/mp4",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".webm": "audio/webm",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".pdf": "application/pdf",
+};
+
+connectorProxyRoutes.get("/files/integration/:filename", async (c) => {
+  const filename = c.req.param("filename");
+
+  // Prevent path traversal — allow only UUID-style filenames with extension
+  if (!/^[0-9a-f-]{36}\.[a-z0-9]+$/i.test(filename)) {
+    return c.json({ error: "Invalid filename" }, 400);
+  }
+
+  const filePath = path.join(DATA_DIR, "integration-files", filename);
+
+  try {
+    await stat(filePath);
+  } catch {
+    return c.json({ error: "File not found" }, 404);
+  }
+
+  const ext = path.extname(filename).toLowerCase();
+  const contentType = MIME[ext] ?? "application/octet-stream";
+
+  const data = await readFile(filePath);
+
+  return new Response(data, {
+    status: 200,
+    headers: {
+      "Content-Type": contentType,
+      "Content-Length": String(data.byteLength),
+      "Cache-Control": "private, max-age=3600",
+      "Access-Control-Allow-Origin": "*",
     },
   });
 });
