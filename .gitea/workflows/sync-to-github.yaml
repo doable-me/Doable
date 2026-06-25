@@ -1,0 +1,97 @@
+name: Sync main to GitHub
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (full history)
+        uses: actions/checkout@v3
+        with:
+          ref: main
+          fetch-depth: 0        # preserves full commit history + hashes
+
+      # Add a debug step to the workflow BEFORE the push step
+      # to ensure the secret is actually available in the runner
+
+      - name: Debug token availability
+        env:
+          GITHUB_TOKEN_SYNC: ${{ secrets.GH_PAT }}
+          GITHUB_ORG: doable-me
+          GITHUB_REPO: doable
+        run: |
+          # Never print the token itself — just verify it's non-empty
+          if [ -z "${GITHUB_TOKEN_SYNC}" ]; then
+            echo "ERROR: GITHUB_TOKEN_SYNC is empty or not set"
+            exit 1
+          fi
+          echo "Token length: ${#GITHUB_TOKEN_SYNC}"
+          echo "Token prefix: ${GITHUB_TOKEN_SYNC:0:6}..."
+
+          # Verify token works from inside runner
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN_SYNC}" \
+            "https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}")
+          echo "API response: ${HTTP_STATUS}"
+
+          # Test git auth directly from runner
+          git ls-remote \
+            "https://x-access-token:${GITHUB_TOKEN_SYNC}@github.com/${GITHUB_ORG}/${GITHUB_REPO}.git" \
+            | head -3
+
+      - name: Push main to GitHub
+        env:
+          GITHUB_TOKEN_SYNC: ${{ secrets.GH_PAT }}
+          GITHUB_ORG: doable-me
+          GITHUB_REPO: doable
+        run: |
+          git remote add github \
+            "https://x-access-token:${GITHUB_TOKEN_SYNC}@github.com/${GITHUB_ORG}/${GITHUB_REPO}.git"
+
+          # Push main as-is
+          git push github main:main --force
+
+      - name: Delete all non-main branches from GitHub
+        env:
+          GITHUB_TOKEN_SYNC: ${{ secrets.GH_PAT }}
+          GITHUB_ORG: doable-me
+          GITHUB_REPO: doable
+        run: |
+          # Fetch all remote branches from GitHub
+          BRANCHES=$(curl -s \
+            -H "Authorization: token ${GITHUB_TOKEN_SYNC}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/branches?per_page=100" \
+            | python3 -c "
+          import sys, json
+          branches = json.load(sys.stdin)
+          for b in branches:
+              if b['name'] != 'main':
+                  print(b['name'])
+          ")
+
+          if [ -z "${BRANCHES}" ]; then
+            echo "No non-main branches found on GitHub — nothing to delete."
+            exit 0
+          fi
+
+          # Delete each non-main branch via GitHub API
+          echo "${BRANCHES}" | while read -r branch; do
+            echo "Deleting branch: ${branch}"
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -X DELETE \
+              -H "Authorization: token ${GITHUB_TOKEN_SYNC}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/git/refs/heads/${branch}")
+
+            if [ "${HTTP_STATUS}" -eq 204 ]; then
+              echo "  ✓ Deleted: ${branch}"
+            else
+              echo "  ✗ Failed to delete: ${branch} (HTTP ${HTTP_STATUS})"
+            fi
+          done
