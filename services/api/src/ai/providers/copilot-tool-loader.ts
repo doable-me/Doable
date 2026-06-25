@@ -185,7 +185,7 @@ async function loadMcpTools(
     // meta-tool instead of all definitions. All tools remain callable.
     const PROGRESSIVE_THRESHOLD = 100;
     if (resolvedTools.length > PROGRESSIVE_THRESHOLD) {
-      const mcpTools = createMcpTools(resolvedTools, manager, configs, projectId);
+      const mcpTools = createMcpTools(resolvedTools, manager, configs, projectId, userId);
       const metaTool = createToolDiscoveryMetaTool(resolvedTools, mcpTools);
       // Include the meta-tool + a summary of what's available
       console.log(`[CopilotEngine] Progressive loading: ${resolvedTools.length} MCP tools deferred behind discovery meta-tool`);
