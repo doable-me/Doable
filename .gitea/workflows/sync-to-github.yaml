@@ -23,7 +23,7 @@ jobs:
         env:
           GITHUB_TOKEN_SYNC: ${{ secrets.GH_PAT }}
           GITHUB_ORG: doable-me
-          GITHUB_REPO: doable
+          GITHUB_REPO: Doable
         run: |
           # Never print the token itself — just verify it's non-empty
           if [ -z "${GITHUB_TOKEN_SYNC}" ]; then
@@ -48,7 +48,7 @@ jobs:
         env:
           GITHUB_TOKEN_SYNC: ${{ secrets.GH_PAT }}
           GITHUB_ORG: doable-me
-          GITHUB_REPO: doable
+          GITHUB_REPO: Doable
         run: |
           git remote add github \
             "https://x-access-token:${GITHUB_TOKEN_SYNC}@github.com/${GITHUB_ORG}/${GITHUB_REPO}.git"
@@ -60,7 +60,7 @@ jobs:
         env:
           GITHUB_TOKEN_SYNC: ${{ secrets.GH_PAT }}
           GITHUB_ORG: doable-me
-          GITHUB_REPO: doable
+          GITHUB_REPO: Doable
         run: |
           # Fetch all remote branches from GitHub
           BRANCHES=$(curl -s \
