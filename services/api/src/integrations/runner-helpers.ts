@@ -121,7 +121,7 @@ export async function loadPiece(integrationId: string): Promise<any> {
     if (!piece?.displayName) {
       for (const key of Object.keys(mod)) {
         const val = mod[key];
-        if (val && typeof val === "object" && val.displayName && (typeof val.actions === "function" || typeof val.getAction === "function")) {
+        if (val && typeof val === "object" && val.displayName && (typeof val.actions === "function" || Array.isArray(val.actions) || typeof val.getAction === "function")) {
           piece = val;
           break;
         }

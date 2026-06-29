@@ -65,7 +65,9 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
     xr.phase("action_lookup");
     const action = typeof piece.getAction === "function"
       ? piece.getAction(params.actionName)
-      : piece.actions?.[params.actionName];
+      : Array.isArray(piece.actions)
+        ? piece.actions.find((a: any) => a.name === params.actionName)
+        : piece.actions?.[params.actionName];
 
     if (!action) {
       xr.end("error", `Action '${params.actionName}' not found`);
