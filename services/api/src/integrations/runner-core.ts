@@ -74,7 +74,11 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
       return {
         success: false, output: null,
         error: `Action '${params.actionName}' not found in ${params.integrationId}. Available: ${
-          typeof piece.actions === "object" ? Object.keys(piece.actions).join(", ") : "unknown"
+          Array.isArray(piece.actions)
+            ? piece.actions.map((a: any) => a.name).join(", ")
+            : typeof piece.actions === "object"
+              ? Object.keys(piece.actions).join(", ")
+              : "unknown"
         }`,
       };
     }
@@ -160,7 +164,11 @@ export async function getIntegrationActions(integrationId: string): Promise<Arra
 
   const actions: Array<{ name: string; displayName: string; description: string; props: Record<string, unknown> }> = [];
 
-  const pieceActions = typeof piece.actions === "function" ? piece.actions() : (piece.actions ?? {});
+  const pieceActions = typeof piece.actions === "function"
+    ? piece.actions()
+    : Array.isArray(piece.actions)
+      ? Object.fromEntries(piece.actions.map((a: any) => [a.name, a]))
+      : (piece.actions ?? {});
 
   let matchedAny = false;
   for (const actionName of def.actions) {
