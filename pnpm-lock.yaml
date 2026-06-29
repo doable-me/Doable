@@ -740,8 +740,8 @@ importers:
         specifier: 0.2.0
         version: 0.2.0(bufferutil@4.1.0)
       '@activepieces/piece-elevenlabs':
-        specifier: 0.2.7
-        version: 0.2.7(bufferutil@4.1.0)
+        specifier: 0.2.4
+        version: 0.2.4(bufferutil@4.1.0)
       '@activepieces/piece-emailit':
         specifier: 0.0.1
         version: 0.0.1(bufferutil@4.1.0)
@@ -2512,8 +2512,8 @@ packages:
   '@activepieces/piece-eden-ai@0.2.0':
     resolution: {integrity: sha512-uLD8GC8tuB3HBYW5ljTG6mMM1n1HGSr8aKKfq7cDEzq2MaHTaa9Ask+ITgkHqPjnlgswJgeVW09pX5ysf34AYQ==}
 
-  '@activepieces/piece-elevenlabs@0.2.7':
-    resolution: {integrity: sha512-PBhJleVmVauyo0w2RW6aDhJcnHdXkjNHxLJ5ango0/5AATSq7mWeAspZ6dxttpD4ahUDjJSx+n7IpUiOi7czNg==}
+  '@activepieces/piece-elevenlabs@0.2.4':
+    resolution: {integrity: sha512-SOZL4p2vJGIwc3YJwtehnZ4KugrW9oXNjazDlZiOxxPqPhIKGDs+481ZznGpNKnOeFbf0UoKhFiTrgzPKpiE6w==}
 
   '@activepieces/piece-emailit@0.0.1':
     resolution: {integrity: sha512-ZIAFloEXXtErtoofsbUjsQU0Tm8ljvDcgz3KJhVD1trSjPo6LBW4EPh83l9Cm+jxdgaE7So8kNKVyZcfFXBgKA==}
@@ -3721,9 +3721,6 @@ packages:
   '@activepieces/pieces-framework@0.28.0':
     resolution: {integrity: sha512-ZDxtZH8/nVQgzND9h1Afc4XuvB5wOwnnw0zQF7k++Xh3qbXPUADM0wYO+1eRNx5O2dTVqjo0a7wHEHtJ72FLvw==}
 
-  '@activepieces/pieces-framework@0.30.0':
-    resolution: {integrity: sha512-XebtyIqamIv53xebc9wxl25mbjOH3eo1rZR88yolWLBeg1ix5COKAU304lAPwkMnYdR7WA6qITr57V8HyR8p/w==}
-
   '@activepieces/shared@0.34.0':
     resolution: {integrity: sha512-lD/go9FNtsl2Ft2Qyj1w5o2BPU8hfaTaIhsrNuN/3lQl+xTEcXMBEe31osWMeA4S+qu0BYAmGoh9FAd8EqJRMw==}
 
@@ -3786,12 +3783,6 @@ packages:
 
   '@activepieces/shared@0.67.1':
     resolution: {integrity: sha512-2CBOmqkL3niZoZj4VsbfBO6aVFbwZyBx4/1oGkxJ2SF7slebpqCgwxgvVSexaNNgS4vMMSfxMxfzvEbi1iptDQ==}
-
-  '@activepieces/shared@0.86.0':
-    resolution: {integrity: sha512-NvD2pY+7lWAjfRh4eLbvRf+XLOmSs/788AP9qqHEjNfxgA6e4GjsWQ5+1NaD9xWcePIffutyqVZVuw3ADjzaZw==}
-
-  '@activepieces/shared@0.87.1':
-    resolution: {integrity: sha512-l9/W4JYb17P0KYnFllrulefCiUl8fm8xsb91/igLYEWXg4NnMVoYN1d/A5xEgm7gKDDMbSxI2YHhJZAZGQVe7g==}
 
   '@actual-app/api@25.3.1':
     resolution: {integrity: sha512-MlyjU7Zo+YVknjdqdJzrGTPocZRTeB71wUp5FlGwifOqIYK8BHsNJbz9xMM385l4nxzi/aBY0+GpXjbQGQU2pw==}
@@ -8799,9 +8790,6 @@ packages:
   expand-tilde@2.0.2:
     resolution: {integrity: sha512-A5EmesHW6rfnZ9ysHQjPdJRni0SRar0tjtG5MNtm9n5TUvsYU8oozprtRD4AqHxcZWWlVuAmQo2nWKfN9oyjTw==}
     engines: {node: '>=0.10.0'}
-
-  expr-eval@2.0.2:
-    resolution: {integrity: sha512-4EMSHGOPSwAfBiibw3ndnP0AvjDWLsMvGOvWEZ2F96IGk0bIVdjQisOHxReSkE13mHcfbuCiXw+G4y0zv6N8Eg==}
 
   express-rate-limit@8.3.2:
     resolution: {integrity: sha512-77VmFeJkO0/rvimEDuUC5H30oqUC4EyOhyGccfqoLebB0oiEYfM7nwPrsDsBL1gsTpwfzX8SFy2MT3TDyRq+bg==}
@@ -15005,15 +14993,27 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@activepieces/piece-elevenlabs@0.2.7(bufferutil@4.1.0)':
+  '@activepieces/piece-elevenlabs@0.2.4(bufferutil@4.1.0)':
     dependencies:
-      '@activepieces/pieces-common': 0.12.3(bufferutil@4.1.0)
-      '@activepieces/pieces-framework': 0.30.0(bufferutil@4.1.0)
-      '@activepieces/shared': 0.87.1(bufferutil@4.1.0)
+      '@activepieces/pieces-common': 0.11.6(bufferutil@4.1.0)
+      '@activepieces/pieces-framework': 0.25.4(bufferutil@4.1.0)(zod@4.1.13)
+      '@activepieces/shared': 0.37.0(bufferutil@4.1.0)
       '@elevenlabs/elevenlabs-js': 2.4.1
+      '@sinclair/typebox': 0.34.11
+      ai: 6.0.141(zod@4.1.13)
+      axios: 1.13.5(debug@4.4.3)
+      axios-retry: 4.4.1(axios@1.13.5)
+      deepmerge-ts: 7.1.0
+      form-data: 4.0.4
+      mime-types: 2.1.35
+      nanoid: 3.3.8
+      semver: 7.6.0
+      socket.io-client: 4.8.1(bufferutil@4.1.0)
       tslib: 2.6.2
+      zod: 4.1.13
     transitivePeerDependencies:
       - bufferutil
+      - debug
       - encoding
       - supports-color
       - utf-8-validate
@@ -23403,18 +23403,6 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@activepieces/pieces-framework@0.30.0(bufferutil@4.1.0)':
-    dependencies:
-      '@activepieces/shared': 0.86.0(bufferutil@4.1.0)
-      ai: 6.0.0(zod@4.3.6)
-      semver: 7.6.0
-      tslib: 2.6.2
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-
   '@activepieces/shared@0.34.0(bufferutil@4.1.0)':
     dependencies:
       '@sinclair/typebox': 0.34.11
@@ -23720,38 +23708,6 @@ snapshots:
     dependencies:
       dayjs: 1.11.9
       deepmerge-ts: 7.1.0
-      ipaddr.js: 2.3.0
-      nanoid: 3.3.8
-      semver: 7.6.0
-      socket.io-client: 4.8.1(bufferutil@4.1.0)
-      tslib: 2.6.2
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-
-  '@activepieces/shared@0.86.0(bufferutil@4.1.0)':
-    dependencies:
-      dayjs: 1.11.9
-      deepmerge-ts: 7.1.0
-      expr-eval: 2.0.2
-      ipaddr.js: 2.3.0
-      nanoid: 3.3.8
-      semver: 7.6.0
-      socket.io-client: 4.8.1(bufferutil@4.1.0)
-      tslib: 2.6.2
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-
-  '@activepieces/shared@0.87.1(bufferutil@4.1.0)':
-    dependencies:
-      dayjs: 1.11.9
-      deepmerge-ts: 7.1.0
-      expr-eval: 2.0.2
       ipaddr.js: 2.3.0
       nanoid: 3.3.8
       semver: 7.6.0
@@ -29571,7 +29527,7 @@ snapshots:
       '@supabase/node-fetch': 2.6.15
       '@types/phoenix': 1.6.7
       '@types/ws': 8.18.1
-      ws: 8.19.0(bufferutil@4.1.0)
+      ws: 8.20.1(bufferutil@4.1.0)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -31371,8 +31327,6 @@ snapshots:
   expand-tilde@2.0.2:
     dependencies:
       homedir-polyfill: 1.0.3
-
-  expr-eval@2.0.2: {}
 
   express-rate-limit@8.3.2(express@5.2.1):
     dependencies:
@@ -33617,7 +33571,7 @@ snapshots:
       devtools-protocol: 0.0.1581282
       typed-query-selector: 2.12.1
       webdriver-bidi-protocol: 0.4.1
-      ws: 8.19.0(bufferutil@4.1.0)
+      ws: 8.20.1(bufferutil@4.1.0)
     transitivePeerDependencies:
       - bare-abort-controller
       - bare-buffer

@@ -212,8 +212,8 @@ connectorProxyRoutes.get(
           displayName: a.displayName ?? a.name,
           description: a.description ?? "",
         }));
-      } catch {
-        // Some integrations may fail to load — skip actions
+      } catch (err) {
+        console.error(`[connector-proxy] getIntegrationActions failed for ${conn.integration_id}:`, err instanceof Error ? err.message : String(err));
       }
 
       integrations.push({
