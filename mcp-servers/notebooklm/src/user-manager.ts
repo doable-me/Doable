@@ -261,8 +261,16 @@ export function setCookiesFromExtension(cookies: ChromeCookie[], userToken?: str
 /**
  * Returns cookies for the given user token.
  * Strict isolation — no cross-user borrowing.
+ * Always refreshes from disk first to pick up recently-synced cookies
+ * (important when stdio and HTTP servers are separate processes).
  */
 export function getCookiesForUser(userToken?: string): { cookies: ChromeCookie[]; fresh: boolean; userAgent?: string } {
+    // Always sync fresh from disk before checking memory — this ensures both
+    // the HTTP server (which handles /sync-cookies) and the stdio server
+    // (which handles MCP tool calls) see the latest cookies even though they're
+    // separate Node processes with separate in-memory Maps.
+    refreshCookiesFromDisk();
+
     if (userToken && userCookies.has(userToken)) {
         const data = userCookies.get(userToken)!;
         const fresh = (Date.now() - data.receivedAt) < COOKIE_MAX_AGE_MS;
