@@ -160,7 +160,9 @@ export async function resolveVaultEnv(
       .toLowerCase();
     const toolPrefixes = (def.actions ?? []).map((actionName) => {
       const safeActionName = actionName.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
-      return `${safeIntegrationId}_${safeActionName}`;
+      const prefix = `${safeIntegrationId}_`;
+      const deduped = safeActionName.startsWith(prefix) ? safeActionName.slice(prefix.length) : safeActionName;
+      return `${safeIntegrationId}_${deduped}`;
     });
 
     manifest.push({
