@@ -56,7 +56,7 @@ export const customActions: Record<string, Record<string, CustomAction>> = {
           },
           body: JSON.stringify({
             text: text,
-            model_id: "eleven_monolingual_v1", // Free tier model
+            model_id: "eleven_turbo_v2_5", // Free tier model
             output_format: "mp3_44100_128",
           }),
         });
