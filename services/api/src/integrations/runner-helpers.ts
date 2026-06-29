@@ -13,6 +13,75 @@ interface CustomAction {
 }
 
 export const customActions: Record<string, Record<string, CustomAction>> = {
+  elevenlabs: {
+    "elevenlabs-text-to-speech": {
+      displayName: "Text to Speech (Free Tier)",
+      description: "Convert text to speech using ElevenLabs free tier model (non-streaming, cost-effective). Returns an audio URL.",
+      props: {
+        text: {
+          type: "STRING",
+          displayName: "Text",
+          description: "The text to convert to speech",
+          required: true,
+        },
+        voice: {
+          type: "STRING",
+          displayName: "Voice ID",
+          description: "Voice ID to use (e.g., 21m00Tcm4TlvDq8ikWAM for Rachel)",
+          required: true,
+        },
+      },
+      async run(params, auth) {
+        const { text, voice } = params.props as { text: string; voice: string };
+        if (!text?.trim()) throw new Error("text parameter is required");
+        if (!voice?.trim()) throw new Error("voice parameter is required");
+
+        const creds = auth as Record<string, unknown> | undefined;
+        const apiKey = creds?.apiKey as string | undefined;
+        const region = creds?.region as string | undefined || "default";
+
+        if (!apiKey) throw new Error("ElevenLabs API key is required");
+
+        // Determine base URL based on region
+        let baseUrl = "https://api.elevenlabs.io";
+        if (region === "us") baseUrl = "https://api.us.elevenlabs.io";
+        if (region === "eu") baseUrl = "https://api.eu.elevenlabs.io";
+
+        // Use non-streaming endpoint with free-tier model
+        const response = await fetch(`${baseUrl}/v1/text-to-speech/${voice}`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": apiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: text,
+            model_id: "eleven_monolingual_v1", // Free tier model
+            output_format: "mp3_44100_128",
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`ElevenLabs API error: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        // Get audio data
+        const audioBuffer = await response.arrayBuffer();
+        
+        // Save to local file service
+        const { DoableFilesService } = await import("./files-service.js");
+        const filesService = new DoableFilesService();
+        const filename = `${crypto.randomUUID()}.mp3`;
+        const publicUrl = await filesService.write({ 
+          fileName: filename, 
+          data: Buffer.from(audioBuffer) 
+        });
+
+        return publicUrl;
+      },
+    },
+  },
   supabase: {
     execute_sql: {
       displayName: "Execute SQL",
