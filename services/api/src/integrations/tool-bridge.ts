@@ -221,7 +221,9 @@ export async function createIntegrationTools(
       const safeActionName = action.name
         .replace(/[^a-zA-Z0-9]/g, "_")
         .toLowerCase();
-      const toolName = `${safeIntegrationId}_${safeActionName}`;
+      const prefix = `${safeIntegrationId}_`;
+      const dedupedActionName = safeActionName.startsWith(prefix) ? safeActionName.slice(prefix.length) : safeActionName;
+      const toolName = `${safeIntegrationId}_${dedupedActionName}`;
 
       // Use action override description if present, otherwise the piece's own
       const description =

@@ -330,6 +330,11 @@ export const AI_ML_PART1: Record<string, IntegrationDefinition> = {
       },
     ],
     actions: ["elevenlabs-text-to-speech", "custom_api_call"],
+    actionOverrides: {
+      "elevenlabs-text-to-speech": {
+        description: `Convert text to speech using ElevenLabs and get back an audio URL. PROPS: { text: string (required — the text to speak), voice: string (required — MUST be a voice ID, NOT a name; use the default Rachel voice ID "21m00Tcm4TlvDq8ikWAM" unless the user explicitly picks another), model: string (optional — omit to use the default model) }. OUTPUT: result.data is a plain string URL (e.g. "https://api.doable.me/files/integration/uuid.mp3") — NOT an object. Render audio with: <audio src={result.data} autoPlay controls />. NEVER access result.data.url or result.data.audioUrl — it is the URL itself.`,
+      },
+    },
     tier: "built_in",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,
