@@ -99,9 +99,12 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
           tools.add("*");
         }
         // Also match integrations.run("integration_id", "action_name")
-        const intRegex = /\.integrations\.run\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]/g;
+        // and useIntegration("id", "action") / useIntegrationQuery("id", "action")
+        // NOTE: proxy checks toolId as "id:action" (colon) so we must store it
+        // with a colon, NOT a slash, or the allowlist check never matches.
+        const intRegex = /(?:\.integrations\.run|useIntegration(?:Query)?)\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]/g;
         while ((match = intRegex.exec(content)) !== null) {
-          tools.add(`${match[1]!}/${match[2]!}`);
+          tools.add(`${match[1]!}:${match[2]!}`);
         }
         // Dynamic dispatch: AI assistants / ReAct loops call
         // `doable.mcp.call(toolName, ...)` with a VARIABLE, so the literal-arg
