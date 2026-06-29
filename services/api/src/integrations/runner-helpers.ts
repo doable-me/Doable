@@ -27,7 +27,7 @@ export const customActions: Record<string, Record<string, CustomAction>> = {
         voice: {
           type: "STRING",
           displayName: "Voice ID",
-          description: "Voice ID to use (e.g., 21m00Tcm4TlvDq8ikWAM for Rachel)",
+          description: "Voice ID to use (e.g., EXAVITQu4vr4xnSDxMaL for Sarah)",
           required: true,
         },
       },
