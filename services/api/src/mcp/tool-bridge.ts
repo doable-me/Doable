@@ -55,6 +55,7 @@ export function createMcpTools(
   connectorManager: ConnectorManager,
   connectorConfigs: Map<string, McpConnectorConfig>,
   projectId?: string,
+  userId?: string,
 ): Tool[] {
   return resolvedTools.map((resolved) => {
     const { connectorId, connectorName, tool } = resolved;
@@ -69,11 +70,20 @@ export function createMcpTools(
         ? `[MCP: ${connectorName}] ${tool.description}`
         : `MCP tool from ${connectorName}: ${tool.name}`,
       parameters: tool.inputSchema,
-      handler: async (args: Record<string, unknown>) => {
+      handler: async (rawArgs: Record<string, unknown>) => {
         const config = connectorConfigs.get(connectorId);
         if (!config) {
           return { success: false, error: `Connector ${connectorName} not found` };
         }
+
+        // Inject the Doable userId as user_token for any MCP tool that declares
+        // it in its schema — server-side, so AI never needs to know or pass it.
+        // This ensures per-user cookie isolation without privacy leakage.
+        const toolSchema = tool.inputSchema as { properties?: Record<string, unknown> } | undefined;
+        const args =
+          userId && toolSchema?.properties && "user_token" in toolSchema.properties && !rawArgs.user_token
+            ? { ...rawArgs, user_token: userId }
+            : rawArgs;
 
         // OTel mcp.call span — parented to the active ai.chat.turn span,
         // so the new spans table sees this call alongside HTTP/DB spans.
