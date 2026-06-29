@@ -478,10 +478,12 @@ function registerTools(server: McpServer) {
         "generate_infographic",
         "Generates a visual infographic and returns it as a base64 image. Accepts a YouTube video URL OR a NotebookLM notebook URL. ALWAYS call this tool when the user asks to 'show', 'display', or 'embed' an infographic — do NOT use get_active_notebook as a substitute. When complete, returns JSON with image_data_uri (a data:image/jpeg;base64,... string). ALWAYS embed the image_data_uri directly as <img src={image_data_uri}> in the generated app — never use the raw Google CDN URL as it requires user authentication. If status is 'processing', call check_infographic_status with the job_id to poll until complete.",
         {
-            video_url: z.string().describe("YouTube video URL or NotebookLM notebook URL (e.g. https://notebooklm.google.com/notebook/xxx)"),
-            user_token: z.string().optional().describe("Optional user token for multi-user mode.")
+            inputSchema: z.object({
+                video_url: z.string().describe("YouTube video URL or NotebookLM notebook URL (e.g. https://notebooklm.google.com/notebook/xxx)"),
+                user_token: z.string().optional().describe("Optional user token for multi-user mode.")
+            }) as any,
         },
-        async (args) => {
+        async (args: any) => {
             const video_url = args.video_url;
             const userToken: string | undefined = args.user_token;
             logToFile(`[MCP] Request: Infographic for ${video_url} (user: ${userToken || 'legacy'})`);
