@@ -192,7 +192,7 @@ async function loadMcpTools(
       return [metaTool, ...mcpTools];
     }
 
-    const mcpTools = createMcpTools(resolvedTools, manager, configs, projectId);
+    const mcpTools = createMcpTools(resolvedTools, manager, configs, projectId, userId);
     console.log(`[CopilotEngine] Loaded ${mcpTools.length} MCP tools from ${configs.size} connectors`);
     return mcpTools;
   } catch (err) {
