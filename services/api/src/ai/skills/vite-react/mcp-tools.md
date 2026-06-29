@@ -136,6 +136,8 @@ Tool names follow this pattern: `mcp_{connectorName}_{toolName}`
 
 Example: Connector "HPCA MCP" + Tool "get_user_info" → `mcp_hpca_mcp_get_user_info`
 
+**IMPORTANT:** This pattern applies ONLY to MCP servers. For Activepieces integrations (Slack, Gmail, ElevenLabs, etc.), use `useIntegration(integrationId, actionName)` or `doable.integrations.run(integrationId, actionName)` — do NOT prefix with `mcp_`.
+
 ## Auth — Handled Automatically
 
 Same as integrations:
