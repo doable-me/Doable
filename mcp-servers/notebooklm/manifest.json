@@ -19,6 +19,7 @@
         "https://accounts.google.com/*",
         "https://*.google.com/*",
         "http://localhost:3001/*",
+        "https://staging-api.doable.me/*",
         "https://*.trycloudflare.com/*",
         "http://localhost:3000/*",
         "https://*.doable.me/*"

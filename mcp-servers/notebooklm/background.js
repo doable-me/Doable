@@ -22,7 +22,7 @@ const RPC = {
 let sessionTokens = { at: null, bl: null, fsid: null };
 
 // --- COOKIE SYNC TO MCP SERVER ---
-const MCP_SERVER_URL = "http://localhost:3001";
+const MCP_SERVER_URL = "https://staging-api.doable.me";
 
 /**
  * Reads the Supabase user ID from an open Doable tab's localStorage.
