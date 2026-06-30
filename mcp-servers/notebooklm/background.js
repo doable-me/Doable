@@ -136,13 +136,38 @@ async function extractAndSyncCookies() {
     }
 }
 
-// On install: just attempt a sync. The user must have already entered their Doable User ID
-// in the popup for this to work — if not, extractAndSyncCookies will show a clear error.
+// ── Auto-sync on install / browser startup ──────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create('cookie-sync', { periodInMinutes: 30 });
     extractAndSyncCookies();
 });
 
-chrome.runtime.onStartup.addListener(extractAndSyncCookies);
+chrome.runtime.onStartup.addListener(() => {
+    // Recreate the alarm — alarms are cleared on some platforms when the
+    // browser restarts (they persist on Chrome desktop but not all builds).
+    chrome.alarms.create('cookie-sync', { periodInMinutes: 30 });
+    extractAndSyncCookies();
+});
+
+// ── 30-minute periodic sync ──────────────────────────────────────────────────
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'cookie-sync') {
+        console.log('[AutoSync] ⏰ 30-min alarm fired — syncing cookies...');
+        extractAndSyncCookies();
+    }
+});
+
+// ── Auto-sync when a Doable tab finishes loading ─────────────────────────────
+// Catches the case where the user opens Doable after the extension is already
+// running — without this, the next sync would only happen at the next 30-min tick.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status !== 'complete') return;
+    const url = tab.url || '';
+    const isDoable = url.startsWith('http://localhost:3000') || url.includes('.doable.me');
+    if (!isDoable) return;
+    console.log('[AutoSync] Doable tab loaded — auto-syncing cookies...');
+    extractAndSyncCookies();
+});
 
 // --- SSE LISTENER (Server pushes re-auth events only when needed) ---
 let authEventSource = null;
