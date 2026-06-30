@@ -81,6 +81,85 @@ export const customActions: Record<string, Record<string, CustomAction>> = {
         return publicUrl;
       },
     },
+    "elevenlabs-speech-to-text": {
+      displayName: "Speech to Text",
+      description: "Transcribe audio to text using ElevenLabs Scribe. Returns the transcribed text string.",
+      props: {
+        audioBase64: {
+          type: "STRING",
+          displayName: "Audio (Base64)",
+          description: "Base64-encoded audio data to transcribe",
+          required: true,
+        },
+        mimeType: {
+          type: "STRING",
+          displayName: "MIME Type",
+          description: "Audio MIME type (e.g., audio/webm, audio/wav, audio/mp4). Defaults to audio/webm.",
+          required: false,
+        },
+        languageCode: {
+          type: "STRING",
+          displayName: "Language Code",
+          description: "BCP-47 language code (e.g., 'en'). Leave empty for auto-detect.",
+          required: false,
+        },
+      },
+      async run(params, auth) {
+        const { audioBase64, mimeType = "audio/webm", languageCode } = params.props as {
+          audioBase64: string;
+          mimeType?: string;
+          languageCode?: string;
+        };
+
+        if (!audioBase64?.trim()) throw new Error("audioBase64 parameter is required");
+
+        const creds = auth as Record<string, unknown> | undefined;
+        const apiKey = creds?.apiKey as string | undefined;
+        const region = (creds?.region as string | undefined) || "default";
+
+        if (!apiKey) throw new Error("ElevenLabs API key is required");
+
+        // Determine base URL based on region
+        let baseUrl = "https://api.elevenlabs.io";
+        if (region === "us") baseUrl = "https://api.us.elevenlabs.io";
+        if (region === "eu") baseUrl = "https://api.eu.elevenlabs.io";
+
+        // Decode base64 → Buffer → Blob (avoids stream issue with native fetch)
+        const audioBuffer = Buffer.from(audioBase64, "base64");
+        const cleanMimeType = mimeType.split(";")[0]!; // strip codec params e.g. audio/webm;codecs=opus
+
+        const ext = cleanMimeType.includes("wav") ? "wav"
+          : cleanMimeType.includes("ogg") ? "ogg"
+          : cleanMimeType.includes("mp4") ? "mp4"
+          : "webm";
+
+        // Use native FormData + Blob — works cleanly with Node 22 native fetch
+        const blob = new Blob([audioBuffer], { type: cleanMimeType });
+        const formData = new FormData();
+        formData.append("file", blob, `recording.${ext}`);
+        formData.append("model_id", "scribe_v1");
+        if (languageCode) formData.append("language_code", languageCode);
+
+        const response = await fetch(`${baseUrl}/v1/speech-to-text`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": apiKey,
+            // Do NOT set Content-Type — let fetch set it automatically with correct boundary
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`ElevenLabs STT error: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const data = await response.json() as Record<string, unknown>;
+        const text = (data.text ?? data.transcript ?? "") as string;
+
+        return text;
+      },
+    },
   },
   supabase: {
     execute_sql: {
