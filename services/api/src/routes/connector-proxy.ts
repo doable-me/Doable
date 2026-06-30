@@ -580,6 +580,7 @@ connectorProxyRoutes.get("/files/integration/:filename", async (c) => {
       "Content-Length": String(data.byteLength),
       "Cache-Control": "private, max-age=3600",
       "Access-Control-Allow-Origin": "*",
+      "Cross-Origin-Resource-Policy": "cross-origin",
     },
   });
 });
