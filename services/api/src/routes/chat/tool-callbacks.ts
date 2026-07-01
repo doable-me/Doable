@@ -348,9 +348,10 @@ export function createToolProgressCallbacks(
         const a = (args as Record<string, unknown>) ?? {};
         const integrationId = typeof a.integrationId === "string" ? a.integrationId : "";
         const reason = typeof a.reason === "string" ? a.reason : "";
+        console.warn("[TOOL-CALLBACKS] request_integration called:", { integrationId, reason });
         if (integrationId) {
           const def = getIntegration(integrationId);
-          stream.writeSSE({ data: JSON.stringify({
+          const sseData = {
             type: "integration_required",
             data: {
               integrationId,
@@ -358,7 +359,9 @@ export function createToolProgressCallbacks(
               logoUrl: def?.logoUrl,
               reason,
             },
-          }) }).catch(() => {});
+          };
+          console.warn("[TOOL-CALLBACKS] Emitting SSE:", sseData);
+          stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
         }
       }
       if (toolName === "provision_supabase") {
