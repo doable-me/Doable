@@ -10,6 +10,7 @@ import { pendingUiResources } from "../../mcp/tool-bridge.js";
 import { storeArtifact } from "../artifacts.js";
 import { pushArtifacts } from "./artifact-stash.js";
 import { writeProjectFile } from "../../ai/project-files.js";
+import { getIntegration } from "../../integrations/registry/index.js";
 
 const ARTIFACT_PUBLIC_URL =
   process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000";
@@ -343,6 +344,23 @@ export function createToolProgressCallbacks(
           ...(packages ? { packages } : {}),
         },
       }) }).catch(() => {});
+      if (toolName === "request_integration") {
+        const a = (args as Record<string, unknown>) ?? {};
+        const integrationId = typeof a.integrationId === "string" ? a.integrationId : "";
+        const reason = typeof a.reason === "string" ? a.reason : "";
+        if (integrationId) {
+          const def = getIntegration(integrationId);
+          stream.writeSSE({ data: JSON.stringify({
+            type: "integration_required",
+            data: {
+              integrationId,
+              displayName: def?.displayName ?? integrationId,
+              logoUrl: def?.logoUrl,
+              reason,
+            },
+          }) }).catch(() => {});
+        }
+      }
       if (toolName === "provision_supabase") {
         const a = (args as Record<string, unknown>) ?? {};
         const name = typeof a.name === "string" ? a.name : "";
