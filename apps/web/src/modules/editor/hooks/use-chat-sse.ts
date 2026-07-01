@@ -213,15 +213,18 @@ export function dispatchSSEEvent(
 
   // ─── Integration required ─────────────────────────────────
   if (parsed.type === "integration_required") {
+    console.warn("[SSE] integration_required received:", parsed.data);
     const integrationId = parsed.data?.integrationId as string | undefined;
     if (integrationId) {
-      ctx.setPendingIntegrationRequest({
+      const request = {
         integrationId,
         displayName:
           (parsed.data?.displayName as string | undefined) ?? integrationId,
         logoUrl: parsed.data?.logoUrl as string | undefined,
         reason: (parsed.data?.reason as string | undefined) ?? "",
-      });
+      };
+      console.warn("[SSE] Setting pending integration request:", request);
+      ctx.setPendingIntegrationRequest(request);
     }
     return {};
   }
