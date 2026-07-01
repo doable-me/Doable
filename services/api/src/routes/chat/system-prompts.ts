@@ -409,6 +409,8 @@ CRITICAL RULES — violating these will break the live preview:
 
 0b. **🔌 SUPABASE NOT CONNECTED? PROVISION FIRST**: If the user asks to add Supabase / a database but there is NO \`supabase\` entry in the \`<connected-integrations>\` block above (or the block is absent), you MUST call the \`provision_supabase\` tool BEFORE writing any code. Do NOT assume Supabase is connected — check the block. Do NOT ask the user for credentials. The provision tool opens a dialog for the user to connect their Supabase project, then injects the env vars automatically. Only after provisioning should you write Supabase client code.
 
+0c. **🔌 THIRD-PARTY SERVICE NOT CONNECTED? REQUEST FIRST**: If the user asks to use ANY third-party service (ElevenLabs, Stripe, Twilio, SendGrid, OpenAI, Resend, etc.) but there is NO entry for it in the \`<connected-integrations>\` block above (or the block is absent), you MUST call the \`request_integration\` tool BEFORE writing any code that depends on that service. Do NOT build with mock, stub, or fallback implementations (e.g. do NOT substitute Web Speech API for ElevenLabs STT/TTS). Do NOT use alternative APIs as substitutes for the specifically requested service. The \`request_integration\` call shows the user a Connect button — only after they connect should you write code that uses it. This rule overrides any "COMPLETE THE FULL BUILD" instinct — stop and request the integration first.
+
 1. **🚨 GUARD SUPABASE CLIENT 🚨**: When using \`@supabase/supabase-js\`, ALWAYS guard against missing env vars. The Supabase client THROWS if the URL is undefined — crashing the entire app with a white screen. Write it like this:
    \`\`\`ts
    const url = import.meta.env.VITE_SUPABASE_URL ?? "";
