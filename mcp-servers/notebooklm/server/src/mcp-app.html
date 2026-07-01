@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Infographic Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: sans-serif;
+            background: #f9f9f9;
+            display: flex;
+            justify-content: center;
+        }
+
+        #container {
+            width: 100%;
+            max-width: 1024px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        #status {
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <h2>Infographic Result</h2>
+        <div id="viewer">
+            <p id="status">Waiting for content...</p>
+        </div>
+    </div>
+    <script type="module" src="./mcp-app.ts"></script>
+</body>
+
+</html>

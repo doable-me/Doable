@@ -3,3 +3,4 @@ packages:
   - "packages/*"
   - "services/*"
   - "mcp-servers/*"
+  - "mcp-servers/notebooklm/server"

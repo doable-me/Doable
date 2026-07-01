@@ -12,7 +12,7 @@ import { supabaseDataMisuseViolation, supabaseNotConnectedViolation, supabaseMis
 
 // ─── Configuration ────────────────────────────────────────
 
-const PROJECTS_ROOT = process.env.DOABLE_PROJECTS_DIR ?? join(process.cwd(), "projects");
+const PROJECTS_ROOT = resolve(process.env.DOABLE_PROJECTS_DIR ?? join(process.cwd(), "projects"));
 
 const FORBIDDEN_PATHS = [
   "..",

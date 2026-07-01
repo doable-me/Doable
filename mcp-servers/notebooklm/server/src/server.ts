@@ -1107,8 +1107,8 @@ function startHttpServer(server: McpServer) {
         await transport.handlePostMessage(req, res, req.body);
     });
 
-    // Serve static files from public directory (go up 2 levels from dist/src/)
-    const publicPath = path.resolve(__dirname, '../../public');
+    // Serve static files from public directory (one level up from dist/)
+    const publicPath = path.resolve(__dirname, '../public');
     expressApp.use('/public', express.static(publicPath));
 
     // Infographic Viewer endpoint - redirect to static HTML

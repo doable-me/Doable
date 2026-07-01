@@ -1,0 +1,44 @@
+{
+    "name": "notebooklm-mcp-server",
+    "version": "1.0.0",
+    "description": "MCP Server for Google NotebookLM (Node.js)",
+    "type": "module",
+    "main": "src/server.ts",
+    "scripts": {
+        "dev": "node dist/server.js",
+        "start": "tsx src/server.ts",
+        "build": "vite build && tsc",
+        "test": "tsx src/test_summary.ts",
+        "setup": "tsx src/setup_auth.ts",
+        "postinstall": "playwright install chromium"
+    },
+    "keywords": [
+        "mcp",
+        "notebooklm",
+        "ai",
+        "claude"
+    ],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@modelcontextprotocol/ext-apps": "^1.0.1",
+        "@modelcontextprotocol/sdk": "^1.25.3",
+        "@types/cors": "^2.8.19",
+        "@types/express": "^5.0.6",
+        "@types/ws": "^8.18.1",
+        "cors": "^2.8.6",
+        "express": "^5.2.1",
+        "node-fetch": "^3.3.0",
+        "playwright": "^1.40.0",
+        "sharp": "^0.33.0",
+        "ws": "^8.19.0",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "tsx": "^4.0.0",
+        "typescript": "^5.0.0",
+        "vite": "^7.3.1",
+        "vite-plugin-singlefile": "^2.3.0"
+    }
+}

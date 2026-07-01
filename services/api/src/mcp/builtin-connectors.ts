@@ -46,6 +46,8 @@ interface BuiltinMcpApp {
   description: string;
   /** Absolute path to the stdio entrypoint (.mjs / .js). */
   entrypoint: string;
+  /** Extra CLI args appended after the entrypoint path (e.g. ["--stdio"]). */
+  extraArgs?: string[];
 }
 
 export const BUILTIN_MCP_APPS: BuiltinMcpApp[] = [
@@ -85,6 +87,17 @@ export const BUILTIN_MCP_APPS: BuiltinMcpApp[] = [
       + "downloads with a live preview. Standards-compliant MCP App (mcpui.dev) — see "
       + "mcp-servers/pdf-builder.",
     entrypoint: path.join(MCP_SERVERS_DIR, "pdf-builder", "index.mjs"),
+  },
+  {
+    id: "notebooklm@1",
+    name: "NotebookLM",
+    description:
+      "Built-in MCP App. Summarizes YouTube videos, answers questions about notebook "
+      + "content, lists sources, and generates visual infographics — all powered by "
+      + "Google NotebookLM. Requires the NotebookLM Chrome extension to be installed "
+      + "and synced. See mcp-servers/notebooklm for setup instructions.",
+    entrypoint: path.join(MCP_SERVERS_DIR, "notebooklm", "server", "dist", "server.js"),
+    extraArgs: ["--stdio"],
   },
 ];
 
@@ -173,7 +186,7 @@ export async function ensureBuiltinConnectorsForWorkspace(
         description: app.description,
         transportType: "stdio",
         serverCommand: "node",
-        serverArgs: [app.entrypoint],
+        serverArgs: [app.entrypoint, ...(app.extraArgs ?? [])],
         authType: "none",
       });
 

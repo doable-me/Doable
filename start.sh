@@ -73,4 +73,7 @@ tmux send-keys -t "${SESSION}:web" "bash run-service.sh web http://127.0.0.1:300
 tmux new-window -t "$SESSION" -n ws
 tmux send-keys -t "${SESSION}:ws" "bash run-service.sh ws - 'pnpm --filter @doable/ws dev'" C-m
 
-echo "[start.sh] doable tmux session started with 3 windows (api, web, ws). Attach: tmux a -t doable"
+tmux new-window -t "$SESSION" -n notebooklm
+tmux send-keys -t "${SESSION}:notebooklm" "bash run-service.sh notebooklm http://127.0.0.1:3001/health 'node mcp-servers/notebooklm/server/dist/server.js'" C-m
+
+echo "[start.sh] doable tmux session started with 4 windows (api, web, ws, notebooklm). Attach: tmux a -t doable"

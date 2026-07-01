@@ -1,0 +1,10 @@
+node_modules
+dist
+user_data/
+server.log
+cache.json
+last_run.json
+payload_dump.txt
+.DS_Store
+*.zip
+package-lock.json

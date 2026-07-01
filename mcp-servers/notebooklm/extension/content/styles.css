@@ -1,0 +1,92 @@
+/* YouTube Overlay Styles */
+.notebooklm-style-btn {
+  background-color: #1a73e8;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 18px;
+  cursor: pointer;
+  margin-left: 10px;
+  margin-top: 10px;
+  z-index: 9999;
+}
+
+.notebooklm-style-btn:hover {
+  background-color: #1557b0;
+}
+
+#notebooklm-overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 300px;
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  flex-direction: column;
+}
+
+.notebooklm-overlay-content {
+  text-align: center;
+  padding: 20px;
+  position: relative;
+  width: 100%;
+}
+
+#nlm-close {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.nlm-loader {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #1a73e8;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin: 10px auto;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Floating Fallback Button */
+.notebooklm-style-btn-floating {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #1a73e8;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 24px;
+  cursor: pointer;
+  z-index: 9999;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
+
+.notebooklm-style-btn-floating:hover {
+  background-color: #1557b0;
+  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.3);
+}

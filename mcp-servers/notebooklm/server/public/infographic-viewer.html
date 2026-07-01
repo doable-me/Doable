@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Infographic Viewer</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            /* ChatGPT-ish neutrals + green accent */
+            --bg: #f7f7f8;
+            --panel: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: rgba(15, 23, 42, 0.10);
+            --shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+            --shadow-sm: 0 6px 18px rgba(2, 6, 23, 0.06);
+            --accent: #10a37f;
+            /* close to ChatGPT green */
+            --accent-weak: rgba(16, 163, 127, 0.12);
+            --danger: #ef4444;
+            --radius: 16px;
+            --radius-lg: 22px;
+            --max: 980px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0b0f14;
+                --panel: #0f172a;
+                --text: #e5e7eb;
+                --muted: rgba(229, 231, 235, 0.65);
+                --border: rgba(229, 231, 235, 0.10);
+                --shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+                --shadow-sm: 0 10px 26px rgba(0, 0, 0, 0.40);
+                --accent-weak: rgba(16, 163, 127, 0.18);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        /* Calm background texture */
+        .bg {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(1200px 500px at 20% -10%, var(--accent-weak), transparent 60%),
+                radial-gradient(900px 450px at 90% 110%, rgba(56, 189, 248, 0.10), transparent 55%);
+            opacity: 0.9;
+            z-index: -1;
+        }
+
+        .wrap {
+            min-height: 100%;
+            padding: 28px 18px 40px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: var(--max);
+            display: grid;
+            gap: 16px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 6px 4px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .mark {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            display: grid;
+            place-items: center;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .mark svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        .titleblock h1 {
+            font-size: 1.35rem;
+            line-height: 1.2;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+
+        .titleblock p {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 0.9rem;
+            white-space: nowrap;
+            height: fit-content;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--accent);
+            box-shadow: 0 0 0 4px var(--accent-weak);
+        }
+
+        /* Main card */
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .cardhead {
+            padding: 16px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+        }
+
+        .meta {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .meta strong {
+            font-size: 1rem;
+            font-weight: 650;
+        }
+
+        .meta span {
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            appearance: none;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.92rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            border-color: rgba(15, 23, 42, 0.18);
+            background: rgba(2, 6, 23, 0.03);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .btn:hover {
+                border-color: rgba(229, 231, 235, 0.18);
+                background: rgba(229, 231, 235, 0.05);
+            }
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            border-color: rgba(16, 163, 127, 0.45);
+        }
+
+        .btn-primary:hover {
+            background: #0f8f6f;
+            border-color: rgba(16, 163, 127, 0.65);
+        }
+
+        .viewer {
+            padding: 16px 18px 18px;
+            display: grid;
+            place-items: center;
+            min-height: 320px;
+        }
+
+        /* Image */
+        .imgwrap {
+            width: 100%;
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: rgba(2, 6, 23, 0.02);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .imgwrap {
+                background: rgba(255, 255, 255, 0.03);
+            }
+        }
+
+        img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* Loading */
+        .loading {
+            display: grid;
+            gap: 10px;
+            place-items: center;
+            text-align: center;
+            padding: 46px 14px;
+            width: 100%;
+        }
+
+        .spinner {
+            width: 38px;
+            height: 38px;
+            border-radius: 999px;
+            border: 3px solid rgba(100, 116, 139, 0.25);
+            border-top-color: var(--accent);
+            animation: spin 900ms linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading p {
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        /* Error */
+        .error {
+            display: grid;
+            gap: 8px;
+            place-items: center;
+            text-align: center;
+            padding: 44px 14px;
+            width: 100%;
+        }
+
+        .error .badge {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            background: rgba(239, 68, 68, 0.10);
+            color: #fecaca;
+            font-weight: 700;
+        }
+
+        .error h3 {
+            font-size: 1.05rem;
+        }
+
+        .error p {
+            color: var(--muted);
+            max-width: 52ch;
+        }
+
+        code {
+            padding: 0.18em 0.42em;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(2, 6, 23, 0.03);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 0.9em;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            code {
+                background: rgba(255, 255, 255, 0.06);
+            }
+        }
+
+        footer {
+            padding: 10px 4px 0;
+            color: var(--muted);
+            font-size: 0.88rem;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .footlink {
+            color: inherit;
+            text-decoration: none;
+            border-bottom: 1px dashed rgba(100, 116, 139, 0.35);
+        }
+
+        .footlink:hover {
+            border-bottom-style: solid;
+        }
+
+        @media (max-width: 680px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .cardhead {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg"></div>
+
+    <div class="wrap">
+        <div class="container">
+            <header>
+                <div class="brand">
+                    <div class="mark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M4 19V5a2 2 0 0 1 2-2h12v16a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2Z" stroke="currentColor"
+                                stroke-width="1.6" opacity="0.9" />
+                            <path d="M8 8h8M8 12h8" stroke="currentColor" stroke-width="1.6" opacity="0.7" />
+                        </svg>
+                    </div>
+                    <div class="titleblock">
+                        <h1>Your Infographic</h1>
+                        <p>Clean viewer for AI-generated visual summaries</p>
+                    </div>
+                </div>
+
+                <div class="pill" title="Status">
+                    <span class="dot"></span>
+                    <span id="statusText">Waiting for image URL</span>
+                </div>
+            </header>
+
+            <section class="card" id="card">
+                <div class="cardhead">
+                    <div class="meta">
+                        <strong>Preview</strong>
+                        <span id="subtitle">Add <code>?url=&lt;image_url&gt;</code> to view your infographic.</span>
+                    </div>
+
+                    <div class="actions" id="actions" style="display:none;">
+                        <a class="btn btn-primary" id="downloadBtn" href="#" download="infographic.png">⬇️ Download</a>
+                        <a class="btn" id="openBtn" href="#" target="_blank" rel="noopener">🔗 Open</a>
+                        <a class="btn" href="https://notebooklm.google.com" target="_blank" rel="noopener">📓
+                            NotebookLM</a>
+                    </div>
+                </div>
+
+                <div class="viewer">
+                    <div class="imgwrap" id="imageWrapper">
+                        <div class="loading" id="loadingState">
+                            <div class="spinner" aria-hidden="true"></div>
+                            <p>Ready when you are.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <footer>
+                <span>Powered by NotebookLM MCP Server</span>
+                <span><a class="footlink" href="#" id="copyLink">Copy image URL</a></span>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const params = new URLSearchParams(window.location.search);
+            const imageUrl = params.get('url');
+            const userToken = params.get('user_token');
+
+            // ... (elements selection) ...
+
+            // ... (setError definition) ...
+
+            // ... (copyLink listener) ...
+
+            if (!imageUrl) {
+                // ... (error handling) ...
+                return;
+            }
+
+            // ... (loading state) ...
+
+            // Use the new proxy endpoint to fetch the authenticated image
+            const proxyUrl = `/proxy-image?url=${encodeURIComponent(imageUrl)}${userToken ? `&user_token=${userToken}` : ''}`;
+
+            const img = new Image();
+            img.onload = function () {
+                // Remove loading state and show image
+                imageWrapper.innerHTML = '';
+                imageWrapper.appendChild(img);
+
+                actions.style.display = 'flex';
+                downloadBtn.href = proxyUrl; // Download via proxy
+                openBtn.href = proxyUrl; // Open via proxy
+
+                statusText.textContent = 'Ready';
+                subtitle.textContent = 'Your infographic is ready to view, open, or download.';
+            };
+            
+            img.onerror = function () {
+                // ... (error handling) ...
+            };
+
+            img.src = proxyUrl;
+            img.alt = 'Infographic preview';
+        });
+    </script>
+</body>
+
+</html>
