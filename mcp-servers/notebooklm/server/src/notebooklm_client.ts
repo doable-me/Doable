@@ -668,13 +668,24 @@ export class NotebookLMClient {
 
             if (!sourceRes || !sourceRes[0]) throw new Error("Invalid Add Source Response");
 
+            // Check for gRPC error codes (16 = UNAUTHENTICATED)
+            const errorSlot = sourceRes[0][5];
+            if (Array.isArray(errorSlot) && errorSlot[0] === 16) {
+                throw new Error("Authentication required. Please re-sync your cookies using the Chrome extension.");
+            }
+
             const rawInner = sourceRes[0][2];
             const innerSource = JSON.parse(rawInner);
+            logToFile(`[NotebookLM] ADD_SOURCE raw response: ${JSON.stringify(innerSource).substring(0, 800)}`);
             sourceId = this._findSourceId(innerSource);
 
             if (!sourceId) {
-                logToFile("[NotebookLM] ❌ Failed to find Source ID in response: " + JSON.stringify(innerSource, null, 2));
-                throw new Error("Failed to add source (No ID found)");
+                logToFile("[NotebookLM] ❌ No Source ID in ADD_SOURCE response: " + JSON.stringify(innerSource, null, 2));
+                throw new Error(
+                    "This video could not be imported into NotebookLM. " +
+                    "The most common reason is that the video has no transcript or captions available. " +
+                    "Try a different video that has auto-generated or manual captions."
+                );
             }
 
             logToFile(`[NotebookLM] Source Added: ${sourceId}`);

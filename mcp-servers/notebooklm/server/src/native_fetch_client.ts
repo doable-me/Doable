@@ -683,12 +683,24 @@ export class NativeFetchClient {
 
                 if (!sourceRes || !sourceRes[0]) throw new Error("Invalid Add Source Response");
 
+                // Check for gRPC error codes (same pattern as pollForArtifacts)
+                const errorSlot = sourceRes[0][5];
+                if (Array.isArray(errorSlot) && errorSlot[0] === 16) {
+                    throw new Error("Authentication required. Please re-sync your cookies using the Chrome extension.");
+                }
+
                 const rawInner = sourceRes[0][2];
                 const innerSource = JSON.parse(rawInner);
+                logToFile(`[NativeFetch] ADD_SOURCE raw response: ${JSON.stringify(innerSource).substring(0, 800)}`);
                 sourceId = this._findSourceId(innerSource);
 
                 if (!sourceId) {
-                    throw new Error("Failed to add source (No ID found)");
+                    logToFile(`[NativeFetch] ❌ No Source ID in ADD_SOURCE response: ${JSON.stringify(innerSource, null, 2)}`);
+                    throw new Error(
+                        "This video could not be imported into NotebookLM. " +
+                        "The most common reason is that the video has no transcript or captions available. " +
+                        "Try a different video that has auto-generated or manual captions."
+                    );
                 }
 
                 logToFile(`[NativeFetch] Source Added: ${sourceId}`);
@@ -844,6 +856,28 @@ export class NativeFetchClient {
         if (!wasCached) {
             logToFile("[NativeFetch] ⏳ Waiting 10s for new notebook to process transcript...");
             await new Promise(r => setTimeout(r, 10000));
+
+            // Verify the source actually imported successfully
+            try {
+                const sources = await this.listSources(`https://notebooklm.google.com/notebook/${notebookId}`);
+                const added = sources.find((s: any) => s.sourceId === sourceId);
+                if (!added || !added.title) {
+                    // Clear bad cache entry so next attempt starts fresh
+                    try {
+                        const cacheRaw = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+                        delete cacheRaw[videoUrl];
+                        fs.writeFileSync(cacheFile, JSON.stringify(cacheRaw, null, 2));
+                    } catch { }
+                    throw new Error(
+                        "This video could not be imported into NotebookLM — it likely has no transcript or captions available. " +
+                        "Try a video with auto-generated or manual captions."
+                    );
+                }
+                logToFile(`[NativeFetch] ✅ Source verified: "${added.title}"`);
+            } catch (e: any) {
+                if (e.message.includes("could not be imported")) throw e;
+                logToFile(`[NativeFetch] ⚠️ Source verification skipped: ${e.message}`);
+            }
         } else {
             logToFile("[NativeFetch] ⚡ Notebook cached, skipping wait.");
         }
