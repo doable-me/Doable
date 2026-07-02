@@ -348,7 +348,6 @@ export function createToolProgressCallbacks(
         const a = (args as Record<string, unknown>) ?? {};
         const integrationId = typeof a.integrationId === "string" ? a.integrationId : "";
         const reason = typeof a.reason === "string" ? a.reason : "";
-        console.warn("[TOOL-CALLBACKS] request_integration called:", { integrationId, reason });
         if (integrationId) {
           const def = getIntegration(integrationId);
           const sseData = {
@@ -360,7 +359,6 @@ export function createToolProgressCallbacks(
               reason,
             },
           };
-          console.warn("[TOOL-CALLBACKS] Emitting SSE:", sseData);
           stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
         }
       }
@@ -488,6 +486,10 @@ export function createToolProgressCallbacks(
       }
       {
         const integrationPayload = extractSseHintPayload(result, "integration_required");
+        if (toolName === "request_integration") {
+          console.warn("[TOOL-CALLBACKS] onToolEnd request_integration result:", JSON.stringify(result));
+          console.warn("[TOOL-CALLBACKS] onToolEnd integration_payload:", integrationPayload);
+        }
         if (integrationPayload && integrationPayload.integrationId) {
           stream.writeSSE({ data: JSON.stringify({
             type: "integration_required",
