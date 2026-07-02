@@ -490,14 +490,19 @@ export function createToolProgressCallbacks(
           console.warn("[TOOL-CALLBACKS] onToolEnd request_integration result:", JSON.stringify(result));
           console.warn("[TOOL-CALLBACKS] onToolEnd integration_payload:", integrationPayload);
         }
-        if (integrationPayload && integrationPayload.integrationId) {
+        // Fallback: if extractSseHintPayload fails, try direct check
+        const directResult = (result && typeof result === "object") ? result as Record<string, unknown> : null;
+        const directHint = directResult?._sseHint as string | undefined;
+        const directIntegrationId = directResult?.integrationId as string | undefined;
+        const payload = integrationPayload ?? (directHint === "integration_required" && directIntegrationId ? directResult : null);
+        if (payload && payload.integrationId) {
           stream.writeSSE({ data: JSON.stringify({
             type: "integration_required",
             data: {
-              integrationId: integrationPayload.integrationId,
-              displayName: integrationPayload.displayName ?? integrationPayload.integrationId,
-              logoUrl: integrationPayload.logoUrl,
-              reason: integrationPayload.reason ?? "",
+              integrationId: payload.integrationId as string,
+              displayName: (payload.displayName as string | undefined) ?? (payload.integrationId as string),
+              logoUrl: payload.logoUrl as string | undefined,
+              reason: (payload.reason as string | undefined) ?? "",
             },
           }) }).catch(() => {});
         }
