@@ -44,9 +44,22 @@ export class NotebookLMClient {
     private context: BrowserContext | null = null;
     private page: Page | null = null;
     private sessionTokens: SessionTokens = { at: null, bl: null, fsid: null };
+    private userKey: string;
 
-    constructor(headless: boolean = true) {
+    constructor(headless: boolean = true, userKey?: string) {
         this.headless = headless;
+        this.userKey = userKey || '__legacy__';
+    }
+
+    /**
+     * Per-user notebook cache path. Each user gets their own cache.json so
+     * a video URL cached by one Google account can never be reused to route
+     * another user's cookies into that account's private notebook.
+     */
+    private getCacheFile(): string {
+        const dir = path.resolve(__dirname, "../user_data/notebook_cache");
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        return path.join(dir, `${this.userKey}.json`);
     }
 
     async start(): Promise<void> {
@@ -591,7 +604,7 @@ export class NotebookLMClient {
     async prepareNotebook(url: string): Promise<{ notebookId: string, sourceId: string }> {
         if (!this.sessionTokens.at) await this.start();
 
-        const cacheFile = path.resolve(__dirname, "../cache.json");
+        const cacheFile = this.getCacheFile();
         let cache: any = {};
         if (fs.existsSync(cacheFile)) {
             try {

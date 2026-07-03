@@ -74,10 +74,12 @@ export class NativeFetchClient {
     private sessionTokens: SessionTokens = { at: null, bl: null, fsid: null };
     private userAgent: string = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
     private transport?: RawFetchFn;
+    private userKey: string;
 
-    constructor(cookies: ChromeCookie[], userAgent?: string, transport?: RawFetchFn) {
+    constructor(cookies: ChromeCookie[], userAgent?: string, transport?: RawFetchFn, userKey?: string) {
         this.cookies = cookies;
         this.transport = transport;
+        this.userKey = userKey || '__legacy__';
         if (transport) {
             logToFile(`[NativeFetch] 🎭 Using injected transport (avoids cookie-replay rejection)`);
         }
@@ -98,6 +100,17 @@ export class NativeFetchClient {
         }
 
         logToFile(`[NativeFetch] Initialized with ${cookies.length} cookies`);
+    }
+
+    /**
+     * Per-user notebook cache path. Each user gets their own cache.json so
+     * a video URL cached by one Google account can never be reused to route
+     * another user's cookies into that account's private notebook.
+     */
+    private getCacheFile(): string {
+        const dir = path.resolve(__dirname, "../user_data/notebook_cache");
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        return path.join(dir, `${this.userKey}.json`);
     }
 
     /**
@@ -554,18 +567,43 @@ export class NativeFetchClient {
         // Always use Node.js native fetch (not the Playwright transport) so CORS
         // restrictions in the headless browser don't block cross-origin CDN URLs
         // like lh3.googleusercontent.com.
-        const headers = new Headers({ "Referer": "https://notebooklm.google.com/" });
-        headers.set("Cookie", this.getCookieHeader(url));
-        headers.set("User-Agent", this.userAgent);
+        //
+        // These image URLs 302-redirect (lh3.googleusercontent.com -> lh3.google.com,
+        // and without a valid session all the way to accounts.google.com) before
+        // serving the actual bytes. fetch()'s automatic redirect handling reuses the
+        // Cookie header computed for the ORIGINAL host on every hop, but googleusercontent.com
+        // has no cookies of its own (auth lives under .google.com) -- so the automatic
+        // path always lands on the sign-in page. Follow redirects manually and
+        // recompute the Cookie header per-hop, same as fetchWithCookies does.
+        let currentUrl = url;
+        let redirectCount = 0;
+        const maxRedirects = 5;
 
-        const response = await fetch(url, { headers });
+        while (true) {
+            const headers = new Headers({ "Referer": "https://notebooklm.google.com/" });
+            headers.set("Cookie", this.getCookieHeader(currentUrl));
+            headers.set("User-Agent", this.userAgent);
 
-        if (!response.ok) {
-            throw new Error(`Failed to download resource: ${response.status}`);
+            const response = await fetch(currentUrl, { headers, redirect: 'manual' });
+
+            if (response.status >= 300 && response.status < 400 && redirectCount < maxRedirects) {
+                const location = response.headers.get('Location');
+                if (!location) {
+                    throw new Error(`Failed to download resource: redirect (${response.status}) with no Location header`);
+                }
+                currentUrl = new URL(location, currentUrl).toString();
+                redirectCount++;
+                logToFile(`[NativeFetch] ↪️ Following resource redirect to: ${currentUrl.substring(0, 80)}...`);
+                continue;
+            }
+
+            if (!response.ok) {
+                throw new Error(`Failed to download resource: ${response.status}`);
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            return Buffer.from(arrayBuffer);
         }
-
-        const arrayBuffer = await response.arrayBuffer();
-        return Buffer.from(arrayBuffer);
     }
 
     _findImageUrl(obj: any): string | null {
@@ -603,7 +641,7 @@ export class NativeFetchClient {
     async prepareNotebook(url: string): Promise<{ notebookId: string, sourceId: string, wasCached: boolean }> {
         if (!this.sessionTokens.at) await this._refreshTokens();
 
-        const cacheFile = path.resolve(__dirname, "../cache.json");
+        const cacheFile = this.getCacheFile();
         let cache: any = {};
         if (fs.existsSync(cacheFile)) {
             try {
@@ -661,8 +699,28 @@ export class NativeFetchClient {
             }
 
             if (notebookId) {
-                logToFile(`[NativeFetch] ⚡ Cache Hit! Reusing notebook: ${notebookId}`);
-                wasCached = true;
+                // A cache hit only helps if the notebook STILL EXISTS. Users can
+                // delete a notebook in the NotebookLM UI, which leaves our local
+                // cache pointing at a dead ID. A deleted notebook silently accepts
+                // trigger RPCs (e.g. generate infographic) but never produces
+                // artifacts — so without this check the caller would poll for the
+                // full 5-minute timeout before self-healing. Validate up front by
+                // loading the notebook's sources: 0 sources means deleted (or
+                // emptied), so invalidate the entry and fall through to recreate.
+                const liveSources = await this.listSources(notebookId);
+                if (liveSources.length === 0) {
+                    logToFile(`[NativeFetch] ⚠️ Cached notebook ${notebookId} is gone/empty (likely deleted in the UI). Invalidating cache for ${url} and recreating.`);
+                    delete cache[url];
+                    try { fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2)); } catch (e) { /* best-effort */ }
+                    notebookId = null;
+                    sourceId = null;
+                    wasCached = false;
+                } else {
+                    logToFile(`[NativeFetch] ⚡ Cache Hit! Reusing notebook: ${notebookId} (${liveSources.length} source(s) verified)`);
+                    wasCached = true;
+                    // Heal a stale/missing sourceId from the live notebook.
+                    if (!sourceId) sourceId = liveSources[0].sourceId;
+                }
             }
         }
 
@@ -671,8 +729,28 @@ export class NativeFetchClient {
                 logToFile("[NativeFetch] Creating Notebook...");
                 const createPayload = ["", null, null, [2], [1, null, null, null, null, null, null, null, null, null, [1]]];
                 const createRes = await this._executeRpc(RPC_CREATE_NOTEBOOK, createPayload);
+
+                if (!createRes || !createRes[0]) {
+                    throw new Error("Failed to create notebook: empty response from NotebookLM. This is usually transient — please retry.");
+                }
+
+                // Check for gRPC error codes (same pattern as ADD_SOURCE / pollForArtifacts)
+                const createErrorSlot = createRes[0][5];
+                if (Array.isArray(createErrorSlot) && createErrorSlot[0] === 16) {
+                    throw new Error("Authentication required. Please re-sync your cookies using the Chrome extension.");
+                }
+
+                if (!createRes[0][2]) {
+                    logToFile(`[NativeFetch] ❌ CREATE_NOTEBOOK returned no payload: ${JSON.stringify(createRes[0])}`);
+                    throw new Error("Failed to create notebook: NotebookLM returned an error with no payload. This is usually transient — please retry in a moment.");
+                }
+
                 const innerCreate = JSON.parse(createRes[0][2]);
-                notebookId = innerCreate[2];
+                notebookId = innerCreate?.[2];
+                if (!notebookId) {
+                    logToFile(`[NativeFetch] ❌ CREATE_NOTEBOOK payload had no notebook ID: ${JSON.stringify(innerCreate)}`);
+                    throw new Error("Failed to create notebook: response did not include a notebook ID.");
+                }
                 logToFile(`[NativeFetch] Notebook Created: ${notebookId}`);
             }
 
@@ -771,7 +849,7 @@ export class NativeFetchClient {
                 logToFile(`[NativeFetch] ⚠️ Caught error on cached notebook: ${e.message}. Invalidating cache and retrying with fresh notebook...`);
 
                 // Clear cache for this URL
-                const cacheFile = path.resolve(__dirname, '../cache.json');
+                const cacheFile = this.getCacheFile();
                 if (fs.existsSync(cacheFile)) {
                     const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
                     delete cache[videoUrl];
@@ -842,7 +920,7 @@ export class NativeFetchClient {
 
     async generateSummary(videoUrl: string): Promise<string> {
         // Check cache before prepareNotebook to know if we need the delay
-        const cacheFile = path.resolve(__dirname, "../cache.json");
+        const cacheFile = this.getCacheFile();
         let wasCached = false;
         try {
             if (fs.existsSync(cacheFile)) {

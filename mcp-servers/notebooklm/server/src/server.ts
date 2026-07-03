@@ -42,6 +42,16 @@ const __dirname = path.dirname(__filename);
 const LOG_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../server.log');
 const HTTP_PORT = Number(process.env.PORT) || 3001;
 
+// Public origin at which THIS server's HTTP endpoints are reachable from an END
+// USER'S browser. The infographic image URL is embedded into generated apps,
+// which run in remote browsers — so it must be an absolute, publicly-reachable
+// URL, NOT localhost. In local dev the browser and server share a host, so the
+// localhost default works. In a hosted deployment, set NOTEBOOKLM_PUBLIC_URL to
+// the same public origin the Chrome extension already uses to reach this server
+// (e.g. https://staging-api.doable.me). Trailing slash is trimmed so we can
+// safely append paths.
+const PUBLIC_BASE_URL = (process.env.NOTEBOOKLM_PUBLIC_URL || `http://localhost:${HTTP_PORT}`).replace(/\/+$/, "");
+
 // --- State Management ---
 interface ActiveNotebook {
     notebookId: string;
@@ -126,6 +136,34 @@ function generateJobId(): string {
     return `job_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 }
 
+// Completed infographic images are persisted to this shared on-disk directory,
+// keyed by job_id, so ANY process serving port 3001 can serve them. This matters
+// because the tool call (which runs the job and holds job.imageData in memory)
+// and the HTTP server that answers GET /infographic-image are often DIFFERENT
+// processes: Doable spawns its own stdio child for tool calls, while a separate
+// background instance owns the HTTP port. In-memory job state is not shared
+// across those processes; the filesystem is.
+const INFOGRAPHIC_DIR = path.resolve(__dirname, "../user_data/infographics");
+
+// job_ids we generate are `job_<ts>_<rand>` — strictly [A-Za-z0-9_]. Reject
+// anything else so a request path can never escape INFOGRAPHIC_DIR.
+function safeJobFilePath(jobId: string): string | null {
+    if (!/^[A-Za-z0-9_]+$/.test(jobId)) return null;
+    return path.join(INFOGRAPHIC_DIR, `${jobId}.jpg`);
+}
+
+function persistInfographicImage(jobId: string, buffer: Buffer): void {
+    const filePath = safeJobFilePath(jobId);
+    if (!filePath) return;
+    try {
+        fsSync.mkdirSync(INFOGRAPHIC_DIR, { recursive: true });
+        fsSync.writeFileSync(filePath, buffer);
+        logToFile(`[Jobs] 💾 Persisted infographic image to ${filePath} (${buffer.length} bytes)`);
+    } catch (e: any) {
+        logToFile(`[Jobs] ⚠️ Failed to persist infographic image for ${jobId}: ${e.message}`);
+    }
+}
+
 // Cleanup old jobs (older than 10 minutes)
 function cleanupOldJobs() {
     const TEN_MINUTES = 10 * 60 * 1000;
@@ -133,6 +171,8 @@ function cleanupOldJobs() {
     for (const [id, job] of infographicJobs.entries()) {
         if (now - job.createdAt > TEN_MINUTES) {
             infographicJobs.delete(id);
+            const filePath = safeJobFilePath(id);
+            if (filePath) fsSync.promises.unlink(filePath).catch(() => {});
             logToFile(`[Jobs] Cleaned up old job: ${id}`);
         }
     }
@@ -202,7 +242,7 @@ async function getClient(userToken?: string): Promise<NotebookLMClient | NativeF
             const transportHandle = new PlaywrightTransport();
             await transportHandle.init(cookies, headless, userAgent);
 
-            const client = new NativeFetchClient(cookies, userAgent, transportHandle.fetch);
+            const client = new NativeFetchClient(cookies, userAgent, transportHandle.fetch, clientKey);
             await client.start();
             userClients.set(clientKey, { client, isNative: true, transportHandle });
         }
@@ -216,7 +256,7 @@ async function getClient(userToken?: string): Promise<NotebookLMClient | NativeF
         const headlessEnv = process.env.NOTEBOOKLM_HEADLESS;
         const headless = headlessEnv === undefined ? true : headlessEnv === "true";
         await evictUserClient(clientKey);
-        const client = new NotebookLMClient(headless);
+        const client = new NotebookLMClient(headless, clientKey);
         await client.start();
         userClients.set(clientKey, { client, isNative: false });
         logToFile("NotebookLMClient started successfully.");
@@ -476,14 +516,16 @@ function registerTools(server: McpServer) {
     logToFile("Registering tool: generate_infographic");
     server.tool(
         "generate_infographic",
-        "Generates a visual infographic and returns it as a base64 image. Accepts a YouTube video URL OR a NotebookLM notebook URL. ALWAYS call this tool when the user asks to 'show', 'display', or 'embed' an infographic — do NOT use get_active_notebook as a substitute. When complete, returns JSON with image_data_uri (a data:image/jpeg;base64,... string). ALWAYS embed the image_data_uri directly as <img src={image_data_uri}> in the generated app — never use the raw Google CDN URL as it requires user authentication. If status is 'processing', call check_infographic_status with the job_id to poll until complete.",
+        "Generates a visual infographic. Accepts a YouTube video URL OR a NotebookLM notebook URL. ALWAYS call this tool when the user asks to 'show', 'display', or 'embed' an infographic — do NOT use get_active_notebook as a substitute. When complete, returns JSON with image_url (a ready-to-use absolute image URL — the server already downloaded and processed the image; this URL just serves those bytes). ALWAYS embed image_url directly and verbatim as <img src={image_url}> in the generated app. Do NOT fetch the URL yourself and inline it as base64 — the whole point of image_url is that the browser loads it directly, so nothing needs to pass through you. Do NOT use the raw Google CDN URL either, as it requires user authentication. If status is 'processing', call check_infographic_status with the job_id to poll until complete.",
         {
             video_url: z.string().describe("YouTube video URL or NotebookLM notebook URL (e.g. https://notebooklm.google.com/notebook/xxx)"),
             user_token: z.string().optional().describe("Optional user token for multi-user mode.")
         },
         async (args: any) => {
-            const video_url = args.video_url;
-            const userToken: string | undefined = args.user_token;
+            // Guard: AI sometimes wraps args in inputSchema due to other tools using registerAppTool
+            const flat = args.inputSchema ?? args;
+            const video_url = flat.video_url;
+            const userToken: string | undefined = flat.user_token;
             logToFile(`[MCP] Request: Infographic for ${video_url} (user: ${userToken || 'legacy'})`);
 
             // Cleanup old jobs
@@ -545,6 +587,7 @@ function registerTools(server: McpServer) {
                                 .jpeg({ quality: 85 })
                                 .toBuffer();
                             job.imageData = processedBuffer.toString('base64');
+                            persistInfographicImage(jobId, processedBuffer);
                             logToFile(`[Jobs] Image downloaded for ${jobId} (${job.imageData.length} chars)`);
                         } catch (err: any) {
                             logToFile(`[Jobs] Image download failed for ${jobId}: ${err.message}`);
@@ -597,6 +640,7 @@ function registerTools(server: McpServer) {
                                             .jpeg({ quality: 85 })
                                             .toBuffer();
                                         job.imageData = processedBuffer.toString('base64');
+                                        persistInfographicImage(jobId, processedBuffer);
                                         logToFile(`[Jobs] Image downloaded for ${jobId} after re-auth`);
                                     } catch (imgErr: any) {
                                         logToFile(`[Jobs] Image download failed for ${jobId}: ${imgErr.message}`);
@@ -647,7 +691,7 @@ function registerTools(server: McpServer) {
                         text: JSON.stringify({
                             status: "completed",
                             job_id: jobId,
-                            image_data_uri: job.imageData ? `data:image/jpeg;base64,${job.imageData}` : null,
+                            image_url: job.imageData ? `${PUBLIC_BASE_URL}/infographic-image/${jobId}` : null,
                             elapsed_s: Math.round((job.completedAt! - job.createdAt) / 1000)
                         })
                     }];
@@ -687,7 +731,7 @@ function registerTools(server: McpServer) {
         "check_infographic_status",
         {
             title: "Check Infographic Status",
-            description: "Polls a generate_infographic job. Returns {status, job_id, image_data_uri, elapsed_s} when complete. Keep calling every 15s until status is 'completed'. Then embed image_data_uri directly as <img src={image_data_uri}> — never use the raw Google CDN URL.",
+            description: "Polls a generate_infographic job. Returns {status, job_id, image_url, elapsed_s} when complete. Keep calling every 15s until status is 'completed'. Then embed image_url directly and verbatim as <img src={image_url}> — do not fetch it and inline as base64, and never use the raw Google CDN URL.",
             inputSchema: z.object({
                 job_id: z.string().describe("The job ID returned by generate_infographic"),
                 user_token: z.string().optional().describe("Optional user token for multi-user mode.")
@@ -726,7 +770,7 @@ function registerTools(server: McpServer) {
                 text: JSON.stringify({
                     status: "completed",
                     job_id,
-                    image_data_uri: job.imageData ? `data:image/jpeg;base64,${job.imageData}` : null,
+                    image_url: job.imageData ? `${PUBLIC_BASE_URL}/infographic-image/${job_id}` : null,
                     elapsed_s: Math.round((job.completedAt! - job.createdAt) / 1000)
                 })
             }];
@@ -1123,6 +1167,39 @@ function startHttpServer(server: McpServer) {
         const htmlPath = path.join(publicPath, 'infographic-viewer.html');
         logToFile(`[HTTP] Serving file from: ${htmlPath}`);
         res.sendFile(htmlPath);
+    });
+
+    // Serves the already-downloaded, already-processed infographic JPEG for a
+    // completed job. This exists so generated apps (and the AI agent writing
+    // them) can reference a short, stable <img src="..."> URL instead of the
+    // agent needing to retype a ~150-200KB base64 string into source code —
+    // that's the failure mode a raw base64 field invites (truncation/drift).
+    //
+    // Resolution order: in-memory job (same-process fast path) → on-disk file.
+    // The disk fallback is essential: the process that RAN the job (often
+    // Doable's stdio child) and the process serving THIS port (a separate
+    // background instance) don't share memory, but they do share the
+    // INFOGRAPHIC_DIR filesystem, where every completed job's image is persisted.
+    expressApp.get("/infographic-image/:job_id", (req, res) => {
+        const jobId = req.params.job_id;
+
+        const job = infographicJobs.get(jobId);
+        if (job?.imageData) {
+            res.setHeader("Content-Type", "image/jpeg");
+            res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+            res.send(Buffer.from(job.imageData, "base64"));
+            return;
+        }
+
+        const filePath = safeJobFilePath(jobId);
+        if (filePath && fsSync.existsSync(filePath)) {
+            res.setHeader("Content-Type", "image/jpeg");
+            res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+            res.sendFile(filePath);
+            return;
+        }
+
+        res.status(404).send("Infographic image not found (job unknown, still processing, or expired).");
     });
 
     // Image Proxy for authenticated Google content
