@@ -10,6 +10,7 @@ import { pendingUiResources } from "../../mcp/tool-bridge.js";
 import { storeArtifact } from "../artifacts.js";
 import { pushArtifacts } from "./artifact-stash.js";
 import { writeProjectFile } from "../../ai/project-files.js";
+import { getIntegration } from "../../integrations/registry/index.js";
 
 const ARTIFACT_PUBLIC_URL =
   process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000";
@@ -343,6 +344,24 @@ export function createToolProgressCallbacks(
           ...(packages ? { packages } : {}),
         },
       }) }).catch(() => {});
+      if (toolName === "request_integration") {
+        const a = (args as Record<string, unknown>) ?? {};
+        const integrationId = typeof a.integrationId === "string" ? a.integrationId : "";
+        const reason = typeof a.reason === "string" ? a.reason : "";
+        if (integrationId) {
+          const def = getIntegration(integrationId);
+          const sseData = {
+            type: "integration_required",
+            data: {
+              integrationId,
+              displayName: def?.displayName ?? integrationId,
+              logoUrl: def?.logoUrl,
+              reason,
+            },
+          };
+          stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
+        }
+      }
       if (toolName === "provision_supabase") {
         const a = (args as Record<string, unknown>) ?? {};
         const name = typeof a.name === "string" ? a.name : "";
@@ -467,14 +486,23 @@ export function createToolProgressCallbacks(
       }
       {
         const integrationPayload = extractSseHintPayload(result, "integration_required");
-        if (integrationPayload && integrationPayload.integrationId) {
+        if (toolName === "request_integration") {
+          console.warn("[TOOL-CALLBACKS] onToolEnd request_integration result:", JSON.stringify(result));
+          console.warn("[TOOL-CALLBACKS] onToolEnd integration_payload:", integrationPayload);
+        }
+        // Fallback: if extractSseHintPayload fails, try direct check
+        const directResult = (result && typeof result === "object") ? result as Record<string, unknown> : null;
+        const directHint = directResult?._sseHint as string | undefined;
+        const directIntegrationId = directResult?.integrationId as string | undefined;
+        const payload = integrationPayload ?? (directHint === "integration_required" && directIntegrationId ? directResult : null);
+        if (payload && payload.integrationId) {
           stream.writeSSE({ data: JSON.stringify({
             type: "integration_required",
             data: {
-              integrationId: integrationPayload.integrationId,
-              displayName: integrationPayload.displayName ?? integrationPayload.integrationId,
-              logoUrl: integrationPayload.logoUrl,
-              reason: integrationPayload.reason ?? "",
+              integrationId: payload.integrationId as string,
+              displayName: (payload.displayName as string | undefined) ?? (payload.integrationId as string),
+              logoUrl: payload.logoUrl as string | undefined,
+              reason: (payload.reason as string | undefined) ?? "",
             },
           }) }).catch(() => {});
         }

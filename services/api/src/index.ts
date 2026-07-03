@@ -218,7 +218,7 @@ app.use("*", async (c, next) => {
 // Cross-Origin-Resource-Policy: same-origin which block cross-origin
 // iframe embedding and image loading.
 app.use("*", async (c, next) => {
-  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/artifacts/") || c.req.path.startsWith("/analytics/") || c.req.path.match(/^\/templates\/[^/]+\/preview/) || c.req.path === "/visual-edit-bridge.js") {
+  if (c.req.path.startsWith("/preview/") || c.req.path.startsWith("/thumbnails/") || c.req.path.startsWith("/artifacts/") || c.req.path.startsWith("/analytics/") || c.req.path.startsWith("/files/integration/")  || c.req.path.match(/^\/templates\/[^/]+\/preview/) || c.req.path === "/visual-edit-bridge.js") {
     await next();
     return;
   }

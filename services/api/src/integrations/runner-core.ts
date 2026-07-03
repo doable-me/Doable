@@ -63,16 +63,27 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
 
     // 2. Get the action
     xr.phase("action_lookup");
+    const resolvedActions = typeof piece.actions === "function" ? piece.actions() : piece.actions;
+    const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+    const sanitizedActionName = sanitize(params.actionName);
+    const findAction = (name: string, acts: any) => {
+      if (Array.isArray(acts)) return acts.find((a: any) => a.name === name || sanitize(a.name) === sanitize(name));
+      return acts?.[name] ?? Object.values(acts ?? {}).find((a: any) => sanitize((a as any).name) === sanitize(name));
+    };
     const action = typeof piece.getAction === "function"
-      ? piece.getAction(params.actionName)
-      : piece.actions?.[params.actionName];
+      ? (piece.getAction(params.actionName) ?? piece.getAction(def.actions?.find((n: string) => sanitize(n) === sanitizedActionName) ?? params.actionName))
+      : findAction(params.actionName, resolvedActions);
 
     if (!action) {
       xr.end("error", `Action '${params.actionName}' not found`);
       return {
         success: false, output: null,
         error: `Action '${params.actionName}' not found in ${params.integrationId}. Available: ${
-          typeof piece.actions === "object" ? Object.keys(piece.actions).join(", ") : "unknown"
+          Array.isArray(resolvedActions)
+            ? resolvedActions.map((a: any) => a.name).join(", ")
+            : resolvedActions && typeof resolvedActions === "object"
+              ? Object.keys(resolvedActions).join(", ")
+              : "unknown"
         }`,
       };
     }
@@ -158,7 +169,11 @@ export async function getIntegrationActions(integrationId: string): Promise<Arra
 
   const actions: Array<{ name: string; displayName: string; description: string; props: Record<string, unknown> }> = [];
 
-  const pieceActions = typeof piece.actions === "function" ? piece.actions() : (piece.actions ?? {});
+  const pieceActions = typeof piece.actions === "function"
+    ? piece.actions()
+    : Array.isArray(piece.actions)
+      ? Object.fromEntries(piece.actions.map((a: any) => [a.name, a]))
+      : (piece.actions ?? {});
 
   let matchedAny = false;
   for (const actionName of def.actions) {

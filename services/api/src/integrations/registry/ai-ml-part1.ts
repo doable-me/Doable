@@ -302,12 +302,42 @@ export const AI_ML_PART1: Record<string, IntegrationDefinition> = {
     piecePackage: "@activepieces/piece-elevenlabs",
     displayName: "ElevenLabs",
     description:
-      "Generate realistic speech, transcribe audio, and manage voices with ElevenLabs.",
+      "Generate realistic speech and manage voices with ElevenLabs.",
     logoUrl: "https://cdn.activepieces.com/pieces/elevenlabs.png",
     category: "ai_ml",
     tags: ["speech", "tts", "voice", "audio", "ai"],
-    authType: "secret_text",
-    actions: ["text_to_speech", "speech_to_text", "list_voices"],
+    authType: "custom_auth",
+    customAuthFields: [
+      {
+        name: "region",
+        displayName: "Region",
+        description: "Select your ElevenLabs account region",
+        type: "dropdown",
+        required: true,
+        options: [
+          { label: "Default (api.elevenlabs.io)", value: "default" },
+          { label: "US (api.us.elevenlabs.io)", value: "us" },
+          { label: "EU (api.eu.elevenlabs.io)", value: "eu" },
+        ],
+      },
+      {
+        name: "apiKey",
+        displayName: "API Key",
+        description:
+          "Your ElevenLabs API key. Required permissions: user:read, text_to_speech, voices:read, models",
+        type: "secret",
+        required: true,
+      },
+    ],
+    actions: ["elevenlabs-text-to-speech", "elevenlabs-speech-to-text", "custom_api_call"],
+    actionOverrides: {
+      "elevenlabs-text-to-speech": {
+        description: `Convert text to speech using ElevenLabs free tier model (non-streaming, cost-effective) and get back an audio URL. PROPS: { text: string (required — the text to speak), voice: string (required — MUST be a voice ID, NOT a name; use the default Sarah voice ID "EXAVITQu4vr4xnSDxMaL" unless the user explicitly picks another) }. Uses free-tier model "eleven_turbo_v2_5" and non-streaming endpoint to avoid costs. OUTPUT: result.data is a plain string URL (e.g. "https://api.doable.me/files/integration/uuid.mp3") — NOT an object. Render audio with: <audio src={result.data} autoPlay controls />. NEVER access result.data.url or result.data.audioUrl — it is the URL itself.`,
+      },
+      "elevenlabs-speech-to-text": {
+        description: `Transcribe audio to text using ElevenLabs Scribe (scribe_v1 model). PROPS: { audioBase64: string (required — base64-encoded audio data from MediaRecorder or file input), mimeType: string (optional — MIME type of the audio e.g. "audio/webm", "audio/wav", "audio/mp4"; defaults to "audio/webm"; codec params like ";codecs=opus" are stripped automatically), languageCode: string (optional — BCP-47 language code e.g. "en"; leave empty for auto-detect) }. OUTPUT: result.data is a plain transcribed text string — NOT an object. NEVER access result.data.text — it is the text itself. To capture audio from the browser use MediaRecorder API, collect chunks into a Blob, then convert to base64 with: const reader = new FileReader(); reader.readAsDataURL(blob); reader.onload = () => { const base64 = reader.result.split(",")[1]; }.`,
+      },
+    },
     tier: "built_in",
     requiresOAuthApp: false,
     supportsUserProvidedCredentials: true,

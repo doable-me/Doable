@@ -39,12 +39,19 @@ const DEFAULT_PER_CONNECTOR_TIMEOUT_MS = 8_000;
 // Allow extra wall-clock for the output-shape sampling phase below. Bounded so a
 // dead/slow connector can never hold chat hostage; this only ever blocks ONCE
 // per connector (the captured shapes are cached and reused forever after).
-const DEFAULT_TOTAL_TIMEOUT_MS = 28_000;
+const DEFAULT_TOTAL_TIMEOUT_MS = 120_000;
 
-/** Output-shape sampling budgets (see captureOutputShapes). */
-const SHAPE_PHASE_TIMEOUT_MS = 14_000; // overall cap for sampling all tools of one connector
-const SHAPE_PER_CALL_TIMEOUT_MS = 4_000; // cap for a single sample tool call
-const MAX_SAMPLE_TOOLS = 14; // never sample more than this many tools per connector
+/** Output-shape sampling budgets (see captureOutputShapes). Two dependency-ordered
+ *  passes run back-to-back, each capped by SHAPE_PHASE_TIMEOUT_MS. Generous because
+ *  this is a ONE-TIME cost per connector — the shapes are cached forever after. */
+const SHAPE_PHASE_TIMEOUT_MS = 45_000; // cap for one sampling pass over a connector's tools
+const SHAPE_PER_CALL_TIMEOUT_MS = 15_000; // cap for a single sample tool call (a discovery tool returning a whole portfolio can take several seconds)
+const MAX_SAMPLE_TOOLS = 60; // cap read-only tools sampled per connector (cover whole servers)
+// Sample at BOUNDED concurrency, not all-at-once: hammering an MCP server with
+// every read tool in parallel makes its slowest (largest) responses — exactly the
+// list/discovery tools we most need shapes for — exceed the per-call timeout and
+// get dropped. A small pool keeps each call near its standalone latency.
+const SHAPE_CONCURRENCY = 3;
 
 /** A cached tool entry. `outputShape` is a compact, human/LLM-readable summary of
  *  the REAL response observed when the tool was sampled at probe time — this is
@@ -56,11 +63,13 @@ interface CachedTool {
 }
 
 interface CacheTools {
-  // shapesV2 supersedes shapesV1: V1 captured types-only structural shapes; V2
-  // additionally unions per-record fields and embeds the REAL enum/example
-  // values seen in the live data. Bumping the marker forces a one-time
-  // re-capture of connectors warmed under V1 so they gain the richer shape.
-  tools?: { list?: Array<CachedTool>; shapesV1?: boolean; shapesV2?: boolean };
+  // shapesV3 supersedes V2/V1: V1 = types-only; V2 = unioned fields + real
+  // enum/example values; V3 adds DEPENDENCY-ORDERED probing — id-requiring
+  // read tools (e.g. a "details" tool needing an id) are now sampled with REAL
+  // ids harvested from the discovery tools' responses, so the WHOLE server's
+  // tools get shapes, not just the no-arg ones. Bumping the marker forces a
+  // one-time re-capture of connectors warmed under V1/V2.
+  tools?: { list?: Array<CachedTool>; shapesV1?: boolean; shapesV2?: boolean; shapesV3?: boolean };
 }
 
 function isCacheEmpty(row: McpConnectorRow): boolean {
@@ -79,7 +88,7 @@ function isCacheEmpty(row: McpConnectorRow): boolean {
 function needsWarming(row: McpConnectorRow): boolean {
   if (isCacheEmpty(row)) return true;
   const cache = row.capabilities_cache as CacheTools | null;
-  return cache?.tools?.shapesV2 !== true;
+  return cache?.tools?.shapesV3 !== true;
 }
 
 // ─── Generic output-shape sampling (server-agnostic) ──────────────────────────
@@ -249,53 +258,198 @@ export function summarizeShape(value: unknown, depth = 0): string {
 async function sampleToolShape(
   config: McpConnectorConfig,
   tool: McpToolDefinition,
-): Promise<string | undefined> {
+  args: Record<string, unknown>,
+): Promise<{ shape?: string; data?: unknown }> {
   try {
     const manager = getConnectorManager();
-    const args = deriveSafeArgs(tool.inputSchema);
     const res = await withTimeout(
       manager.callTool(config, tool.name, args),
       SHAPE_PER_CALL_TIMEOUT_MS,
       `[mcp-cache-warmer] sample ${config.name}/${tool.name}`,
     );
-    if (res.isError) return undefined;
+    if (res.isError) return {};
     const text = res.content
       .filter((it): it is { type: "text"; text: string } => it.type === "text")
       .map((it) => it.text)
       .join("\n");
-    if (!text) return undefined;
+    if (!text) return {};
     let data: unknown;
-    try { data = JSON.parse(text); } catch { return undefined; } // non-JSON → not bindable
+    try { data = JSON.parse(text); } catch { return {}; } // non-JSON → not bindable
     let shape = `result.data = ${summarizeShape(data, 0)}`;
     // Richer (key-unioned + real enum/example values) descriptions run longer
     // than the original types-only summary, so allow more headroom here; the
     // prompt-manifest applies its own per-tool + cumulative budget downstream.
     if (shape.length > 2200) shape = shape.slice(0, 2200) + " …}";
-    return shape;
+    return { shape, data };
   } catch {
-    return undefined; // timeout, auth, validation — degrade to the no-shape line
+    return {}; // timeout, auth, validation — degrade to the no-shape line
   }
 }
 
-/** Capture real output shapes for the read-only tools of one connector,
- *  concurrently and time-bounded. Returns a name→shape map (possibly empty). */
+// ─── Dependency-ordered probing (generic; no server/field names hardcoded) ────
+
+/** A pool of REAL primitive values observed in already-sampled responses, keyed
+ *  by the field NAME they appeared under. Lets us satisfy an id-requiring read
+ *  tool (e.g. a "details" tool needing some id) with a real value harvested from
+ *  a discovery tool's response, instead of sending junk that the server rejects. */
+type ValuePool = Map<string, unknown[]>;
+const POOL_VALUES_PER_KEY = 8;
+const POOL_HARVEST_DEPTH = 6;
+
+/** Walk a sampled response and record primitive leaves under their key name.
+ *  Server-agnostic: never looks for specific field names. `_meta` is skipped. */
+function harvestValues(value: unknown, pool: ValuePool, depth = 0): void {
+  if (depth > POOL_HARVEST_DEPTH || value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, SAMPLE_RECORDS)) harvestValues(item, pool, depth + 1);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k === "_meta") continue;
+      if (v !== null && typeof v !== "object") {
+        const arr = pool.get(k) ?? [];
+        if (arr.length < POOL_VALUES_PER_KEY && !arr.includes(v) && v !== "") {
+          arr.push(v);
+          pool.set(k, arr);
+        }
+      } else {
+        harvestValues(v, pool, depth + 1);
+      }
+    }
+  }
+}
+
+function normKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function typeMatches(v: unknown, want: unknown): boolean {
+  if (want === "number" || want === "integer") return typeof v === "number";
+  if (want === "boolean") return typeof v === "boolean";
+  if (want === "string" || want === undefined) return typeof v === "string" || typeof v === "number";
+  return true;
+}
+
+/** Find a harvested value whose field name matches `paramName` (exact → normalized
+ *  → containment either way, e.g. param `folderId` ↔ harvested `folderId`/`id`). */
+function matchPool(paramName: string, spec: Record<string, unknown>, pool: ValuePool): unknown {
+  const target = normKey(paramName);
+  let fallback: unknown;
+  for (const [k, vals] of pool) {
+    const nk = normKey(k);
+    const hit = nk === target || nk.endsWith(target) || target.endsWith(nk) || nk.includes(target) || target.includes(nk);
+    if (!hit) continue;
+    const typed = vals.find((v) => typeMatches(v, spec.type));
+    if (nk === target && typed !== undefined) return typed; // exact name wins immediately
+    if (typed !== undefined && fallback === undefined) fallback = typed;
+  }
+  return fallback;
+}
+
+/** True when a tool's REQUIRED params can be satisfied with no external context
+ *  (no required value, or only enum/default/boolean/array/object). A required
+ *  free string or bare number likely needs a real id → defer to pass 2. */
+function requiredSatisfiableStandalone(inputSchema: McpToolDefinition["inputSchema"]): boolean {
+  const props = (inputSchema?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = Array.isArray(inputSchema?.required) ? inputSchema.required : [];
+  for (const key of required) {
+    const spec = props[key] ?? {};
+    if (Array.isArray(spec.enum) && spec.enum.length > 0) continue;
+    if (spec.default !== undefined) continue;
+    if (spec.type === "boolean" || spec.type === "array" || spec.type === "object") continue;
+    return false; // required string / number without enum|default → needs a real value
+  }
+  return true;
+}
+
+/** Fill a tool's required params from the harvested pool. Returns the args, or
+ *  null if any required param can't be satisfied with a REAL value (so we never
+ *  send junk that the server rejects). */
+function deriveArgsFromPool(
+  inputSchema: McpToolDefinition["inputSchema"],
+  pool: ValuePool,
+): Record<string, unknown> | null {
+  const props = (inputSchema?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = Array.isArray(inputSchema?.required) ? inputSchema.required : [];
+  const args: Record<string, unknown> = {};
+  for (const key of required) {
+    const spec = props[key] ?? {};
+    if (Array.isArray(spec.enum) && spec.enum.length > 0) { args[key] = spec.enum[0]; continue; }
+    if (spec.default !== undefined) { args[key] = spec.default; continue; }
+    if (spec.type === "boolean") { args[key] = false; continue; }
+    if (spec.type === "array") { args[key] = []; continue; }
+    if (spec.type === "object") { args[key] = {}; continue; }
+    const real = matchPool(key, spec, pool);
+    if (real === undefined) return null; // can't satisfy with a real value
+    args[key] = real;
+  }
+  return args;
+}
+
+/** Capture real output shapes for the read-only tools of one connector via TWO
+ *  dependency-ordered passes (generic — nothing about any specific MCP server):
+ *    Pass 1 — sample tools whose required args are satisfiable standalone
+ *             (discovery/list/search tools). Harvest every real primitive value
+ *             from their responses into a name→values pool.
+ *    Pass 2 — sample the remaining id-requiring tools, filling their required
+ *             params from the harvested pool (e.g. a real id from pass 1).
+ *  Returns a name→shape map (possibly empty). Time-bounded; never throws. */
 async function captureOutputShapes(
   config: McpConnectorConfig,
   tools: McpToolDefinition[],
 ): Promise<Record<string, string>> {
-  const sampleable = tools.filter(isLikelyReadOnly).slice(0, MAX_SAMPLE_TOOLS);
-  if (sampleable.length === 0) return {};
+  const readOnly = tools.filter(isLikelyReadOnly).slice(0, MAX_SAMPLE_TOOLS);
+  if (readOnly.length === 0) return {};
   const shapes: Record<string, string> = {};
-  await withTimeout(
-    Promise.allSettled(
-      sampleable.map(async (tool) => {
-        const shape = await sampleToolShape(config, tool);
+  const pool: ValuePool = new Map();
+
+  const runPass = async (
+    batch: Array<{ tool: McpToolDefinition; args: Record<string, unknown> }>,
+    tag: string,
+  ): Promise<void> => {
+    if (batch.length === 0) return;
+    // Bounded-concurrency worker pool: SHAPE_CONCURRENCY calls in flight at once,
+    // pulling from a shared queue. Keeps slow/large discovery responses near
+    // their standalone latency instead of starving them under a parallel burst.
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const i = next++;
+        if (i >= batch.length) return;
+        const { tool, args } = batch[i]!;
+        const { shape, data } = await sampleToolShape(config, tool, args);
         if (shape) shapes[tool.name] = shape;
-      }),
-    ).then(() => undefined),
-    SHAPE_PHASE_TIMEOUT_MS,
-    `[mcp-cache-warmer] shape phase ${config.name}`,
-  ).catch(() => {}); // partial results are fine
+        if (data !== undefined) harvestValues(data, pool);
+      }
+    };
+    const workers = Array.from(
+      { length: Math.min(SHAPE_CONCURRENCY, batch.length) },
+      () => worker(),
+    );
+    await withTimeout(
+      Promise.allSettled(workers).then(() => undefined),
+      SHAPE_PHASE_TIMEOUT_MS,
+      tag,
+    ).catch(() => {}); // partial results are fine
+  };
+
+  // Pass 1 — standalone-satisfiable tools (discovery). Populates the value pool.
+  const pass1 = readOnly.filter((t) => requiredSatisfiableStandalone(t.inputSchema));
+  await runPass(
+    pass1.map((tool) => ({ tool, args: deriveSafeArgs(tool.inputSchema) })),
+    `[mcp-cache-warmer] shape pass-1 ${config.name}`,
+  );
+
+  // Pass 2 — id-requiring tools, satisfied from values harvested in pass 1.
+  const pass2: Array<{ tool: McpToolDefinition; args: Record<string, unknown> }> = [];
+  for (const tool of readOnly) {
+    if (shapes[tool.name]) continue; // already captured in pass 1
+    const args = deriveArgsFromPool(tool.inputSchema, pool);
+    if (args !== null) pass2.push({ tool, args });
+  }
+  await runPass(pass2, `[mcp-cache-warmer] shape pass-2 ${config.name}`);
+
   return shapes;
 }
 
@@ -365,10 +519,10 @@ async function probeAndPersist(row: McpConnectorRow, perConnectorTimeoutMs: numb
       capabilities: {
         tools: {
           count: result.tools.length,
-          // `shapesV2` marks that the value-annotated output-shape capture was
-          // ATTEMPTED, so we never re-sample this connector on every subsequent
-          // generation. (Supersedes the older types-only `shapesV1`.)
-          shapesV2: true,
+          // `shapesV3` marks that the dependency-ordered output-shape capture
+          // was ATTEMPTED, so we never re-sample this connector on every
+          // subsequent generation. (Supersedes V2/V1.)
+          shapesV3: true,
           list: result.tools.map((t) => ({
             name: t.name,
             description: t.description,

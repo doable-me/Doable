@@ -57,6 +57,8 @@ export const nextjsAppPrompt: FrameworkPrompt = {
     "   - Add `@doable/sdk` to package.json dependencies: `\"@doable/sdk\": \"workspace:*\"`",
     "",
     "0b. **🔌 SUPABASE NOT CONNECTED? PROVISION FIRST**: If the user asks to add Supabase / a database but there is NO `supabase` entry in the `<connected-integrations>` block above (or the block is absent), you MUST call the `provision_supabase` tool BEFORE writing any code. The provision tool injects `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and the `NEXT_PUBLIC_SUPABASE_*` mirrors automatically.",
+"",
+"0c. **🔌 THIRD-PARTY SERVICE NOT CONNECTED? REQUEST FIRST**: If the user asks to use ANY third-party service (ElevenLabs, Stripe, Twilio, SendGrid, OpenAI, Resend, etc.) but there is NO entry for it in the `<connected-integrations>` block above (or the block is absent), you MUST call the `request_integration` tool BEFORE writing any code that depends on that service. Do NOT build with mock, stub, or fallback implementations (e.g. do NOT substitute Web Speech API for ElevenLabs STT/TTS). Do NOT use alternative APIs as substitutes for the specifically requested service. The `request_integration` call shows the user a Connect button — only after they connect should you write code that uses it. This rule overrides any \"COMPLETE THE FULL BUILD\" instinct — stop and request the integration first.",
     "",
     "1. **SUPABASE CLIENT PATTERNS (Next.js)**:",
     "   - Server-side (route handler / server action / server component): use the service-role key for trusted operations.",

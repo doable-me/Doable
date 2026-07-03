@@ -97,8 +97,8 @@ export async function buildConnectedIntegrationsContext(
       const shown = entry.toolPrefixes.slice(0, MAX_TOOLS_LISTED).join(", ");
       const extra = entry.toolPrefixes.length - MAX_TOOLS_LISTED;
       tools = extra > 0
-        ? ` Tools: ${shown}, +${extra} more.`
-        : ` Tools: ${shown}.`;
+        ? ` SDK tools (useIntegration, NOT doable.mcp.call): ${shown}, +${extra} more.`
+        : ` SDK tools (useIntegration, NOT doable.mcp.call): ${shown}.`;
     }
     // Phase 2B: append virtual MCP tool names when a preset exists for this
     // integration. Hardcoded per-integration — the preset's tool list is
@@ -118,6 +118,7 @@ export async function buildConnectedIntegrationsContext(
     "2. NEVER hardcode URLs/keys in generated code.",
     "3. NEVER log, print, or echo env var values.",
     "4. If you need an integration NOT listed here, call the request_integration tool. Do NOT ask the user to paste keys.",
+    "5. SDK tools listed above are called via useIntegration(integrationId, actionName) or doable.integrations.run(integrationId, actionName) — NEVER via doable.mcp.call(). Do NOT prefix them with 'mcp_'. The actionName is the tool suffix after the integration prefix (e.g. for 'elevenlabs_text_to_speech', integrationId='elevenlabs', actionName='elevenlabs-text-to-speech').",
     "</connected-integrations>",
   ].join("\n");
 }
