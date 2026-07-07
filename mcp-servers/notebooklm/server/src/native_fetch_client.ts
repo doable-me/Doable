@@ -570,40 +570,21 @@ export class NativeFetchClient {
         //
         // These image URLs 302-redirect (lh3.googleusercontent.com -> lh3.google.com,
         // and without a valid session all the way to accounts.google.com) before
-        // serving the actual bytes.
-        //
-        // getCookieHeader(currentUrl) (per-hop, domain-filtered) used to be called
-        // here, recomputing the Cookie header for each hop's exact host. That's
-        // wrong for the FIRST hop: googleusercontent.com has no cookies of its own
-        // (auth lives under .google.com), so the header for hop 0 comes back empty
-        // regardless of what's in the cookie jar -- dooming every subsequent hop
-        // before we even leave the starting host. /proxy-image (server.ts) does
-        // this differently and reliably works: it sends the FULL, unfiltered
-        // per-user cookie set on every request, no domain matching at all. Match
-        // that here -- build the header once from the whole jar and reuse it
-        // unchanged on every redirect hop, same as /proxy-image.
-        const fullCookieHeader = this.cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        // serving the actual bytes. fetch()'s automatic redirect handling reuses the
+        // Cookie header computed for the ORIGINAL host on every hop, but googleusercontent.com
+        // has no cookies of its own (auth lives under .google.com) -- so the automatic
+        // path always lands on the sign-in page. Follow redirects manually and
+        // recompute the Cookie header per-hop, same as fetchWithCookies does.
         let currentUrl = url;
         let redirectCount = 0;
         const maxRedirects = 5;
 
         while (true) {
             const headers = new Headers({ "Referer": "https://notebooklm.google.com/" });
-            headers.set("Cookie", fullCookieHeader);
+            headers.set("Cookie", this.getCookieHeader(currentUrl));
             headers.set("User-Agent", this.userAgent);
 
             const response = await fetch(currentUrl, { headers, redirect: 'manual' });
-
-            // TEMP DEBUG (remove once the auth-wall root cause is confirmed):
-            // dump status + the headers that actually matter for diagnosing an
-            // auth/redirect wall vs a real transient failure.
-            logToFile(
-                `[NativeFetch][DEBUG] hop=${redirectCount} host=${new URL(currentUrl).host} ` +
-                `status=${response.status} location=${response.headers.get('location') ?? '-'} ` +
-                `content-type=${response.headers.get('content-type') ?? '-'} ` +
-                `set-cookie-count=${response.headers.getSetCookie?.().length ?? (response.headers.get('set-cookie') ? 1 : 0)} ` +
-                `www-authenticate=${response.headers.get('www-authenticate') ?? '-'}`
-            );
 
             if (response.status >= 300 && response.status < 400 && redirectCount < maxRedirects) {
                 const location = response.headers.get('Location');
@@ -617,30 +598,10 @@ export class NativeFetchClient {
             }
 
             if (!response.ok) {
-                const snippet = await response.text().catch(() => '<unreadable body>');
-                logToFile(`[NativeFetch][DEBUG] non-ok terminal response body snippet: ${snippet.substring(0, 400).replace(/\s+/g, ' ')}`);
                 throw new Error(`Failed to download resource: ${response.status}`);
             }
 
-            // A 2xx status here is NOT proof we got the image: Google's sign-in
-            // interstitial (accounts.google.com/InteractiveLogin, ServiceLogin,
-            // etc.) can serve HTML at 200 OK on the final hop, with no further
-            // redirect to signal failure. Validate Content-Type before trusting
-            // the bytes — otherwise the HTML silently gets returned as "image
-            // data" and only fails later, opaquely, inside sharp().
-            const contentType = response.headers.get('content-type') ?? '';
             const arrayBuffer = await response.arrayBuffer();
-
-            if (!contentType.startsWith('image/')) {
-                const text = Buffer.from(arrayBuffer).toString('utf-8', 0, 500);
-                logToFile(
-                    `[NativeFetch][DEBUG] ⚠️ Terminal response was 2xx but content-type="${contentType}" ` +
-                    `(not an image) — likely an auth wall the redirect loop didn't catch. ` +
-                    `Body snippet: ${text.replace(/\s+/g, ' ')}`
-                );
-                throw new Error(`Failed to download resource: got non-image content-type "${contentType}" at status ${response.status} — likely an auth/session wall, not a real image.`);
-            }
-
             return Buffer.from(arrayBuffer);
         }
     }
