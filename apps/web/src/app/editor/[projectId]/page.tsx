@@ -122,6 +122,7 @@ import { DesignCommentsLayer } from "@/modules/editor/visual-edit/sticky-notes/d
 import type { ClarificationQuestion, Plan } from "@doable/shared/types/ai";
 import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat/plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
+import { IntegrationConnectDialog } from "@/modules/integrations/integration-connect-dialog";
 import { useEditorStore, type McpUiResource } from "@/modules/editor/hooks/use-editor-store";
 import { McpUiResourceCard } from "@/modules/editor/chat/mcp-ui-resource";
 import { useSkillManifest, SkillPickerButton } from "@/modules/skills/skill-picker";
@@ -446,6 +447,7 @@ async function streamChat(
   onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void,
   displayContent?: string,
   onReclassify?: (text: string) => void,
+  onIntegrationRequired?: (req: { integrationId: string; displayName: string; logoUrl?: string; reason: string }) => void,
 ) {
   let currentToken = getStoredTokens().accessToken;
 
@@ -710,6 +712,18 @@ async function streamChat(
             onProvisionSupabase({ name, reason });
           }
 
+          // Third-party integration connect request — fired when the AI calls
+          // `request_integration` for a service that isn't connected yet (e.g.
+          // ElevenLabs). Opens the connect dialog via `pendingIntegrationRequest`.
+          if (parsed.type === "integration_required" && onIntegrationRequired) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const integrationId = (d?.integrationId as string | undefined) ?? "";
+            const displayName = (d?.displayName as string | undefined) ?? integrationId;
+            const logoUrl = d?.logoUrl as string | undefined;
+            const reason = (d?.reason as string | undefined) ?? "";
+            if (integrationId) onIntegrationRequired({ integrationId, displayName, logoUrl, reason });
+          }
+
           // Small dedicated download notification — emitted alongside the
           // mcp_ui_resource event by the API so the user always gets a
           // clickable download even if the larger UI resource event is
@@ -863,6 +877,7 @@ interface BridgeCallbacks {
   onPlan?: (plan: Plan) => void;
   onPlanStepUpdate?: (stepId: string, status: string) => void;
   onProvisionSupabase?: (req: { name: string; reason: string }) => void;
+  onIntegrationRequired?: (req: { integrationId: string; displayName: string; logoUrl?: string; reason: string }) => void;
   onMcpUiResource?: (resource: McpUiResource) => void;
   onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void;
   onReclassify?: (text: string) => void;
@@ -963,6 +978,15 @@ function processOneSSEPayload(
       const name = (d?.name as string | undefined) ?? "";
       const reason = (d?.reason as string | undefined) ?? "";
       cb.onProvisionSupabase({ name, reason });
+    }
+
+    if (parsed.type === "integration_required" && cb.onIntegrationRequired) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const integrationId = (d?.integrationId as string | undefined) ?? "";
+      const displayName = (d?.displayName as string | undefined) ?? integrationId;
+      const logoUrl = d?.logoUrl as string | undefined;
+      const reason = (d?.reason as string | undefined) ?? "";
+      if (integrationId) cb.onIntegrationRequired({ integrationId, displayName, logoUrl, reason });
     }
 
     if ((parsed.type === "artifact_ready" || parsed.type === "artifact") && cb.onArtifactReady) {
@@ -1778,6 +1802,12 @@ function EditorPageInner() {
   // is rendered at the bottom of the component tree. See bugs/bug-16.
   const [supabaseProvisionRequest, setSupabaseProvisionRequest] = useState<
     { name: string; reason: string } | null
+  >(null);
+
+  // Pending third-party integration connect request (e.g. ElevenLabs), set by
+  // the `integration_required` SSE frame; reset when the connect dialog closes.
+  const [pendingIntegrationRequest, setPendingIntegrationRequest] = useState<
+    { integrationId: string; displayName: string; logoUrl?: string; reason: string } | null
   >(null);
 
   // ── AI Model Selection ──
@@ -3294,6 +3324,7 @@ function EditorPageInner() {
             });
           },
           onProvisionSupabase: (req) => { setSupabaseProvisionRequest(req); },
+          onIntegrationRequired: (req) => { setPendingIntegrationRequest(req); },
           onMcpUiResource: (resource) => {
             if (!streamingAssistantId) return;
             setMessages((prev) =>
@@ -3564,6 +3595,9 @@ function EditorPageInner() {
             },
             onProvisionSupabase: (req) => {
               setSupabaseProvisionRequest(req);
+            },
+            onIntegrationRequired: (req) => {
+              setPendingIntegrationRequest(req);
             },
             onMcpUiResource: (resource) => {
               setMessages((prev) =>
@@ -4196,6 +4230,11 @@ function EditorPageInner() {
               };
             })
           );
+        },
+        // onIntegrationRequired — AI called request_integration for a
+        // third-party service that isn't connected yet (e.g. ElevenLabs)
+        (req) => {
+          setPendingIntegrationRequest(req);
         },
       );
     },
@@ -7517,6 +7556,25 @@ function EditorPageInner() {
               );
             }, 2000); // 2s delay so dev server has time to restart
           }
+        }}
+      />
+    )}
+    {pendingIntegrationRequest && workspaceId && (
+      <IntegrationConnectDialog
+        request={pendingIntegrationRequest}
+        workspaceId={workspaceId}
+        projectId={resolvedProjectId ?? undefined}
+        onDismiss={() => setPendingIntegrationRequest(null)}
+        onConnected={() => {
+          const dn = pendingIntegrationRequest.displayName;
+          setPendingIntegrationRequest(null);
+          // Give the API-triggered dev-server restart a moment to settle,
+          // then re-prompt the AI to resume building with the new integration.
+          setTimeout(() => {
+            sendMessage(
+              `${dn} is now connected. Please continue building the feature you were working on, using the ${dn} integration.`,
+            );
+          }, 2000);
         }}
       />
     )}
