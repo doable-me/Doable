@@ -2,8 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { storeTokens, apiGetMe } from "@/lib/api";
-import { useAuth } from "@/hooks/use-auth";
+import { storeTokens, apiGetMe, apiMfaLoginVerify } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -17,7 +16,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 function CallbackHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { completeMfaLogin } = useAuth();
   const processed = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("Verifying your identity...");
@@ -148,7 +146,25 @@ function CallbackHandler() {
     setMfaSubmitting(true);
     setMfaError(null);
     try {
-      await completeMfaLogin({ mfaToken, code: mfaCode });
+      // This page renders OUTSIDE any AuthProvider (it lives at the literal
+      // `auth/` path, not the `(auth)` route group), so `useAuth()` here would
+      // return the no-op fallback and silently skip the verification. Call the
+      // API helper directly instead — it POSTs /auth/mfa/verify and, on
+      // success, runs storeTokens() to persist the access/refresh tokens AND
+      // mirror the auth cookie the SSR middleware reads to gate /dashboard.
+      const res = await apiMfaLoginVerify({ mfaToken, code: mfaCode });
+      // Cache the user so the dashboard's AuthProvider picks it up immediately
+      // on the next page, mirroring the non-MFA branch above.
+      const user = {
+        id: res.user.id,
+        email: res.user.email,
+        displayName:
+          res.user.displayName ??
+          res.user.email.split("@")[0] ??
+          res.user.email,
+        avatarUrl: res.user.avatarUrl,
+      };
+      localStorage.setItem("doable_auth_user", JSON.stringify(user));
       router.replace(mfaRedirect);
     } catch (err: unknown) {
       let msg = "Verification failed. Please try again.";
