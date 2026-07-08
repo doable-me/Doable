@@ -14,6 +14,9 @@ export function PreviewPanel() {
   const projectId = useEditorStore((s) => s.projectId);
   const fileTree = useEditorStore((s) => s.fileTree);
   const isStreaming = useEditorStore((s) => s.isStreaming);
+  // NotebookLM result card overlays the preview pane when present (takes over).
+  const notebooklmPreview = useEditorStore((s) => s.notebooklmPreview);
+  const clearNotebooklmPreview = useEditorStore((s) => s.clearNotebooklmPreview);
   const { iframeRef, previewUrl, previewLoading, refresh, navigate, onLoad, openExternal } =
     usePreview(projectId);
 
@@ -191,7 +194,7 @@ export function PreviewPanel() {
 
   const containerClass = isFullscreen
     ? "fixed inset-0 z-50 bg-background flex flex-col"
-    : "flex h-full flex-col";
+    : "relative flex h-full flex-col";
 
   if (!projectId) {
     return <EmptyPreview />;
@@ -301,6 +304,29 @@ export function PreviewPanel() {
           />
         </div>
       </div>
+
+      {/* NotebookLM result — takes over the preview pane until dismissed. */}
+      {notebooklmPreview && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-white">
+          <div className="flex items-center justify-between border-b border-border bg-background px-3 py-1.5">
+            <span className="truncate text-xs font-medium text-muted-foreground">
+              NotebookLM result{notebooklmPreview.toolName ? ` · ${notebooklmPreview.toolName}` : ""}
+            </span>
+            <button
+              onClick={clearNotebooklmPreview}
+              className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              ← Back to app
+            </button>
+          </div>
+          <iframe
+            title="notebooklm-result"
+            sandbox="allow-scripts allow-popups"
+            srcDoc={notebooklmPreview.html}
+            className="w-full flex-1 border-0 bg-white"
+          />
+        </div>
+      )}
     </div>
   );
 }

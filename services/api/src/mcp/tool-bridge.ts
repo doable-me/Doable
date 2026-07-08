@@ -3,6 +3,7 @@ import type { ResolvedMcpTool, McpContent } from "./types.js";
 import type { ConnectorManager } from "./connector-manager.js";
 import type { McpConnectorConfig } from "./types.js";
 import { getActiveTrace } from "../ai/trace-collector.js";
+import { persistInfographicAsset } from "./infographic-persist.js";
 import { xray } from "../integrations/xray.js";
 import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integrations/runner.js";
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
@@ -184,7 +185,15 @@ export function createMcpTools(
           mcpSpan.setAttribute("mcp.result.content_count", result.content?.length ?? 0);
           mcpSpan.setStatus({ code: SpanStatusCode.OK });
           mcpSpan.end();
-          const textResult = formatMcpContent(result.content);
+          // Persist NotebookLM infographics into the project so they survive
+          // deploy and don't expire — rewrites image_url to a project-relative
+          // /infographics/<jobId>.jpg before the agent sees it. Best-effort;
+          // returns the original content on any failure. Only the agent-facing
+          // text is affected — traces above keep the raw server result.
+          const agentContent = projectId
+            ? await persistInfographicAsset(projectId, tool.name, result.content)
+            : result.content;
+          const textResult = formatMcpContent(agentContent);
           // MCP-Apps standard: scan content for `{type:'resource', resource:{uri:'ui://…'}}`
           // and queue them for the SSE emitter. The host renders these in a
           // sandboxed iframe. The text portion of the result still goes to the

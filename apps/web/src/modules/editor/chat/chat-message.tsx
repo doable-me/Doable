@@ -488,21 +488,37 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
         {/* MCP-Apps interactive UI resources — sandboxed iframes */}
         {!isUser && projectId && message.mcpResources && Object.values(message.mcpResources).length > 0 && (
           <div className="space-y-1">
-            {Object.values(message.mcpResources).map((res) => (
-              <McpUiResourceCard
-                key={res.toolCallId}
-                resource={res}
-                projectId={projectId}
-                onResource={(newRes) => {
-                  updateMessageFields(message.id, {
-                    mcpResources: {
-                      ...(message.mcpResources ?? {}),
-                      [newRes.toolCallId]: newRes,
-                    },
-                  });
-                }}
-              />
-            ))}
+            {Object.values(message.mcpResources).map((res) => {
+              // NotebookLM cards take over the PREVIEW pane, so in the chat we
+              // show a compact pointer instead of re-rendering the full card.
+              // Builder cards (pdf/presentation/…) keep their inline rendering.
+              const uri = res.resource?.uri ?? "";
+              if (uri.includes("notebooklm") || uri.includes("infographic")) {
+                return (
+                  <div
+                    key={res.toolCallId}
+                    className="not-prose flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground"
+                  >
+                    📄 NotebookLM result is shown in the preview →
+                  </div>
+                );
+              }
+              return (
+                <McpUiResourceCard
+                  key={res.toolCallId}
+                  resource={res}
+                  projectId={projectId}
+                  onResource={(newRes) => {
+                    updateMessageFields(message.id, {
+                      mcpResources: {
+                        ...(message.mcpResources ?? {}),
+                        [newRes.toolCallId]: newRes,
+                      },
+                    });
+                  }}
+                />
+              );
+            })}
           </div>
         )}
 

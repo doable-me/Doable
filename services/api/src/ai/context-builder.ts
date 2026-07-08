@@ -217,6 +217,15 @@ export async function buildProjectContextForMode(
     } catch (err) {
       console.warn("[Chat] MCP servers manifest failed:", err);
     }
+
+    // ── Built-in MCP App: NotebookLM user identity ──
+    // NotebookLM MCP tools require a user_token to route requests to the
+    // correct user's Google cookies. The token equals the calling user's
+    // Doable user ID — always pass it in every NotebookLM tool call.
+    if (userId) {
+      context += `\n\nNotebookLM MCP: always pass \`user_token: "${userId}"\` in every call to generate_summary, ask_question, list_sources, generate_infographic, and check_infographic_status. Never omit it.`;
+      console.log(`[Chat] NotebookLM user_token injected for user ${userId.slice(0, 8)}`);
+    }
   }
 
   // ── Per-app database prompt addendum ──

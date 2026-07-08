@@ -6,6 +6,7 @@ import { connectorQueries, workspaceQueries } from "@doable/db";
 import { authMiddleware, type AuthEnv } from "../middleware/auth.js";
 import { getConnectorManager } from "../mcp/connector-manager.js";
 import { discoverMcpServer } from "../mcp/discovery.js";
+import { BUILTIN_MCP_APPS } from "../mcp/builtin-connectors.js";
 import {
   buildMcpOAuthUrl,
   decryptState,
@@ -345,11 +346,12 @@ connectorRoutes.delete("/:workspaceId/connectors/:id", async (c) => {
   const err = await requireMember(workspaceId, userId);
   if (err) return c.json({ error: err }, 403);
 
-  // BUG-MCP-002: Built-in MCP Apps (Markdown Builder, PDF Builder, etc.)
-  // are platform-provisioned and must remain immutable. Deletion would
-  // also break `ensureBuiltinConnectorsForWorkspace` invariants. Reject
-  // deletes on any connector whose name matches a builtin provisioned
-  // for this workspace.
+  // BUG-MCP-002: Built-in MCP Apps (Markdown Builder, PDF Builder, NotebookLM,
+  // etc.) are platform-provisioned and must remain immutable. Deletion would
+  // also break `ensureBuiltinConnectorsForWorkspace` invariants. Reject deletes
+  // on any connector whose name matches a builtin provisioned for this
+  // workspace. The protected names are derived from BUILTIN_MCP_APPS so new
+  // builtins are covered automatically (no hardcoded list to keep in sync).
   const existing = await connectors.getConnector(connectorId);
   if (!existing || existing.workspace_id !== workspaceId) {
     return c.json({ error: "Connector not found" }, 404);
@@ -360,12 +362,7 @@ connectorRoutes.delete("/:workspaceId/connectors/:id", async (c) => {
     JOIN mcp_connectors mc
       ON mc.workspace_id = wbp.workspace_id
      AND mc.scope = 'workspace'
-     AND mc.name = ANY(${[
-       "Presentation Builder",
-       "Spreadsheet Builder",
-       "Markdown Builder",
-       "PDF Builder",
-     ]})
+     AND mc.name = ANY(${BUILTIN_MCP_APPS.map((a) => a.name)})
     WHERE mc.id = ${connectorId}
       AND wbp.workspace_id = ${workspaceId}
     LIMIT 1

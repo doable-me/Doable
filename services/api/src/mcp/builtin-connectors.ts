@@ -44,9 +44,39 @@ interface BuiltinMcpApp {
   id: string;
   name: string;
   description: string;
-  /** Absolute path to the stdio entrypoint (.mjs / .js). */
-  entrypoint: string;
+  /**
+   * Absolute path to the stdio entrypoint (.mjs / .js) for spawned stdio MCP
+   * Apps (the builders). Mutually exclusive with `serverUrl`.
+   */
+  entrypoint?: string;
+  /**
+   * For HTTP-based MCP services (e.g. the standalone NotebookLM service): the
+   * `streamable_http` endpoint URL. When set, the builtin is provisioned as a
+   * `streamable_http` connector instead of a spawned `node` process.
+   */
+  serverUrl?: string;
 }
+
+/**
+ * NotebookLM is an HTTP (streamable_http) MCP service, not a spawned stdio
+ * process. It is opt-in: only provisioned when NOTEBOOKLM_SERVICE_URL is set,
+ * so installs that don't run the standalone NotebookLM service don't get a
+ * connector pointing at a dead port. The connector name MUST remain
+ * "NotebookLM" — connector-proxy matches on it to inject the per-user link
+ * token (see integrations/notebooklm-link.ts).
+ */
+const NOTEBOOKLM_BUILTIN: BuiltinMcpApp[] = process.env.NOTEBOOKLM_SERVICE_URL
+  ? [{
+      id: "notebooklm@1",
+      name: "NotebookLM",
+      description:
+        "Built-in MCP App. Summarize, ask questions, list sources, and generate "
+        + "infographics for a YouTube video or NotebookLM notebook URL — results render "
+        + "as in-chat MCP UI cards (mcpui.dev). Backed by the standalone NotebookLM MCP "
+        + "service; sync your Google session with the Doable NotebookLM Chrome extension.",
+      serverUrl: process.env.NOTEBOOKLM_SERVICE_URL.replace(/\/+$/, "") + "/mcp",
+    }]
+  : [];
 
 export const BUILTIN_MCP_APPS: BuiltinMcpApp[] = [
   {
@@ -86,6 +116,7 @@ export const BUILTIN_MCP_APPS: BuiltinMcpApp[] = [
       + "mcp-servers/pdf-builder.",
     entrypoint: path.join(MCP_SERVERS_DIR, "pdf-builder", "index.mjs"),
   },
+  ...NOTEBOOKLM_BUILTIN,
 ];
 
 const connectors = connectorQueries(sql);
@@ -106,8 +137,9 @@ export async function ensureBuiltinConnectorsForWorkspace(
 
   for (const app of BUILTIN_MCP_APPS) {
     try {
-      // Skip if entrypoint isn't on disk (e.g., test env, partial install).
-      if (!existsSync(app.entrypoint)) {
+      // stdio Apps must have their entrypoint on disk (e.g., test env, partial
+      // install). HTTP Apps (serverUrl) have no local entrypoint — skip the check.
+      if (app.entrypoint && !existsSync(app.entrypoint)) {
         console.warn(
           `[builtin-mcp] Skipping ${app.id} for workspace ${workspaceId}: `
           + `entrypoint not found at ${app.entrypoint}`,
@@ -171,10 +203,10 @@ export async function ensureBuiltinConnectorsForWorkspace(
         scope: "workspace",
         name: app.name,
         description: app.description,
-        transportType: "stdio",
-        serverCommand: "node",
-        serverArgs: [app.entrypoint],
         authType: "none",
+        ...(app.serverUrl
+          ? { transportType: "streamable_http", serverUrl: app.serverUrl }
+          : { transportType: "stdio", serverCommand: "node", serverArgs: [app.entrypoint!] }),
       });
 
       // Mark as active so it shows up immediately in tool lists.

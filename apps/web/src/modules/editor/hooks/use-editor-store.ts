@@ -153,6 +153,12 @@ interface EditorState {
   previewUrl: string;
   previewLoading: boolean;
   toolResultVersion: number;
+  /**
+   * Latest NotebookLM MCP card HTML to display IN the preview pane (it takes
+   * the pane over). Null = show the running app. NotebookLM-only: builder cards
+   * (pdf/presentation/…) still render inline in the chat.
+   */
+  notebooklmPreview: { html: string; toolName: string } | null;
 
   // Sidebar
   activeSidebarTab: "pages" | "files" | "history" | "knowledge" | "skills";
@@ -204,6 +210,8 @@ interface EditorState {
   setPreviewUrl: (url: string) => void;
   setPreviewLoading: (loading: boolean) => void;
   bumpToolResultVersion: () => void;
+  setNotebooklmPreview: (preview: { html: string; toolName: string }) => void;
+  clearNotebooklmPreview: () => void;
 
   // Actions - Sidebar
   setActiveSidebarTab: (tab: EditorState["activeSidebarTab"]) => void;
@@ -233,6 +241,7 @@ export const useEditorStore = create<EditorState>()(
       previewUrl: "",
       previewLoading: false,
       toolResultVersion: 0,
+      notebooklmPreview: null,
       activeSidebarTab: "files",
 
       // Project
@@ -382,6 +391,8 @@ export const useEditorStore = create<EditorState>()(
       setPreviewUrl: (url) => set({ previewUrl: url }),
       setPreviewLoading: (loading) => set({ previewLoading: loading }),
       bumpToolResultVersion: () => set((s) => ({ toolResultVersion: s.toolResultVersion + 1 })),
+      setNotebooklmPreview: (preview) => set({ notebooklmPreview: preview }),
+      clearNotebooklmPreview: () => set({ notebooklmPreview: null }),
 
       // Sidebar
       setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),

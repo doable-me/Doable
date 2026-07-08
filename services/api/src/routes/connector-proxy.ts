@@ -47,6 +47,7 @@ import { connectorQueries } from "@doable/db";
 import { getConnectorManager, McpAuthRequiredError } from "../mcp/connector-manager.js";
 import type { McpConnectorConfig } from "../mcp/types.js";
 import { PROJECT_JWT_SECRET } from "../lib/secrets.js";
+import { notebooklmLinkToken } from "../integrations/notebooklm-link.js";
 
 export const connectorProxyRoutes = new Hono({ strict: false });
 
@@ -379,6 +380,11 @@ connectorProxyRoutes.post(
 
     try {
       const manager = getConnectorManager();
+      // NotebookLM: inject the caller's per-user link token so the standalone
+      // service resolves THIS user's synced Google cookies (Design T).
+      if (resolvedConnector.name === "NotebookLM" && userId) {
+        (props as Record<string, unknown>).user_token = userId;
+      }
       const result = await manager.callTool(config, realToolName, props);
 
       const durationMs = Date.now() - t0;
