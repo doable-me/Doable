@@ -49,6 +49,10 @@ export interface IntegrationEnvManifest {
   serverEnvVars: string[];
   /** Tool names the AI can call for this integration, e.g. "supabase_create_row". */
   toolPrefixes: string[];
+  /** Raw registry action IDs (unmodified, e.g. "elevenlabs-text-to-speech") —
+   *  this is the EXACT `actionName` string useIntegration()/doable.integrations.run()
+   *  must be called with. Parallel array to `toolPrefixes` (same index = same action). */
+  actionNames: string[];
 }
 
 export interface ResolveVaultEnvResult {
@@ -173,6 +177,7 @@ export async function resolveVaultEnv(
       clientEnvVars,
       serverEnvVars,
       toolPrefixes,
+      actionNames: def.actions ?? [],
     });
   }
 
