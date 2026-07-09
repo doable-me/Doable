@@ -264,7 +264,7 @@ export function setCookiesFromExtension(cookies: ChromeCookie[], userToken?: str
  * Always refreshes from disk first to pick up recently-synced cookies
  * (important when stdio and HTTP servers are separate processes).
  */
-export function getCookiesForUser(userToken?: string): { cookies: ChromeCookie[]; fresh: boolean; userAgent?: string } {
+export function getCookiesForUser(userToken?: string): { cookies: ChromeCookie[]; fresh: boolean; userAgent?: string; receivedAt?: number } {
     // Always sync fresh from disk before checking memory — this ensures both
     // the HTTP server (which handles /sync-cookies) and the stdio server
     // (which handles MCP tool calls) see the latest cookies even though they're
@@ -274,12 +274,12 @@ export function getCookiesForUser(userToken?: string): { cookies: ChromeCookie[]
     if (userToken && userCookies.has(userToken)) {
         const data = userCookies.get(userToken)!;
         const fresh = (Date.now() - data.receivedAt) < COOKIE_MAX_AGE_MS;
-        return { cookies: data.cookies, fresh, userAgent: data.userAgent };
+        return { cookies: data.cookies, fresh, userAgent: data.userAgent, receivedAt: data.receivedAt };
     }
 
     if (!userToken && legacyCookies.length > 0 && legacyCookiesReceivedAt) {
         const fresh = (Date.now() - legacyCookiesReceivedAt) < COOKIE_MAX_AGE_MS;
-        return { cookies: legacyCookies, fresh, userAgent: legacyCookiesUserAgent };
+        return { cookies: legacyCookies, fresh, userAgent: legacyCookiesUserAgent, receivedAt: legacyCookiesReceivedAt };
     }
 
     return { cookies: [], fresh: false };

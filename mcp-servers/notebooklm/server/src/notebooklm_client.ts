@@ -601,7 +601,14 @@ export class NotebookLMClient {
         return null;
     }
 
-    async prepareNotebook(url: string): Promise<{ notebookId: string, sourceId: string }> {
+    // notebookIdOverride mirrors NativeFetchClient's disambiguation-answer
+    // parameter for structural-typing compatibility (server.ts calls through
+    // the NotebookLMClient | NativeFetchClient union). This legacy Playwright
+    // client has no duplicate-notebook detection of its own (see
+    // NativeFetchClient.findAllNotebooksForUrl) — it never throws
+    // NotebookDisambiguationNeeded, so this override is only meaningful if a
+    // caller already has a specific notebookId in hand.
+    async prepareNotebook(url: string, notebookIdOverride?: string): Promise<{ notebookId: string, sourceId: string }> {
         if (!this.sessionTokens.at) await this.start();
 
         const cacheFile = this.getCacheFile();
@@ -610,6 +617,13 @@ export class NotebookLMClient {
             try {
                 cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
             } catch (e) { }
+        }
+
+        if (notebookIdOverride) {
+            const sourceId = await this._fetchSourceId(notebookIdOverride);
+            cache[url] = { notebookId: notebookIdOverride, sourceId };
+            fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
+            return { notebookId: notebookIdOverride, sourceId };
         }
 
         let notebookId: string | null = null;
@@ -746,8 +760,12 @@ export class NotebookLMClient {
         throw new Error("Timeout waiting for artifact creation");
     }
 
-    async generateInfographic(videoUrl: string): Promise<string> {
-        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl);
+    // `opts` mirrors NativeFetchClient.generateInfographic's signature for
+    // structural-typing compatibility. `forceNew` is a no-op here: this legacy
+    // client never had the reuse-existing-infographic shortcut NativeFetchClient
+    // added, so there's nothing to bypass.
+    async generateInfographic(videoUrl: string, opts?: { notebookIdOverride?: string; forceNew?: boolean }): Promise<string> {
+        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl, opts?.notebookIdOverride);
         logToFile("[NotebookLM] ⏳ Waiting 5s...");
         await new Promise(r => setTimeout(r, 5000));
 
@@ -788,8 +806,8 @@ export class NotebookLMClient {
         return summary;
     }
 
-    async query(url: string, question: string, specificSourceId?: string): Promise<string> {
-        let { notebookId, sourceId } = await this.prepareNotebook(url);
+    async query(url: string, question: string, specificSourceId?: string, notebookIdOverride?: string): Promise<string> {
+        let { notebookId, sourceId } = await this.prepareNotebook(url, notebookIdOverride);
 
         if (specificSourceId) {
             sourceId = specificSourceId;
@@ -800,9 +818,9 @@ export class NotebookLMClient {
         return await this.queryNotebook(notebookId, sourceId, question);
     }
 
-    async generateSummary(videoUrl: string): Promise<string> {
+    async generateSummary(videoUrl: string, notebookIdOverride?: string): Promise<string> {
         // Wrapper for backward compatibility and specific "Summary" behavior (longer wait)
-        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl);
+        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl, notebookIdOverride);
 
         logToFile("[NotebookLM] ⏳ Waiting 10s before requesting summary...");
         await new Promise(r => setTimeout(r, 10000));

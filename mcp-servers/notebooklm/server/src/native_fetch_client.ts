@@ -35,6 +35,18 @@ const RPC_GENERATE_INFOGRAPHIC = "R7cb6c";
 const RPC_LIST_ARTIFACTS = "gArtLc";
 const RPC_DELETE_NOTEBOOK = "f61S6e";
 const RPC_LOAD_NOTEBOOK = "rLM1Ne";
+// Lists every notebook in the account — the same RPC the NotebookLM home page
+// itself calls to render "Recent notebooks". Discovered via a real HAR capture
+// of that page load (user-provided) and cross-verified independently via a
+// live Playwright network capture — same rpcid, same request payload, same
+// response shape in both. This is ground truth: unlike our local
+// notebook_cache (a URL -> notebookId mapping we maintain ourselves and can
+// get out of sync), this always reflects what NotebookLM's backend actually
+// has right now.
+const RPC_LIST_NOTEBOOKS = "wXbhsf";
+// Static payload — no pagination cursor needed for the first page, which is
+// all we need (matches the exact request body captured in the HAR).
+const RPC_LIST_NOTEBOOKS_PAYLOAD = [null, 1, null, [2, null, null, [1, null, null, null, null, null, null, null, null, null, [1]]], null, [[null, null, []], [[]], [null, []]]];
 
 interface SessionTokens {
     at: string | null;
@@ -69,16 +81,44 @@ export interface FetchLikeResponse {
 // re-verification page even with cookies that are seconds old.
 export type RawFetchFn = (url: string, init: RequestInit) => Promise<FetchLikeResponse>;
 
+// Thrown by prepareNotebook()/_prepareNotebookInner() when the same source
+// URL is found in MORE THAN ONE notebook and the caller hasn't told us which
+// one to use yet (no notebookIdOverride). The MCP tool layer (server.ts)
+// catches this and returns a response telling the calling model to STOP,
+// present `candidates` to the human user, wait for their answer, then re-call
+// the tool with notebook_id set to the chosen notebookId. Never resolved
+// automatically — silently picking one is exactly the "gets confused"
+// behavior this exists to avoid.
+export class NotebookDisambiguationNeeded extends Error {
+    constructor(
+        public readonly url: string,
+        public readonly candidates: Array<{ notebookId: string; sourceId: string; title: string }>
+    ) {
+        super(`Multiple notebooks already contain this source (${url}) — ask the user which one to use.`);
+        this.name = 'NotebookDisambiguationNeeded';
+    }
+}
+
 export class NativeFetchClient {
     private cookies: ChromeCookie[] = [];
     private sessionTokens: SessionTokens = { at: null, bl: null, fsid: null };
     private userAgent: string = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
     private transport?: RawFetchFn;
+    // Separate from `transport`: RPC calls are script-initiated page.evaluate()
+    // fetches (fine for same-origin/CORS-permitted JSON), but a cross-origin
+    // image load needs a real navigation to avoid the page's `connect-src` CSP
+    // — see PlaywrightTransport.fetchBinary's doc comment for why.
+    private downloadBinary?: (url: string, headers?: Record<string, string>) => Promise<FetchLikeResponse>;
     private userKey: string;
+    // In-flight prepareNotebook promises, keyed by the input URL. Collapses
+    // concurrent requests for the SAME video/notebook onto one shared result so
+    // asking for a summary AND an infographic at once can't create two notebooks.
+    private notebookLocks = new Map<string, Promise<{ notebookId: string, sourceId: string, wasCached: boolean }>>();
 
-    constructor(cookies: ChromeCookie[], userAgent?: string, transport?: RawFetchFn, userKey?: string) {
+    constructor(cookies: ChromeCookie[], userAgent?: string, transport?: RawFetchFn, userKey?: string, downloadBinary?: (url: string, headers?: Record<string, string>) => Promise<FetchLikeResponse>) {
         this.cookies = cookies;
         this.transport = transport;
+        this.downloadBinary = downloadBinary;
         this.userKey = userKey || '__legacy__';
         if (transport) {
             logToFile(`[NativeFetch] 🎭 Using injected transport (avoids cookie-replay rejection)`);
@@ -316,50 +356,234 @@ export class NativeFetchClient {
 
         const payload = [notebookId, null, [2], null, 0];
 
-        try {
-            const response = await this._executeRpc(RPC_LOAD_NOTEBOOK, payload);
+        // IMPORTANT: an empty array from this function must mean "confirmed zero
+        // sources" and NOTHING ELSE. Callers (see _prepareNotebookInner) use a
+        // 0-length result as proof the notebook was deleted in the UI and
+        // destructively recreate it. This used to also return [] on ANY
+        // exception or unrecognized response shape (e.g. a stale-session/auth
+        // hiccup mid cookie-refresh) — silently, with no error surfaced — so a
+        // transient failure was indistinguishable from real deletion and
+        // triggered the same destructive recreate. Confirmed via logs: a
+        // notebook the user never deleted (still visible in the NotebookLM UI,
+        // still holding its rendered infographics) got "invalidated and
+        // recreated" the moment listSources hit an ambiguous response during a
+        // reauth cycle. Now: only a well-formed response with a genuinely empty
+        // sources array returns []; anything else throws so the caller can
+        // fail SAFE (keep trusting the cache) instead of failing DESTRUCTIVE
+        // (assume deletion and spin up a new notebook).
+        const response = await this._executeRpc(RPC_LOAD_NOTEBOOK, payload);
 
-            if (response && response[0] && response[0][1] === RPC_LOAD_NOTEBOOK && typeof response[0][2] === 'string') {
-                const innerJson = response[0][2];
-                const data = JSON.parse(innerJson);
-                const sourcesRaw = data[0]?.[1];
+        if (response && response[0] && response[0][1] === RPC_LOAD_NOTEBOOK && typeof response[0][2] === 'string') {
+            const innerJson = response[0][2];
+            const data = JSON.parse(innerJson);
+            const sourcesRaw = data[0]?.[1];
 
-                if (Array.isArray(sourcesRaw)) {
-                    const results = [];
-                    for (const s of sourcesRaw) {
-                        if (!Array.isArray(s)) continue;
+            if (Array.isArray(sourcesRaw)) {
+                const results = [];
+                for (const s of sourcesRaw) {
+                    if (!Array.isArray(s)) continue;
 
-                        const sourceId = Array.isArray(s[0]) ? s[0][0] : s[0];
-                        const title = s[1];
-                        let type = "unknown";
-                        let originalUrl = null;
+                    const sourceId = Array.isArray(s[0]) ? s[0][0] : s[0];
+                    const title = s[1];
+                    let type = "unknown";
+                    let originalUrl = null;
 
-                        const meta = s[2];
-                        if (meta && Array.isArray(meta)) {
-                            const externalData = meta[5];
-                            if (Array.isArray(externalData)) {
-                                originalUrl = externalData[0];
-                            }
+                    const meta = s[2];
+                    if (meta && Array.isArray(meta)) {
+                        const externalData = meta[5];
+                        if (Array.isArray(externalData)) {
+                            originalUrl = externalData[0];
                         }
-
-                        if (originalUrl && typeof originalUrl === 'string') {
-                            if (originalUrl.includes("youtube.com") || originalUrl.includes("youtu.be")) type = "youtube";
-                            else if (originalUrl.startsWith("http")) type = "web";
-                        }
-
-                        if (!originalUrl && sourceId) type = "file_or_pasted";
-                        results.push({ sourceId, title, type, originalUrl });
                     }
 
-                    logToFile(`[NativeFetch] Found ${results.length} sources.`);
-                    return results;
+                    if (originalUrl && typeof originalUrl === 'string') {
+                        if (originalUrl.includes("youtube.com") || originalUrl.includes("youtu.be")) type = "youtube";
+                        else if (originalUrl.startsWith("http")) type = "web";
+                    }
+
+                    if (!originalUrl && sourceId) type = "file_or_pasted";
+                    results.push({ sourceId, title, type, originalUrl });
                 }
+
+                logToFile(`[NativeFetch] Found ${results.length} sources.`);
+                return results;
             }
-        } catch (e: any) {
-            logToFile(`[NativeFetch] List Sources Failed: ${e.message}`);
         }
 
-        return [];
+        // Response didn't match the expected shape at all — NOT the same as a
+        // confirmed empty notebook. Log the actual payload (previously silently
+        // discarded) so this is diagnosable, and throw rather than returning [].
+        logToFile(`[NativeFetch] ⚠️ Unrecognized LOAD_NOTEBOOK response shape for ${notebookId}: ${JSON.stringify(response).substring(0, 500)}`);
+        throw new Error(`Could not verify sources for notebook ${notebookId}: unrecognized response shape.`);
+    }
+
+    /**
+     * Lists every notebook in the account, each with its own sources — ground
+     * truth from NotebookLM's backend, not our local notebook_cache. Response
+     * shape (per entry): [title, [[sourceId], sourceTitle, meta, ...][], notebookId, emoji, ...].
+     * Source meta[5] holds [originalUrl, videoId, channelName] for YouTube
+     * sources — same extraction as listSources().
+     */
+    async listAllNotebooks(): Promise<Array<{ notebookId: string; title: string; emoji: string | null; sources: Array<{ sourceId: string; title: string; originalUrl: string | null }> }>> {
+        const response = await this._executeRpc(RPC_LIST_NOTEBOOKS, RPC_LIST_NOTEBOOKS_PAYLOAD);
+
+        if (!response || !response[0] || response[0][1] !== RPC_LIST_NOTEBOOKS || typeof response[0][2] !== 'string') {
+            logToFile(`[NativeFetch] ⚠️ Unrecognized LIST_NOTEBOOKS response shape: ${JSON.stringify(response).substring(0, 500)}`);
+            throw new Error("Could not list notebooks: unrecognized response shape.");
+        }
+
+        const data = JSON.parse(response[0][2]);
+        const entries = data?.[0];
+        if (!Array.isArray(entries)) return [];
+
+        const notebooks: Array<{ notebookId: string; title: string; emoji: string | null; sources: Array<{ sourceId: string; title: string; originalUrl: string | null }> }> = [];
+        for (const entry of entries) {
+            if (!Array.isArray(entry) || typeof entry[2] !== 'string') continue;
+            const title = entry[0];
+            const sourcesRaw = entry[1];
+            const notebookId = entry[2];
+            const emoji = typeof entry[3] === 'string' ? entry[3] : null;
+
+            const sources: Array<{ sourceId: string; title: string; originalUrl: string | null }> = [];
+            if (Array.isArray(sourcesRaw)) {
+                for (const s of sourcesRaw) {
+                    if (!Array.isArray(s)) continue;
+                    const sourceId = Array.isArray(s[0]) ? s[0][0] : s[0];
+                    const sourceTitle = s[1];
+                    let originalUrl: string | null = null;
+                    const meta = s[2];
+                    if (Array.isArray(meta) && Array.isArray(meta[5])) {
+                        originalUrl = meta[5][0] ?? null;
+                    }
+                    sources.push({ sourceId, title: sourceTitle, originalUrl });
+                }
+            }
+
+            notebooks.push({ notebookId, title, emoji, sources });
+        }
+
+        logToFile(`[NativeFetch] Listed ${notebooks.length} notebooks in account.`);
+        return notebooks;
+    }
+
+    /** Finds the notebook that actually holds a given source URL, searching the
+     *  real account-wide notebook list rather than our local cache. Used to
+     *  self-heal the cache when it points at a dead/wrong notebook, instead of
+     *  either blindly trusting a stale entry or blindly recreating (which
+     *  produces a duplicate when the real notebook is still there, just under
+     *  an ID our cache lost track of). */
+    async findNotebookForUrl(url: string): Promise<{ notebookId: string; sourceId: string } | null> {
+        const notebooks = await this.listAllNotebooks();
+        for (const nb of notebooks) {
+            const match = nb.sources.find(s => s.originalUrl === url);
+            if (match) return { notebookId: nb.notebookId, sourceId: match.sourceId };
+        }
+        return null;
+    }
+
+    /** Like findNotebookForUrl, but returns EVERY notebook holding this
+     *  source instead of just the first. This is what detects the "same
+     *  source lives in two notebooks" scenario so a caller can ask the user
+     *  which one to use instead of silently picking one. */
+    async findAllNotebooksForUrl(url: string): Promise<Array<{ notebookId: string; sourceId: string; title: string }>> {
+        const notebooks = await this.listAllNotebooks();
+        const matches: Array<{ notebookId: string; sourceId: string; title: string }> = [];
+        for (const nb of notebooks) {
+            const match = nb.sources.find(s => s.originalUrl === url);
+            if (match) matches.push({ notebookId: nb.notebookId, sourceId: match.sourceId, title: nb.title });
+        }
+        return matches;
+    }
+
+    // Rate-limits reconcileCache() below — this hits the account-wide
+    // LIST_NOTEBOOKS RPC plus one LIST_ARTIFACTS per duplicate group, so it
+    // should run periodically (piggybacking opportunistically on whatever
+    // tool call happens to come in), not on every single request.
+    private static readonly RECONCILE_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
+
+    /**
+     * Proactively reconciles the local notebook_cache against the account's
+     * real notebook list, self-rate-limited to once per RECONCILE_INTERVAL_MS
+     * (tracked via a `__meta.lastReconciledAt` timestamp stored in the cache
+     * file itself). Call this opportunistically wherever a live, authenticated
+     * client is already in hand (see getClient() in server.ts) — it no-ops
+     * instantly if called again before the interval elapses.
+     *
+     * For any source URL that maps to MORE THAN ONE notebook (the duplicate
+     * scenario), prefers whichever duplicate already has a rendered
+     * infographic — so a later generate_infographic call reuses that work
+     * instead of the notebook_cache pointing at an arbitrary duplicate that
+     * has nothing on it yet (which is what happened before: the cache landed
+     * on an empty duplicate while a sibling notebook already had the image).
+     * Never deletes anything — purely rewrites which notebookId we point at.
+     */
+    async reconcileCache(): Promise<void> {
+        const cacheFile = this.getCacheFile();
+        let cache: any = {};
+        if (fs.existsSync(cacheFile)) {
+            try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8')); } catch { /* corrupt — proceed with {} */ }
+        }
+
+        const meta = cache.__meta || {};
+        if (meta.lastReconciledAt && (Date.now() - meta.lastReconciledAt) < NativeFetchClient.RECONCILE_INTERVAL_MS) {
+            return; // reconciled recently enough — no-op
+        }
+
+        try {
+            logToFile(`[NativeFetch] 🔄 Reconciling notebook cache against account ground truth...`);
+            const notebooks = await this.listAllNotebooks();
+
+            const byUrl = new Map<string, Array<{ notebookId: string; sourceId: string; title: string }>>();
+            for (const nb of notebooks) {
+                for (const s of nb.sources) {
+                    if (!s.originalUrl) continue;
+                    if (!byUrl.has(s.originalUrl)) byUrl.set(s.originalUrl, []);
+                    byUrl.get(s.originalUrl)!.push({ notebookId: nb.notebookId, sourceId: s.sourceId, title: nb.title });
+                }
+            }
+
+            let changed = 0;
+            for (const [url, candidates] of byUrl) {
+                let best = candidates[0];
+                // `duplicates` is surfaced to _prepareNotebookInner, which throws
+                // NotebookDisambiguationNeeded when it's present so the MCP tool
+                // layer can ask the user which one to use instead of silently
+                // trusting `best`. `best` is still computed and cached as a
+                // sane default for any path that doesn't do that disambiguation
+                // (e.g. a legacy cache entry read before this reconcile ran).
+                const duplicates = candidates.length > 1 ? candidates : undefined;
+                if (duplicates) {
+                    // Prefer whichever duplicate already has a rendered
+                    // infographic as the default, in case disambiguation is
+                    // skipped somewhere.
+                    for (const c of candidates) {
+                        try {
+                            const state = await this._listInfographicState(c.notebookId);
+                            if (state.imageUrl) { best = c; break; }
+                        } catch { /* couldn't check this candidate — try the next */ }
+                    }
+                }
+                const existing = cache[url];
+                const notebookChanged = !existing || existing.notebookId !== best.notebookId;
+                const duplicatesChanged = JSON.stringify(existing?.duplicates) !== JSON.stringify(duplicates);
+                if (notebookChanged || duplicatesChanged) {
+                    cache[url] = {
+                        notebookId: best.notebookId,
+                        sourceId: best.sourceId,
+                        ...(duplicates ? { duplicates } : {}),
+                    };
+                    changed++;
+                }
+            }
+
+            cache.__meta = { lastReconciledAt: Date.now() };
+            fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
+            logToFile(`[NativeFetch] ✅ Cache reconciled: ${byUrl.size} unique source(s) checked, ${changed} entr${changed === 1 ? 'y' : 'ies'} updated.`);
+        } catch (e: any) {
+            // Non-fatal — reconciliation is opportunistic maintenance, never
+            // something a tool call should fail over.
+            logToFile(`[NativeFetch] ⚠️ Cache reconciliation failed (non-fatal): ${e.message}`);
+        }
     }
 
     async _fetchSourceId(notebookId: string): Promise<string> {
@@ -561,49 +785,80 @@ export class NativeFetchClient {
         return results.join("\n");
     }
 
+    // Cheap sniff: is this buffer actually image bytes (and not, say, an HTML
+    // sign-in page returned with status 200)? Guards against silently storing
+    // a redirect/login page as if it were the infographic.
+    private looksLikeImage(buf: Buffer, contentType: string | null): boolean {
+        if (buf.length < 4) return false;
+        const hex = buf.subarray(0, 4).toString('hex');
+        if (hex.startsWith('ffd8ff') || hex.startsWith('89504e47')) return true; // JPEG / PNG
+        if (hex.startsWith('52494646') || hex.startsWith('47494638')) return true; // WEBP(RIFF) / GIF
+        if (contentType && contentType.toLowerCase().startsWith('image/')) return true;
+        return false;
+    }
+
     async downloadResource(url: string): Promise<Buffer> {
         logToFile(`[NativeFetch] Downloading resource: ${url.substring(0, 50)}...`);
 
-        // Always use Node.js native fetch (not the Playwright transport) so CORS
-        // restrictions in the headless browser don't block cross-origin CDN URLs
-        // like lh3.googleusercontent.com.
+        // The infographic image lives on Google's user-content CDN
+        // (lh3.googleusercontent.com), reached via a redirect chain through
+        // lh3.google.com. Stays COOKIELESS on purpose (session-cookie replay
+        // was the ORIGINAL bug here) but that alone isn't enough:
         //
-        // These image URLs 302-redirect (lh3.googleusercontent.com -> lh3.google.com,
-        // and without a valid session all the way to accounts.google.com) before
-        // serving the actual bytes. fetch()'s automatic redirect handling reuses the
-        // Cookie header computed for the ORIGINAL host on every hop, but googleusercontent.com
-        // has no cookies of its own (auth lives under .google.com) -- so the automatic
-        // path always lands on the sign-in page. Follow redirects manually and
-        // recompute the Cookie header per-hop, same as fetchWithCookies does.
-        let currentUrl = url;
-        let redirectCount = 0;
-        const maxRedirects = 5;
+        // 1. Plain server-side fetch (no Playwright): verified empirically —
+        //    EVERY download (66/66 across a full session, fresh tokens each
+        //    time, with AND without cookies attached) bounced identically to
+        //    accounts.google.com/ServiceLogin at the lh3.google.com hop.
+        //    Cookies made no difference; every other RPC call in this client
+        //    already routes through the Playwright page for exactly this
+        //    reason (a scripted client's TLS/HTTP2 fingerprint gets flagged).
+        // 2. `this.transport` (page.evaluate(fetch(...))): still failed, but
+        //    differently — "Failed to fetch" at the JS layer, before any HTTP
+        //    response. That's the signature of a CSP `connect-src` block: the
+        //    page allows loading cross-origin IMAGES (`img-src`, permissive)
+        //    but not script-initiated fetches to that same origin
+        //    (`connect-src`, restrictive) — different CSP directives.
+        // `downloadBinary` (PlaywrightTransport.fetchBinary) sidesteps both:
+        // it NAVIGATES a throwaway page to the URL exactly like opening the
+        // image in a new tab would, so it's real-browser AND CSP-exempt.
+        const headers: Record<string, string> = {
+            "Referer": "https://notebooklm.google.com/",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        };
 
-        while (true) {
-            const headers = new Headers({ "Referer": "https://notebooklm.google.com/" });
-            headers.set("Cookie", this.getCookieHeader(currentUrl));
-            headers.set("User-Agent", this.userAgent);
+        const response = this.downloadBinary
+            ? await this.downloadBinary(url, headers)
+            : this.transport
+                ? await this.transport(url, { headers: new Headers(headers) })
+                : await fetch(url, {
+                    headers: new Headers({
+                        ...headers,
+                        "User-Agent": this.userAgent,
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Sec-Fetch-Dest": "image",
+                        "Sec-Fetch-Mode": "no-cors",
+                        "Sec-Fetch-Site": "cross-site",
+                    }),
+                    redirect: 'follow',
+                });
 
-            const response = await fetch(currentUrl, { headers, redirect: 'manual' });
-
-            if (response.status >= 300 && response.status < 400 && redirectCount < maxRedirects) {
-                const location = response.headers.get('Location');
-                if (!location) {
-                    throw new Error(`Failed to download resource: redirect (${response.status}) with no Location header`);
-                }
-                currentUrl = new URL(location, currentUrl).toString();
-                redirectCount++;
-                logToFile(`[NativeFetch] ↪️ Following resource redirect to: ${currentUrl.substring(0, 80)}...`);
-                continue;
-            }
-
-            if (!response.ok) {
-                throw new Error(`Failed to download resource: ${response.status}`);
-            }
-
-            const arrayBuffer = await response.arrayBuffer();
-            return Buffer.from(arrayBuffer);
+        if (!response.ok) {
+            throw new Error(`Failed to download resource: HTTP ${response.status} (final URL: ${response.url.substring(0, 120)})`);
         }
+
+        const contentType = response.headers.get('content-type');
+        const buf = Buffer.from(await response.arrayBuffer());
+
+        // If Google still bounced us to a login/HTML page (e.g. the signed URL
+        // expired), we'd get a 200 with HTML — reject it so the caller retries /
+        // marks the job failed rather than persisting a sign-in page as the image.
+        if (!this.looksLikeImage(buf, contentType)) {
+            const head = buf.subarray(0, 80).toString('utf-8').replace(/\s+/g, ' ');
+            throw new Error(`Downloaded resource is not an image (content-type: ${contentType}, ${buf.length} bytes, final URL: ${response.url.substring(0, 120)}, head: "${head}")`);
+        }
+
+        logToFile(`[NativeFetch] ✅ Downloaded image: ${buf.length} bytes, content-type: ${contentType}`);
+        return buf;
     }
 
     _findImageUrl(obj: any): string | null {
@@ -638,7 +893,38 @@ export class NativeFetchClient {
         return null;
     }
 
-    async prepareNotebook(url: string): Promise<{ notebookId: string, sourceId: string, wasCached: boolean }> {
+    async prepareNotebook(url: string, notebookIdOverride?: string): Promise<{ notebookId: string, sourceId: string, wasCached: boolean }> {
+        // When the caller already knows exactly which notebook to use (the user
+        // answered a "multiple notebooks found" prompt from a previous call),
+        // skip the in-flight coalescing lock entirely — there's nothing left to
+        // coalesce, and the override is keyed by notebookId rather than url, so
+        // sharing the url-keyed lock here would serialize it against unrelated
+        // concurrent calls for no reason.
+        if (notebookIdOverride) {
+            return this._prepareNotebookInner(url, notebookIdOverride);
+        }
+
+        // Coalesce concurrent calls for the same URL. Without this, a summary and
+        // an infographic requested together both hit a cold cache, both run
+        // CREATE_NOTEBOOK, and NotebookLM ends up with two notebooks holding the
+        // same source (the "two notebooks / gets confused" bug). The first caller
+        // does the real work; everyone else awaits its result. Once it settles,
+        // the cache file is already written, so any later call is a plain cache hit.
+        const inFlight = this.notebookLocks.get(url);
+        if (inFlight) {
+            logToFile(`[NativeFetch] ⏳ prepareNotebook already in-flight for ${url} — awaiting shared result (no duplicate notebook).`);
+            return inFlight;
+        }
+        const work = this._prepareNotebookInner(url);
+        this.notebookLocks.set(url, work);
+        try {
+            return await work;
+        } finally {
+            this.notebookLocks.delete(url);
+        }
+    }
+
+    private async _prepareNotebookInner(url: string, notebookIdOverride?: string): Promise<{ notebookId: string, sourceId: string, wasCached: boolean }> {
         if (!this.sessionTokens.at) await this._refreshTokens();
 
         const cacheFile = this.getCacheFile();
@@ -647,6 +933,20 @@ export class NativeFetchClient {
             try {
                 cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
             } catch (e) { }
+        }
+
+        // The user was already asked which of several duplicate notebooks to
+        // use and answered — pin to that notebook directly instead of
+        // re-running cache/duplicate-detection logic (which would just ask again).
+        if (notebookIdOverride) {
+            logToFile(`[NativeFetch] 📌 Using user-selected notebook override ${notebookIdOverride} for ${url}`);
+            const sources = await this.listSources(notebookIdOverride);
+            const matched = sources.find((s: any) => s.originalUrl === url);
+            const sourceId = matched?.sourceId || sources[0]?.sourceId;
+            if (!sourceId) throw new Error(`Selected notebook ${notebookIdOverride} has no sources to use.`);
+            cache[url] = { notebookId: notebookIdOverride, sourceId };
+            fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
+            return { notebookId: notebookIdOverride, sourceId, wasCached: false };
         }
 
         let notebookId: string | null = null;
@@ -705,53 +1005,132 @@ export class NativeFetchClient {
                 // trigger RPCs (e.g. generate infographic) but never produces
                 // artifacts — so without this check the caller would poll for the
                 // full 5-minute timeout before self-healing. Validate up front by
-                // loading the notebook's sources: 0 sources means deleted (or
-                // emptied), so invalidate the entry and fall through to recreate.
-                const liveSources = await this.listSources(notebookId);
-                if (liveSources.length === 0) {
-                    logToFile(`[NativeFetch] ⚠️ Cached notebook ${notebookId} is gone/empty (likely deleted in the UI). Invalidating cache for ${url} and recreating.`);
-                    delete cache[url];
-                    try { fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2)); } catch (e) { /* best-effort */ }
-                    notebookId = null;
-                    sourceId = null;
-                    wasCached = false;
-                } else {
-                    logToFile(`[NativeFetch] ⚡ Cache Hit! Reusing notebook: ${notebookId} (${liveSources.length} source(s) verified)`);
+                // loading the notebook's sources: a CONFIRMED-empty result means
+                // deleted (or emptied), so invalidate the entry and recreate.
+                //
+                // listSources() now THROWS instead of returning [] for anything
+                // ambiguous (a network hiccup, a stale-session response mid
+                // cookie-refresh, an unrecognized shape) — specifically so this
+                // check can tell "definitely gone" apart from "couldn't check
+                // right now". Confirmed via logs: without this distinction, a
+                // notebook the user never deleted (still visible in the
+                // NotebookLM UI, still holding its rendered infographics) got
+                // wiped from cache and recreated from scratch — costing another
+                // CREATE_NOTEBOOK + ADD_SOURCE and abandoning a notebook that
+                // already had a working infographic on it. On ambiguity, keep
+                // trusting the cache — a stale reference that's actually fine is
+                // far cheaper than a false "deleted" that discards real work.
+                try {
+                    const liveSources = await this.listSources(notebookId);
+                    if (liveSources.length === 0) {
+                        logToFile(`[NativeFetch] ⚠️ Cached notebook ${notebookId} confirmed empty (0 sources, well-formed response) — likely deleted in the UI. Invalidating cache for ${url} and recreating.`);
+                        delete cache[url];
+                        try { fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2)); } catch (e) { /* best-effort */ }
+                        notebookId = null;
+                        sourceId = null;
+                        wasCached = false;
+                    } else {
+                        logToFile(`[NativeFetch] ⚡ Cache Hit! Reusing notebook: ${notebookId} (${liveSources.length} source(s) verified)`);
+                        wasCached = true;
+                        // Heal a stale/missing sourceId from the live notebook.
+                        if (!sourceId) sourceId = liveSources[0].sourceId;
+                    }
+                } catch (e: any) {
+                    // Ambiguous: listSources() itself failed, so we can't tell if
+                    // this notebook is fine or gone. Rather than guessing, check
+                    // the account's real notebook list (ground truth, via
+                    // listAllNotebooks/findNotebookForUrl) for the notebook that
+                    // actually holds this URL right now — reconciling to it if
+                    // the cache is wrong, instead of either blindly trusting a
+                    // possibly-dead entry or blindly recreating a possibly-fine one.
+                    try {
+                        const found = await this.findNotebookForUrl(url);
+                        if (found && found.notebookId !== notebookId) {
+                            logToFile(`[NativeFetch] 🔧 Cache pointed at ${notebookId} for ${url}, but the account's real notebook list has it under ${found.notebookId} — reconciling cache instead of recreating.`);
+                            notebookId = found.notebookId;
+                            sourceId = found.sourceId;
+                            cache[url] = { notebookId, sourceId };
+                            try { fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2)); } catch { /* best-effort */ }
+                        } else if (found) {
+                            logToFile(`[NativeFetch] ✅ Reconciled: ${notebookId} for ${url} confirmed present in the account's real notebook list.`);
+                        } else {
+                            logToFile(`[NativeFetch] ⚠️ Could not verify cached notebook ${notebookId} (${e.message}), and ${url} wasn't found in the account's real notebook list either — trusting cache anyway rather than assuming deletion.`);
+                        }
+                    } catch (e2: any) {
+                        logToFile(`[NativeFetch] ⚠️ Could not verify cached notebook ${notebookId} (${e.message}); notebook-list reconciliation also failed (${e2.message}) — trusting cache rather than assuming deletion.`);
+                    }
                     wasCached = true;
-                    // Heal a stale/missing sourceId from the live notebook.
-                    if (!sourceId) sourceId = liveSources[0].sourceId;
+                }
+            }
+
+            // A background reconcileCache() pass already found this same source
+            // living in more than one notebook (see the `duplicates` field it
+            // writes). Rather than silently trusting whichever one the cache
+            // happens to point at, surface it so the tool layer can ask the
+            // user which one they actually want.
+            if (notebookId && sourceId) {
+                const dupes = cache[url]?.duplicates;
+                if (Array.isArray(dupes) && dupes.length > 1) {
+                    logToFile(`[NativeFetch] ⚠️ Cache flagged ${dupes.length} duplicate notebooks for ${url} (from background reconciliation) — disambiguation needed.`);
+                    throw new NotebookDisambiguationNeeded(url, dupes);
                 }
             }
         }
 
         if (!notebookId || !sourceId) { // If missing either (unless legacy cache gave bad data)
             if (!notebookId) {
-                logToFile("[NativeFetch] Creating Notebook...");
-                const createPayload = ["", null, null, [2], [1, null, null, null, null, null, null, null, null, null, [1]]];
-                const createRes = await this._executeRpc(RPC_CREATE_NOTEBOOK, createPayload);
-
-                if (!createRes || !createRes[0]) {
-                    throw new Error("Failed to create notebook: empty response from NotebookLM. This is usually transient — please retry.");
+                // Before creating a brand-new notebook, check whether the
+                // account already holds this exact source somewhere — matters
+                // on a cold cache (fresh install, a cleared cache file, or a
+                // notebook created for this source directly in the NotebookLM
+                // UI outside this server) so we adopt what's already there (or
+                // ask, if there's more than one) instead of spinning up a
+                // genuine duplicate.
+                let liveMatches: Array<{ notebookId: string; sourceId: string; title: string }> = [];
+                try {
+                    liveMatches = await this.findAllNotebooksForUrl(url);
+                } catch (e: any) {
+                    logToFile(`[NativeFetch] ⚠️ Pre-create duplicate check failed (${e.message}) — proceeding to create.`);
                 }
 
-                // Check for gRPC error codes (same pattern as ADD_SOURCE / pollForArtifacts)
-                const createErrorSlot = createRes[0][5];
-                if (Array.isArray(createErrorSlot) && createErrorSlot[0] === 16) {
-                    throw new Error("Authentication required. Please re-sync your cookies using the Chrome extension.");
+                if (liveMatches.length > 1) {
+                    throw new NotebookDisambiguationNeeded(url, liveMatches);
                 }
 
-                if (!createRes[0][2]) {
-                    logToFile(`[NativeFetch] ❌ CREATE_NOTEBOOK returned no payload: ${JSON.stringify(createRes[0])}`);
-                    throw new Error("Failed to create notebook: NotebookLM returned an error with no payload. This is usually transient — please retry in a moment.");
-                }
+                if (liveMatches.length === 1) {
+                    logToFile(`[NativeFetch] ✅ Found existing notebook ${liveMatches[0].notebookId} for ${url} — adopting it instead of creating a duplicate.`);
+                    notebookId = liveMatches[0].notebookId;
+                    sourceId = liveMatches[0].sourceId;
+                    wasCached = true;
+                } else {
+                    logToFile("[NativeFetch] Creating Notebook...");
+                    const createPayload = ["", null, null, [2], [1, null, null, null, null, null, null, null, null, null, [1]]];
+                    const createRes = await this._executeRpc(RPC_CREATE_NOTEBOOK, createPayload);
 
-                const innerCreate = JSON.parse(createRes[0][2]);
-                notebookId = innerCreate?.[2];
-                if (!notebookId) {
-                    logToFile(`[NativeFetch] ❌ CREATE_NOTEBOOK payload had no notebook ID: ${JSON.stringify(innerCreate)}`);
-                    throw new Error("Failed to create notebook: response did not include a notebook ID.");
+                    if (!createRes || !createRes[0]) {
+                        throw new Error("Failed to create notebook: empty response from NotebookLM. This is usually transient — please retry.");
+                    }
+
+                    // Check for gRPC error codes (same pattern as ADD_SOURCE / pollForArtifacts)
+                    const createErrorSlot = createRes[0][5];
+                    if (Array.isArray(createErrorSlot) && createErrorSlot[0] === 16) {
+                        throw new Error("Authentication required. Please re-sync your cookies using the Chrome extension.");
+                    }
+
+                    if (!createRes[0][2]) {
+                        logToFile(`[NativeFetch] ❌ CREATE_NOTEBOOK returned no payload: ${JSON.stringify(createRes[0])}`);
+                        throw new Error("Failed to create notebook: NotebookLM returned an error with no payload. This is usually transient — please retry in a moment.");
+                    }
+
+                    const innerCreate = JSON.parse(createRes[0][2]);
+                    notebookId = innerCreate?.[2];
+                    if (!notebookId) {
+                        logToFile(`[NativeFetch] ❌ CREATE_NOTEBOOK payload had no notebook ID: ${JSON.stringify(innerCreate)}`);
+                        throw new Error("Failed to create notebook: response did not include a notebook ID.");
+                    }
+                    logToFile(`[NativeFetch] Notebook Created: ${notebookId}`);
+                    wasCached = false;
                 }
-                logToFile(`[NativeFetch] Notebook Created: ${notebookId}`);
             }
 
             if (!sourceId) {
@@ -782,97 +1161,172 @@ export class NativeFetchClient {
                 }
 
                 logToFile(`[NativeFetch] Source Added: ${sourceId}`);
+                wasCached = false;
             }
 
-            // Write cache (only if we created/added stuff)
+            // Write cache (we created, added, or adopted an existing notebook above)
             cache[url] = { notebookId, sourceId };
             fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
-            wasCached = false; // We just created it
         }
 
         return { notebookId: notebookId!, sourceId: sourceId!, wasCached };
     }
 
+    /**
+     * One LIST_ARTIFACTS call, parsed into the two facts callers actually need:
+     * whether an infographic ARTIFACT RECORD exists on the notebook yet, and
+     * whether its rendered IMAGE URL is present.
+     *
+     * These are two DISTINCT stages on NotebookLM's side: GENERATE_INFOGRAPHIC
+     * creates the artifact record (id + title, type 7) almost immediately — that
+     * is what appears in the Studio panel — then renders the image
+     * asynchronously and stitches the lh3.googleusercontent.com URL into the
+     * record minutes later. Confirmed via logs: a record with title present but
+     * NO image URL was polled 30× before the image finally appeared. Callers use
+     * `hasArtifact` to avoid re-triggering (idempotency) and to tell "still
+     * rendering" (record exists, keep waiting) apart from "never accepted"
+     * (no record — quota/unsupported source).
+     */
+    private async _listInfographicState(notebookId: string): Promise<{ imageUrl: string | null; hasArtifact: boolean }> {
+        const payload = [[2], notebookId];
+        const response = await this._executeRpc(RPC_LIST_ARTIFACTS, payload);
+        if (!response || !response[0]) return { imageUrl: null, hasArtifact: false };
+
+        // gRPC error code 16 = UNAUTHENTICATED.
+        const errorSlot = response[0][5];
+        if (Array.isArray(errorSlot) && errorSlot[0] === 16) {
+            throw new Error("Authentication required. Please re-sync your cookies using the Chrome extension.");
+        }
+        // Any other gRPC error code = the backend rejected the request outright
+        // (e.g. a quota/rate limit) — no artifact will ever show up, so surface
+        // the actual code instead of a generic timeout.
+        if (Array.isArray(errorSlot) && errorSlot.length > 0) {
+            logToFile(`[NativeFetch] ❌ LIST_ARTIFACTS returned error slot: ${JSON.stringify(errorSlot).slice(0, 300)}`);
+            throw new Error(`NotebookLM rejected the request (gRPC code ${errorSlot[0]}). This can mean a daily generation limit or quota was hit — check the NotebookLM Studio panel.`);
+        }
+
+        if (typeof response[0][2] !== 'string') return { imageUrl: null, hasArtifact: false };
+        const innerData = JSON.parse(response[0][2]);
+        return {
+            imageUrl: this._findImageUrl(innerData),
+            hasArtifact: this._hasInfographicArtifact(innerData),
+        };
+    }
+
+    /**
+     * Detects an infographic artifact tuple anywhere in a LIST_ARTIFACTS payload.
+     * The record shape is [<uuid-id>, <title|null>, 7, [[[<sourceId>]]], ...] —
+     * type marker 7 at index 2, a UUID at index 0, a nested array at index 3.
+     * Title can be null while still rendering, so we key off id+type, not title.
+     */
+    private _hasInfographicArtifact(obj: any): boolean {
+        if (Array.isArray(obj)) {
+            if (typeof obj[0] === 'string' && obj[0].length > 20 && obj[2] === 7 && Array.isArray(obj[3])) {
+                return true;
+            }
+            for (const item of obj) {
+                if (this._hasInfographicArtifact(item)) return true;
+            }
+        }
+        return false;
+    }
+
     async pollForArtifacts(notebookId: string): Promise<string> {
         logToFile("[NativeFetch] Polling for artifacts...");
-        for (let i = 0; i < 30; i++) {
+        // Adaptive budget. Rendering under load can take well over 5 minutes, so
+        // once the artifact RECORD has appeared we keep waiting for the image up
+        // to ~15 min rather than reporting a false failure while it renders. But
+        // if NO record appears within the first ~2 min, the generation was never
+        // accepted (quota / unsupported source) — fail early instead of stalling
+        // the full budget.
+        const MAX_ATTEMPTS = 90;          // ~15 min at 10s spacing
+        const NO_ARTIFACT_GIVEUP = 12;    // ~2 min with no record at all → not accepted
+        let sawArtifact = false;
+        for (let i = 0; i < MAX_ATTEMPTS; i++) {
             try {
-                // No filter — get all artifacts. The old filter string caused null responses
-                // when the API changed; now we let _findImageUrl sort through the results.
-                const payload = [[2], notebookId];
-                const response = await this._executeRpc(RPC_LIST_ARTIFACTS, payload);
-
-                if (response && response[0]) {
-                    // gRPC error code 16 = UNAUTHENTICATED — fail fast instead of burning 30 attempts
-                    const errorSlot = response[0][5];
-                    if (Array.isArray(errorSlot) && errorSlot[0] === 16) {
-                        throw new Error("Authentication required. Please re-sync your cookies using the Chrome extension.");
-                    }
-
-                    if (typeof response[0][2] === 'string') {
-                        const innerData = JSON.parse(response[0][2]);
-                        const imageUrl = this._findImageUrl(innerData);
-                        if (imageUrl) {
-                            logToFile(`[NativeFetch] 📸 Image Found: ${imageUrl}`);
-                            return imageUrl;
-                        }
-                        logToFile(`[NativeFetch] No image yet (attempt ${i + 1}): ${JSON.stringify(innerData).substring(0, 2000)}`);
-                    } else {
-                        logToFile(`[NativeFetch] Null data slot (attempt ${i + 1}). Full: ${JSON.stringify(response).substring(0, 300)}`);
-                    }
+                const { imageUrl, hasArtifact } = await this._listInfographicState(notebookId);
+                if (imageUrl) {
+                    logToFile(`[NativeFetch] 📸 Image Found: ${imageUrl}`);
+                    return imageUrl;
                 }
+                if (hasArtifact) sawArtifact = true;
+                if (!sawArtifact && i >= NO_ARTIFACT_GIVEUP) {
+                    throw new Error("NotebookLM never created an infographic artifact — the generation was not accepted (possibly a daily quota limit or an unsupported source). Check the NotebookLM Studio panel.");
+                }
+                logToFile(`[NativeFetch] No image yet (attempt ${i + 1}/${MAX_ATTEMPTS}, artifactRecordSeen=${sawArtifact}).`);
             } catch (e: any) {
-                if (e.message.includes("Authentication required")) throw e;
+                // Propagate terminal conditions; retry only transient poll errors.
+                if (e.message.includes("Authentication required")
+                    || e.message.includes("rejected the request")
+                    || e.message.includes("was not accepted")) throw e;
                 logToFile(`[NativeFetch] Artifact poll error: ${e.message}`);
             }
             await new Promise(r => setTimeout(r, 10000));
-            logToFile(`[NativeFetch] Poll attempt ${i + 1}/30...`);
         }
-        throw new Error("Timeout waiting for artifact creation");
+        // Ran the full budget. If we saw a record, it's a slow render, not a
+        // failure — say so specifically so the caller/UI points at Studio.
+        throw new Error(sawArtifact
+            ? "The infographic is still rendering on NotebookLM's side after ~15 minutes. The artifact exists in the Studio panel and may finish shortly — check there."
+            : "Timeout waiting for artifact creation");
     }
 
-    async generateInfographic(videoUrl: string): Promise<string> {
-        let { notebookId, sourceId, wasCached } = await this.prepareNotebook(videoUrl);
+    /**
+     * Resolves the notebook for a video/source URL and reports whether an
+     * infographic already exists on it, WITHOUT triggering a new generation.
+     * Lets the caller (server.ts) ask the user "reuse the existing one or
+     * generate a new one?" BEFORE doing any work, instead of a job silently
+     * reusing (or regenerating) something the user never got a say in.
+     */
+    async resolveInfographicTarget(videoUrl: string, notebookIdOverride?: string): Promise<{ notebookId: string; sourceId: string; existingImageUrl: string | null }> {
+        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl, notebookIdOverride);
+        const existing = await this._listInfographicState(notebookId);
+        return { notebookId, sourceId, existingImageUrl: existing.imageUrl };
+    }
 
-        try {
-            logToFile("[NativeFetch] ⏳ Waiting 5s...");
-            await new Promise(r => setTimeout(r, 5000));
+    async generateInfographic(videoUrl: string, opts?: { notebookIdOverride?: string; forceNew?: boolean }): Promise<string> {
+        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl, opts?.notebookIdOverride);
 
-            logToFile("[NativeFetch] 🚀 Triggering Infographic...");
-            const triggerPayload = [[2], notebookId, [null, null, 7, [[[sourceId]]], null, null, null, null, null, null, null, null, null, null, [[null, null, null, 1, 2]]]];
-            await this._executeRpc(RPC_GENERATE_INFOGRAPHIC, triggerPayload);
-
-            return await this.pollForArtifacts(notebookId);
-        } catch (e: any) {
-            // Handle broken cache (null artifacts loop)
-            if (wasCached && (e.message.includes("Repeated null") || e.message.includes("Timeout"))) {
-                logToFile(`[NativeFetch] ⚠️ Caught error on cached notebook: ${e.message}. Invalidating cache and retrying with fresh notebook...`);
-
-                // Clear cache for this URL
-                const cacheFile = this.getCacheFile();
-                if (fs.existsSync(cacheFile)) {
-                    const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
-                    delete cache[videoUrl];
-                    fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
-                    logToFile(`[NativeFetch] 🧹 Cleared cache for ${videoUrl}`);
-                }
-
-                // FORCE RETRY (recursive call will create new notebook since cache is gone)
-                // We could just call `generateInfographic` recursively, but let's be safe and manual
-                logToFile(`[NativeFetch] 🔄 Retrying generation with fresh notebook...`);
-                const fresh = await this.prepareNotebook(videoUrl); // Will create new
-                notebookId = fresh.notebookId;
-                sourceId = fresh.sourceId;
-
-                // Trigger again for fresh notebook
-                logToFile("[NativeFetch] 🚀 Triggering Infographic (Retry)...");
-                const retryPayload = [[2], notebookId, [null, null, 7, [[[sourceId]]], null, null, null, null, null, null, null, null, null, null, [[null, null, null, 1, 2]]]];
-                await this._executeRpc(RPC_GENERATE_INFOGRAPHIC, retryPayload);
-
-                return await this.pollForArtifacts(notebookId);
-            }
-            throw e;
+        // ── IDEMPOTENCY ──
+        // prepareNotebook only reuses the NOTEBOOK. Without the check below, every
+        // generate_infographic call — even a cache hit on the same notebook —
+        // fired a fresh GENERATE_INFOGRAPHIC and left another artifact behind, so
+        // a model that re-requested on each slow/failed attempt piled up 15+
+        // infographics on one notebook (see incident logs). Reuse an existing
+        // infographic instead: if one is already rendered, return it; if one
+        // exists but is still rendering, poll it — do NOT trigger another.
+        //
+        // `opts.forceNew` lets a caller who already asked the user — and got
+        // "generate a new one" as the answer — bypass the rendered-image reuse
+        // below. It never bypasses the still-rendering case: there's nothing
+        // usable yet to offer the user a choice over, and re-triggering a
+        // generation that's already in flight is exactly the pileup bug this
+        // guard exists to prevent, regardless of forceNew.
+        const existing = await this._listInfographicState(notebookId);
+        if (existing.imageUrl && !opts?.forceNew) {
+            logToFile(`[NativeFetch] ♻️ Infographic already rendered on ${notebookId} — reusing it, no new generation.`);
+            return existing.imageUrl;
         }
+        if (existing.hasArtifact && !existing.imageUrl) {
+            logToFile(`[NativeFetch] ⏳ Infographic already exists on ${notebookId} but is still rendering — polling, not re-triggering.`);
+            return await this.pollForArtifacts(notebookId);
+        }
+
+        // No usable infographic on this notebook yet (or the user explicitly
+        // asked for a new one) — trigger exactly one, then poll.
+        logToFile("[NativeFetch] 🚀 Triggering Infographic...");
+        const triggerPayload = [[2], notebookId, [null, null, 7, [[[sourceId]]], null, null, null, null, null, null, null, null, null, null, [[null, null, null, 1, 2]]]];
+        const triggerRes = await this._executeRpc(RPC_GENERATE_INFOGRAPHIC, triggerPayload);
+        // A rejection (e.g. Google's daily infographic quota, surfaced in the UI
+        // as "You have reached your daily infographic limit") shows up here on
+        // the trigger call itself — fail fast rather than polling for something
+        // that was never queued.
+        const triggerErr = triggerRes?.[0]?.[5];
+        if (Array.isArray(triggerErr) && triggerErr.length > 0) {
+            logToFile(`[NativeFetch] ❌ Infographic trigger rejected: ${JSON.stringify(triggerErr).slice(0, 300)}`);
+            throw new Error(`NotebookLM rejected the request (gRPC code ${triggerErr[0]}). This can mean a daily generation limit or quota was hit — check the NotebookLM Studio panel.`);
+        }
+
+        return await this.pollForArtifacts(notebookId);
     }
 
     async queryNotebook(notebookId: string, sourceId: string, prompt: string): Promise<string> {
@@ -906,8 +1360,8 @@ export class NativeFetchClient {
         return summary;
     }
 
-    async query(url: string, question: string, specificSourceId?: string): Promise<string> {
-        let { notebookId, sourceId } = await this.prepareNotebook(url);
+    async query(url: string, question: string, specificSourceId?: string, notebookIdOverride?: string): Promise<string> {
+        let { notebookId, sourceId } = await this.prepareNotebook(url, notebookIdOverride);
 
         if (specificSourceId) {
             sourceId = specificSourceId;
@@ -918,7 +1372,7 @@ export class NativeFetchClient {
         return await this.queryNotebook(notebookId, sourceId, question);
     }
 
-    async generateSummary(videoUrl: string): Promise<string> {
+    async generateSummary(videoUrl: string, notebookIdOverride?: string): Promise<string> {
         // Check cache before prepareNotebook to know if we need the delay
         const cacheFile = this.getCacheFile();
         let wasCached = false;
@@ -929,7 +1383,7 @@ export class NativeFetchClient {
             }
         } catch { }
 
-        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl);
+        const { notebookId, sourceId } = await this.prepareNotebook(videoUrl, notebookIdOverride);
 
         if (!wasCached) {
             logToFile("[NativeFetch] ⏳ Waiting 10s for new notebook to process transcript...");
