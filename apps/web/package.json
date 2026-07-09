@@ -32,7 +32,6 @@
     "@tanstack/react-virtual": "^3.13.23",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
     "monaco-editor": "^0.55.1",
     "next": "^16.2.0",

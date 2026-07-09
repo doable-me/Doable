@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, apiListCollaborators, apiRemoveCollaborator, type ApiEffectiveAiConfig, type ApiAiProvider, type ApiCollaborator } from "@/lib/api";
 import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
-import JSZip from "jszip";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useAuth } from "@/hooks/use-auth";
 import { CollaborationProvider } from "@/modules/collaboration";
@@ -4534,48 +4533,28 @@ function EditorPageInner() {
 
   // ─── Toolbar action handlers ────────────────────────────────
 
-  // Download project as ZIP (client-side: fetch all files and create ZIP)
   const handleDownloadZip = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/projects/${resolvedProjectId}/files`, {
+      const res = await fetch(`${API_URL}/projects/${resolvedProjectId}/download`, {
+        method: "POST",
         headers: authHeaders(),
       });
-      if (!res.ok) throw new Error("Failed to fetch file list");
-      const json = (await res.json()) as { data: string[] };
-      const paths = json.data;
+      if (!res.ok) throw new Error("Failed to download project");
+      const blob = await res.blob();
 
-      // Fetch all file contents
-      const files: { path: string; content: string }[] = [];
-      for (const p of paths) {
-        try {
-          const fRes = await fetch(
-            `${API_URL}/projects/${resolvedProjectId}/files/${encodeURIComponent(p)}`,
-            { headers: authHeaders() },
-          );
-          if (fRes.ok) {
-            const fJson = (await fRes.json()) as { data: { path: string; content: string } };
-            files.push({ path: fJson.data.path, content: fJson.data.content });
-          }
-        } catch {
-          // skip files that fail
-        }
-      }
-
-      // Build a real ZIP with directory structure
-      const zip = new JSZip();
-      for (const f of files) {
-        zip.file(f.path, f.content);
-      }
-
-      const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${projectName.replace(/[^a-zA-Z0-9]/g, "_")}.zip`;
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Defer cleanup so the browser has time to start the download before the
+      // blob URL is revoked (immediate revoke races with download in Safari,
+      // Firefox, and some Chromium configurations).
+      setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 1000);
     } catch (err) {
       console.error("Download failed:", err);
     }
