@@ -23,10 +23,14 @@ export async function apiListTemplates(opts?: { category?: string; search?: stri
   return apiFetch(`/templates${qs ? `?${qs}` : ""}`);
 }
 
-export async function apiUseTemplate(templateId: string, projectName: string): Promise<{ data: { projectId: string } }> {
+export async function apiUseTemplate(
+  templateId: string,
+  projectName: string,
+  workspaceId: string
+): Promise<{ data: { projectId: string } }> {
   return apiFetch(`/templates/${templateId}/use`, {
     method: "POST",
-    body: JSON.stringify({ projectName }),
+    body: JSON.stringify({ projectName, workspaceId }),
   });
 }
 

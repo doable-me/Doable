@@ -58,11 +58,23 @@ export function UseTemplateDialog({
   async function handleRemix() {
     if (!template || !projectName.trim()) return;
 
+    // Route the remix into the workspace the user is currently in. Without
+    // this, the backend previously fell back to the user's oldest workspace,
+    // silently mis-routing template remixes (see doableinfo/workspace-bug.md).
+    const activeWorkspaceId =
+      typeof window !== "undefined"
+        ? localStorage.getItem("doable_active_workspace_id")
+        : null;
+    if (!activeWorkspaceId) {
+      setError("No active workspace selected. Please pick a workspace and try again.");
+      return;
+    }
+
     setIsCreating(true);
     setError(null);
 
     try {
-      const res = await apiUseTemplate(template.id, projectName.trim());
+      const res = await apiUseTemplate(template.id, projectName.trim(), activeWorkspaceId);
       onCreated(res.data.projectId);
     } catch (err) {
       console.error("Failed to remix project:", err);
