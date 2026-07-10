@@ -124,6 +124,24 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const token = req.cookies.get(TOKEN_COOKIE)?.value;
 
+  // Marketing landing (`/`): redirect authenticated visitors to /dashboard on
+  // the server so a logged-in user who hits `/` (e.g. via the legal pages'
+  // "Back to home" link) never sees the marketing page flash before the
+  // client-side useEffect redirect fires. See doableinfo/dmca.md.
+  //
+  // Only cookie *presence* is checked — deliberately no /auth/me round-trip on
+  // every landing hit. A stale/expired cookie is caught by the POST_AUTH_PATHS
+  // gate on the very next hop (/dashboard), which recovers via the refresh
+  // flow. Logged-out visitors (no cookie) fall through to the landing page
+  // exactly as today, so SEO and the public marketing page are unaffected.
+  if (pathname === "/") {
+    if (!token) return NextResponse.next();
+    const url = req.nextUrl.clone();
+    url.pathname = "/dashboard";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   if (ADMIN_PATHS.test(pathname)) {
     // Gate: must be an authenticated platform admin.
     if (!token) return loginRedirect(req);
@@ -165,6 +183,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/admin",
     "/admin/:path*",
     "/dashboard",
