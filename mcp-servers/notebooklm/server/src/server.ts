@@ -1135,6 +1135,7 @@ function startHttpServer(server: McpServer) {
                 return;
             }
             setCookiesFromExtension(cookies, user_token, user_agent);
+            logToFile(`[Cookies] ✅ Synced ${cookies.length} cookies for ${user_token || '__legacy__'} (agent: ${user_agent || 'unknown'})`);
 
             // Clear re-auth flag (fresh cookies received!)
             const reauthKey = user_token || '__legacy__';
