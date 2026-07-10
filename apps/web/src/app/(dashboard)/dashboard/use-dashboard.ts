@@ -30,6 +30,14 @@ export function useDashboard() {
   const speechRecognition = useSpeechRecognition((transcript: string) => {
     setPrompt((prev) => (prev ? prev + " " + transcript : transcript));
   });
+  // Surface voice-input failures to the user instead of swallowing them
+  // silently (see doableinfo/microphone_bug.md).
+  useEffect(() => {
+    if (speechRecognition.error) {
+      addToast("error", speechRecognition.error);
+      speechRecognition.clearError();
+    }
+  }, [speechRecognition.error, speechRecognition.clearError, addToast]);
   const imageAttachments = useAttachments();
 
   // Data

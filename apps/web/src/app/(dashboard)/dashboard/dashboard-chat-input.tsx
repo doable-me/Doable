@@ -183,7 +183,7 @@ export function ChatInput({
             />
           </div>
           <div className="flex items-center gap-1">
-            {isMicSupported && (
+            {isMicSupported ? (
               <button
                 onClick={onToggleMic}
                 className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
@@ -192,6 +192,15 @@ export function ChatInput({
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
                 title={isListening ? "Stop recording" : "Voice input"}
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-50 cursor-not-allowed"
+                title="Voice input isn't supported in this browser. Try Chrome or Edge."
               >
                 <Mic className="h-4 w-4" />
               </button>
