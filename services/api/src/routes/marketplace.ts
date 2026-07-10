@@ -485,6 +485,26 @@ authedRoutes.post("/marketplace/listings/:id/publish", async (c) => {
     return c.json({ error: "Source environment not found" }, 404);
   }
 
+  // Refuse to publish an empty bundle. Installing one creates an empty
+  // environment that changes nothing, which users perceive as a broken
+  // install. Publishing empty is always a mistake. See
+  // doableinfo/marketplace_bug.md.
+  const totalItems =
+    (built.summary.skills ?? 0) +
+    (built.summary.rules ?? 0) +
+    (built.summary.knowledge ?? 0) +
+    (built.summary.connectors ?? 0);
+  if (totalItems === 0) {
+    return c.json(
+      {
+        error:
+          "Cannot publish an empty bundle. Add at least one skill, rule, knowledge file, or connector.",
+        code: "EMPTY_BUNDLE",
+      },
+      400,
+    );
+  }
+
   const nextStatus: "published" | "pending" = built.requiresReview ? "pending" : "published";
   const updated = await mkt.updateListing(id, { status: nextStatus });
 

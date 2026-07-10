@@ -335,7 +335,16 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
           open={!!pendingListing}
           onOpenChange={(o) => { if (!o) setPendingListing(null); }}
           listing={pendingListing}
-          onConfirm={async () => { await install(pendingListing.id); }}
+          onConfirm={async () => {
+            const { environmentId } = await install(pendingListing.id);
+            // Give the install a visible destination: send the user to the
+            // workspace environments view where the installed environment
+            // lives. See doableinfo/marketplace_bug.md.
+            const query = environmentId
+              ? `?tab=environments&highlight=${environmentId}`
+              : "?tab=environments";
+            router.push(`/workspace-settings${query}`);
+          }}
         />
       )}
 

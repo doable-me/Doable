@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import {
   Bot, Home, Search, FolderOpen, FolderPlus, Star, UserCircle, Users,
   ChevronDown, ChevronRight, Zap, Settings, LogOut, CreditCard, Check,
-  ChevronsUpDown, Plus, Loader2, Shield, Compass, LayoutTemplate, Store, BarChart3, Server,
+  ChevronsUpDown, Plus, Loader2, Shield, Compass, LayoutTemplate, Store, BarChart3, Server, Package,
 } from "lucide-react";
 import type { Folder } from "@doable/shared";
 
@@ -299,6 +299,7 @@ export function DashboardSidebar({ onNavigate }: { onNavigate?: () => void } = {
             <NavItem icon={LayoutTemplate} label="Templates" active={pathname === "/dashboard/templates"} onClick={() => { router.push("/dashboard/templates"); onNavigate?.(); }} />
             <NavItem icon={Compass} label="Discover" active={pathname === "/discover"} onClick={() => { router.push("/discover"); onNavigate?.(); }} />
             <NavItem icon={Store} label="Marketplace" active={pathname.startsWith("/marketplace")} onClick={() => { router.push("/marketplace"); onNavigate?.(); }} />
+            <NavItem icon={Package} label="Environments" active={pathname.startsWith("/workspace-settings")} onClick={() => { router.push("/workspace-settings?tab=environments"); onNavigate?.(); }} />
             <NavItem icon={Server} label="Running instances" active={pathname.startsWith("/runtime")} onClick={() => { router.push("/runtime"); onNavigate?.(); }} />
           </div>
 

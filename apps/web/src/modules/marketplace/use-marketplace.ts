@@ -184,12 +184,20 @@ export function useMarketplaceInstalls(workspaceId: string) {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const install = useCallback(
-    async (listingId: string) => {
-      await apiFetch(`/marketplace/listings/${listingId}/install`, {
-        method: "POST",
-        body: JSON.stringify({ workspaceId }),
-      });
+    async (listingId: string): Promise<{ environmentId: string | null }> => {
+      // The endpoint returns { data: { install, environment } }. Surface the
+      // installed environment id so the caller can navigate the user to it —
+      // previously this was discarded, leaving the install with no visible
+      // destination. See doableinfo/marketplace_bug.md.
+      const res = await apiFetch<{ data?: { environment?: { id?: string } } }>(
+        `/marketplace/listings/${listingId}/install`,
+        {
+          method: "POST",
+          body: JSON.stringify({ workspaceId }),
+        },
+      );
       await refresh();
+      return { environmentId: res?.data?.environment?.id ?? null };
     },
     [workspaceId, refresh],
   );
