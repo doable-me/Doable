@@ -21,6 +21,8 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToasts } from "@/hooks/use-toasts";
+import { ToastContainer } from "@/components/ui/toast-container";
 
 // ─── Category colors ────────────────────────────────────────
 
@@ -173,6 +175,7 @@ function ProjectCard({
 
 export default function DiscoverPage() {
   const router = useRouter();
+  const { toasts, addToast, dismissToast } = useToasts();
 
   const [projects, setProjects] = useState<ApiPublicProject[]>([]);
   const [featuredProjects, setFeaturedProjects] = useState<ApiPublicProject[]>([]);
@@ -198,10 +201,11 @@ export default function DiscoverPage() {
         setCategories(cats.data.categories);
       } catch (err) {
         console.error("Failed to load community data:", err);
+        addToast("error", "Couldn't load the Discover feed. Please try again.");
       }
     }
     loadInitial();
-  }, []);
+  }, [addToast]);
 
   // ─── Load projects (paginated + filtered) ─────────────
 
@@ -218,10 +222,11 @@ export default function DiscoverPage() {
       setTotal(res.data.total);
     } catch (err) {
       console.error("Failed to discover projects:", err);
+      addToast("error", "Couldn't load projects. Please try again.");
     } finally {
       setIsLoading(false);
     }
-  }, [activeCategory, searchQuery, page]);
+  }, [activeCategory, searchQuery, page, addToast]);
 
   useEffect(() => {
     loadProjects();
@@ -236,6 +241,8 @@ export default function DiscoverPage() {
       router.push(`/editor/${res.data.projectId}`);
     } catch (err) {
       console.error("Failed to remix:", err);
+      const message = err instanceof Error ? err.message : "Failed to remix. Please try again.";
+      addToast("error", message);
       setRemixingId(null);
     }
   }
@@ -387,6 +394,7 @@ export default function DiscoverPage() {
           </>
         )}
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
