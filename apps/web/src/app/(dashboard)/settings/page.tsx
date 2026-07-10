@@ -16,11 +16,12 @@ import {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -55,6 +56,7 @@ export default function SettingsPage() {
     e.preventDefault();
     setProfileSaving(true);
     setProfileSuccess(false);
+    setProfileError(null);
     try {
       const token = localStorage.getItem("doable_access_token");
       const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -63,11 +65,18 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ displayName }),
       });
-      if (!res.ok) throw new Error("Failed to save profile");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to save profile" }));
+        throw new Error(data.error ?? "Failed to save profile");
+      }
+      // Pull the saved value back into the auth context so the profile card
+      // and dashboard user chip reflect the new name without a page reload.
+      await refreshUser();
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
     } catch (err) {
       console.error("Failed to save profile:", err);
+      setProfileError(err instanceof Error ? err.message : "Failed to save profile.");
     } finally {
       setProfileSaving(false);
     }
@@ -157,7 +166,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
-        <ProfileSection user={user} displayName={displayName} setDisplayName={setDisplayName} initials={initials} profileSaving={profileSaving} profileSuccess={profileSuccess} onSave={handleProfileSave} />
+        <ProfileSection user={user} displayName={displayName} setDisplayName={setDisplayName} initials={initials} profileSaving={profileSaving} profileSuccess={profileSuccess} profileError={profileError} onSave={handleProfileSave} />
         <SecuritySection currentPassword={currentPassword} newPassword={newPassword} confirmPassword={confirmPassword} showCurrentPassword={showCurrentPassword} showNewPassword={showNewPassword} passwordSaving={passwordSaving} passwordSuccess={passwordSuccess} passwordError={passwordError} newPasswordStrength={newPasswordStrength} setCurrentPassword={setCurrentPassword} setNewPassword={setNewPassword} setConfirmPassword={setConfirmPassword} setShowCurrentPassword={setShowCurrentPassword} setShowNewPassword={setShowNewPassword} onPasswordChange={handlePasswordChange} />
 
         <SettingsSection icon={Monitor} title="Active Sessions" description="Devices where you are currently signed in">
