@@ -103,6 +103,7 @@ export async function apiCreateProject(data: {
   prompt?: string;
   templateId?: string;
   frameworkId?: string;
+  folderId?: string;
 }): Promise<{ data: ApiProject }> {
   return apiFetch("/projects", {
     method: "POST",
