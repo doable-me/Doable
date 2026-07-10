@@ -18,6 +18,7 @@ import { renderMarkdown, CodeBlockCopyButton, ToolActivitySummary } from "./chat
 import type { AgentPhase, AgentProgressState } from "../hooks/use-agent-progress";
 import { PHASE_LABELS } from "../hooks/use-agent-progress";
 import { InlineClarificationCard } from "./plan/inline-clarification";
+import { UserInputCard } from "./user-input-card";
 
 // ─── Phase → Icon mapping ─────────────────────────────────────
 function PhaseIcon({ phase, className = "" }: { phase: AgentPhase; className?: string }) {
@@ -482,6 +483,26 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
             answer={message.clarificationQuestion.answer}
             onAnswer={handleClarificationAnswer}
             onSkip={handleClarificationSkip}
+          />
+        )}
+
+        {/* Blocking user-input prompt card (resolves a paused tool, same turn) */}
+        {!isUser && projectId && message.userInputRequest && (
+          <UserInputCard
+            projectId={projectId}
+            requestId={message.userInputRequest.requestId}
+            prompt={message.userInputRequest.prompt}
+            choices={message.userInputRequest.choices}
+            allowFreeform={message.userInputRequest.allowFreeform}
+            answered={message.userInputRequest.answered}
+            answerLabel={message.userInputRequest.answerLabel}
+            onAnswered={(answerLabel) => {
+              updateMessageFields(message.id, {
+                userInputRequest: message.userInputRequest
+                  ? { ...message.userInputRequest, answered: true, answerLabel }
+                  : undefined,
+              });
+            }}
           />
         )}
 

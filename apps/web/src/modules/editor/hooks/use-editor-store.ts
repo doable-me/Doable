@@ -104,6 +104,21 @@ export interface ChatMessage {
     answered: boolean;
     answer?: string;
   };
+  /**
+   * Blocking "ask the user" prompt raised by a tool mid-turn (e.g. NotebookLM
+   * duplicate-notebook / infographic-reuse fork). Unlike clarificationQuestion,
+   * answering does NOT start a new turn — it POSTs to /chat/user-input to
+   * resume the paused tool in the SAME streaming turn.
+   */
+  userInputRequest?: {
+    requestId: string;
+    prompt: string;
+    kind?: string;
+    choices?: { label: string; value: string }[];
+    allowFreeform: boolean;
+    answered: boolean;
+    answerLabel?: string;
+  };
   /** Interactive MCP widgets attached to this assistant message, keyed by toolCallId. */
   mcpResources?: Record<string, McpUiResource>;
 }

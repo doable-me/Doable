@@ -8,6 +8,62 @@ import { xray } from "../integrations/xray.js";
 import { fetchCtx, createTracedFetch, type HttpTraceEntry } from "../integrations/runner.js";
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import { getTracer } from "../tracing/instrumentation.js";
+import { requestUserInput, type UserInputChoice } from "../routes/chat/user-input-registry.js";
+
+/**
+ * Machine-readable "ask the user and WAIT" marker a tool may return in
+ * `structuredContent.userInputRequest`. When present (and we have a live chat
+ * stream via projectId), tool-bridge pauses the turn, surfaces a choice card,
+ * and — once the user answers — re-invokes the SAME tool with `resubmit.param`
+ * set to the chosen value. The model never sees the marker and can't
+ * auto-answer, because it never regains control until the tool resolves.
+ */
+interface UserInputMarker {
+  prompt: string;
+  kind?: string;
+  choices?: UserInputChoice[];
+  allowFreeform?: boolean;
+  resubmit: {
+    /** Tool parameter to set to the chosen value on re-invocation. */
+    param: string;
+    /** Optional coercion for the chosen value. Default: string. */
+    type?: "string" | "boolean" | "number";
+  };
+}
+
+function extractUserInputMarker(result: unknown): UserInputMarker | null {
+  const sc = (result as { structuredContent?: { userInputRequest?: unknown } } | null)?.structuredContent;
+  const raw = sc?.userInputRequest;
+  if (!raw || typeof raw !== "object") return null;
+  const m = raw as Record<string, unknown>;
+  const resubmit = m.resubmit as Record<string, unknown> | undefined;
+  if (typeof m.prompt !== "string" || !resubmit || typeof resubmit.param !== "string") return null;
+  const choices = Array.isArray(m.choices)
+    ? (m.choices as unknown[])
+        .map((c) => c as Record<string, unknown>)
+        .filter((c) => typeof c.label === "string" && typeof c.value === "string")
+        .map((c) => ({ label: c.label as string, value: c.value as string }))
+    : undefined;
+  return {
+    prompt: m.prompt,
+    kind: typeof m.kind === "string" ? m.kind : undefined,
+    choices,
+    allowFreeform: typeof m.allowFreeform === "boolean" ? m.allowFreeform : undefined,
+    resubmit: {
+      param: resubmit.param as string,
+      type: resubmit.type === "boolean" || resubmit.type === "number" ? resubmit.type : "string",
+    },
+  };
+}
+
+function coerceAnswer(value: string, type: UserInputMarker["resubmit"]["type"]): unknown {
+  if (type === "boolean") return value === "true" || value === "1" || value.toLowerCase() === "yes";
+  if (type === "number") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : value;
+  }
+  return value;
+}
 
 function dlog(msg: string) {
   if (!process.env.MCP_DEBUG) return;
@@ -128,7 +184,55 @@ export function createMcpTools(
               const client = await connectorManager.getClient(config);
 
               xr.phase("call_tool");
-              const result = await client.callTool(tool.name, args);
+              let result = await client.callTool(tool.name, args);
+
+              // ── Blocking "ask the user and WAIT" loop ──────────────
+              // If the tool returns a userInputRequest marker AND we're in a
+              // live chat turn (projectId present), pause here, surface a
+              // choice card, and re-invoke the tool with the user's answer.
+              // The model can't auto-answer because it never regains control
+              // until this resolves. Guarded against infinite chains.
+              let currentArgs = args;
+              let hops = 0;
+              while (projectId && hops < 4) {
+                const marker = extractUserInputMarker(result);
+                if (!marker || result.isError) break;
+                hops += 1;
+                console.log(`[MCP:${connectorName}] user_input_required for ${tool.name} — pausing turn (hop ${hops})`);
+                // Coalesce identical concurrent asks (e.g. summary + infographic
+                // of the same video both hitting the same "which notebook?"
+                // fork) so one card / one answer resolves them all. Keyed on the
+                // connector + kind + choice set — deliberately NOT the tool name,
+                // since different tools ask the same question. Undefined when
+                // there are no choices (freeform), so those aren't coalesced.
+                const dedupeKey = marker.choices && marker.choices.length > 0
+                  ? `${connectorId}:${marker.kind ?? "generic"}:${marker.choices.map((c) => c.value).sort().join("|")}`
+                  : undefined;
+                const answer = await requestUserInput(projectId, {
+                  prompt: marker.prompt,
+                  kind: marker.kind,
+                  choices: marker.choices,
+                  allowFreeform: marker.allowFreeform ?? false,
+                  dedupeKey,
+                });
+                if (answer.cancelled) {
+                  console.log(`[MCP:${connectorName}] user_input ${tool.name} cancelled (${answer.reason}) — returning guidance to model`);
+                  result = {
+                    content: [{
+                      type: "text",
+                      text:
+                        answer.reason === "timeout"
+                          ? "The user did not respond in time, so no choice was made and the action was not completed. Let the user know and ask again if they still want it."
+                          : "No answer channel was available to ask the user, so the action was not completed. Ask the user directly in your reply which option they want, then call this tool again with their choice.",
+                    }],
+                    isError: false,
+                  };
+                  break;
+                }
+                currentArgs = { ...currentArgs, [marker.resubmit.param]: coerceAnswer(answer.value, marker.resubmit.type) };
+                xr.phase("call_tool");
+                result = await client.callTool(tool.name, currentArgs);
+              }
               return { client, result };
             },
           );

@@ -215,6 +215,22 @@ export function useChat(
               },
             });
           },
+          addUserInputMessage: (req) => {
+            addMessage({
+              id: `userinput_${req.requestId}`,
+              role: "assistant",
+              content: "",
+              timestamp: new Date().toISOString(),
+              userInputRequest: {
+                requestId: req.requestId,
+                prompt: req.prompt,
+                kind: req.kind,
+                choices: req.choices,
+                allowFreeform: req.allowFreeform,
+                answered: false,
+              },
+            });
+          },
         };
 
         try {

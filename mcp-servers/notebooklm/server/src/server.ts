@@ -401,7 +401,24 @@ function registerTools(server: McpServer) {
                     `STOP here — do NOT guess or auto-pick one. Ask the user which notebook they want to use (show them the titles above), and WAIT for their reply before doing anything else. ` +
                     `Once they answer, call this same tool again with the identical url and notebook_id set to the notebookId of the one they chose.`
             }],
-            meta: { status: "disambiguation_required", candidates: e.candidates }
+            // Machine-readable "ask the user and WAIT" marker. Doable's host
+            // reads structuredContent.userInputRequest, pauses the turn, shows a
+            // choice card, and re-invokes this tool with `notebook_id` set — the
+            // model never gets to auto-pick. Clients that ignore it fall back to
+            // the text instruction above.
+            structuredContent: {
+                userInputRequest: {
+                    kind: "notebook_disambiguation",
+                    prompt: `This source is in ${e.candidates.length} of your NotebookLM notebooks. Which one should I use?`,
+                    choices: e.candidates.map((c) => ({
+                        label: c.title || "(untitled notebook)",
+                        value: c.notebookId,
+                    })),
+                    allowFreeform: false,
+                    resubmit: { param: "notebook_id" },
+                },
+            },
+            _meta: { status: "disambiguation_required", candidates: e.candidates }
         };
     }
 
@@ -731,7 +748,22 @@ function registerTools(server: McpServer) {
                                         `- regenerate=false to reuse the existing infographic\n` +
                                         `- regenerate=true to generate a new one`
                                 }],
-                                meta: { status: "confirmation_required", notebookId: target.notebookId }
+                                // See buildDisambiguationResponse: Doable's host pauses
+                                // the turn on this marker and re-invokes with `regenerate`
+                                // set to the user's choice (string coerced to boolean).
+                                structuredContent: {
+                                    userInputRequest: {
+                                        kind: "infographic_confirmation",
+                                        prompt: "An infographic already exists for this video. Reuse the existing one, or generate a brand-new one?",
+                                        choices: [
+                                            { label: "Reuse existing infographic", value: "false" },
+                                            { label: "Generate a brand-new one", value: "true" },
+                                        ],
+                                        allowFreeform: false,
+                                        resubmit: { param: "regenerate", type: "boolean" },
+                                    },
+                                },
+                                _meta: { status: "confirmation_required", notebookId: target.notebookId }
                             };
                         }
                     } catch (e: any) {

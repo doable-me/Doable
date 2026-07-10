@@ -13,10 +13,36 @@ import { authMiddleware, type AuthEnv } from "../../middleware/auth.js";
 import { projectSessions, activeRequests } from "./session-state.js";
 import { ENCRYPTION_KEY } from "../../lib/secrets.js";
 import { readStreamBuffer } from "./stream-buffer.js";
+import { resolveUserInput } from "./user-input-registry.js";
 
 const aiSettingsDb = aiSettingsQueries(sql, ENCRYPTION_KEY);
 
 export function registerMiscRoutes(app: Hono<AuthEnv>) {
+  // ─── POST /projects/:id/chat/user-input ──
+  // Answer a blocking "ask the user" prompt raised by a tool mid-turn (e.g.
+  // the NotebookLM duplicate-notebook / infographic-reuse forks). Resolves the
+  // paused tool handler so the SAME streaming turn continues — this is NOT a
+  // new chat message. authMiddleware for /projects/:id/chat/* is applied in
+  // the chat index router.
+  app.post("/projects/:id/chat/user-input", async (c) => {
+    const projectId = c.req.param("id");
+    let body: { requestId?: string; value?: string; freeform?: boolean };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ ok: false, error: "invalid JSON body" }, 400);
+    }
+    const requestId = typeof body.requestId === "string" ? body.requestId : "";
+    const value = typeof body.value === "string" ? body.value : "";
+    const freeform = body.freeform === true;
+    if (!requestId) return c.json({ ok: false, error: "requestId required" }, 400);
+    const accepted = resolveUserInput(requestId, value, freeform, projectId);
+    // 409 (not 404) so the client can distinguish "already answered / expired"
+    // from a bad route, and show a gentle "this prompt is no longer active".
+    if (!accepted) return c.json({ ok: false, error: "no matching pending request" }, 409);
+    return c.json({ ok: true });
+  });
+
   // ─── GET /projects/:id/ai-status ──
   app.use("/projects/:id/ai-status", authMiddleware);
   app.get("/projects/:id/ai-status", async (c) => {

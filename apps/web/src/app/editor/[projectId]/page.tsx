@@ -16,6 +16,7 @@ import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning
 import { CollabPreviewSync } from "@/modules/collaboration/components/collab-preview-sync";
 import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
 import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
+import { UserInputCard } from "@/modules/editor/chat/user-input-card";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
 import { CollabPresenceSync } from "@/modules/collaboration/components/collab-presence-sync";
 import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
@@ -446,6 +447,7 @@ async function streamChat(
   onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void,
   displayContent?: string,
   onReclassify?: (text: string) => void,
+  onUserInputRequest?: (req: UserInputRequestPayload) => void,
 ) {
   let currentToken = getStoredTokens().accessToken;
 
@@ -710,6 +712,23 @@ async function streamChat(
             onProvisionSupabase({ name, reason });
           }
 
+          // Blocking "ask the user" prompt from a paused tool (e.g. NotebookLM
+          // duplicate-notebook / infographic-reuse fork). Surfaces a choice card.
+          if (parsed.type === "user_input_request" && onUserInputRequest) {
+            const d = parsed.data as Record<string, unknown> | undefined;
+            const requestId = d?.requestId as string | undefined;
+            const prompt = d?.prompt as string | undefined;
+            if (requestId && prompt) {
+              onUserInputRequest({
+                requestId,
+                prompt,
+                kind: d?.kind as string | undefined,
+                choices: Array.isArray(d?.choices) ? (d!.choices as { label: string; value: string }[]) : undefined,
+                allowFreeform: d?.allowFreeform !== false,
+              });
+            }
+          }
+
           // Small dedicated download notification — emitted alongside the
           // mcp_ui_resource event by the API so the user always gets a
           // clickable download even if the larger UI resource event is
@@ -851,10 +870,23 @@ async function streamChat(
 // reading from the live reader. Uses the same callback interface as
 // streamChat so the editor state machine works identically.
 
+// Blocking "ask the user and WAIT" prompt raised by a tool mid-turn (e.g. the
+// NotebookLM duplicate-notebook / infographic-reuse fork). Surfaced as a choice
+// card; answered via POST /projects/:id/chat/user-input which resumes the
+// paused tool in the SAME streaming turn.
+interface UserInputRequestPayload {
+  requestId: string;
+  prompt: string;
+  kind?: string;
+  choices?: { label: string; value: string }[];
+  allowFreeform: boolean;
+}
+
 interface BridgeCallbacks {
   onChunk: (text: string) => void;
   onDone: () => void;
   onError: (error: string) => void;
+  onUserInputRequest?: (req: UserInputRequestPayload) => void;
   onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void;
   onToolStarted?: (toolName: string, args: Record<string, unknown>) => void;
   onThinking?: (text: string) => void;
@@ -943,6 +975,21 @@ function processOneSSEPayload(
       const d = parsed.data as Record<string, unknown> | undefined;
       const questions = d?.questions as ClarificationQuestion[] | undefined;
       if (Array.isArray(questions) && questions.length > 0) cb.onClarification(questions);
+    }
+
+    if (parsed.type === "user_input_request" && cb.onUserInputRequest) {
+      const d = parsed.data as Record<string, unknown> | undefined;
+      const requestId = d?.requestId as string | undefined;
+      const prompt = d?.prompt as string | undefined;
+      if (requestId && prompt) {
+        cb.onUserInputRequest({
+          requestId,
+          prompt,
+          kind: d?.kind as string | undefined,
+          choices: Array.isArray(d?.choices) ? (d!.choices as { label: string; value: string }[]) : undefined,
+          allowFreeform: d?.allowFreeform !== false,
+        });
+      }
     }
 
     if (parsed.type === "plan" && cb.onPlan) {
@@ -1779,6 +1826,10 @@ function EditorPageInner() {
   const [supabaseProvisionRequest, setSupabaseProvisionRequest] = useState<
     { name: string; reason: string } | null
   >(null);
+
+  // Blocking "ask the user" prompt raised by a paused tool (NotebookLM
+  // duplicate-notebook / infographic-reuse fork). Rendered as a choice card.
+  const [pendingUserInput, setPendingUserInput] = useState<UserInputRequestPayload | null>(null);
 
   // ── AI Model Selection ──
   const [selectedModelId, setSelectedModelId] = useState(() => {
@@ -3279,6 +3330,7 @@ function EditorPageInner() {
             if (short) setLiveStatus(short);
           },
           onStatusChange: (status: string) => { if (status) setLiveStatus(status); },
+          onUserInputRequest: (req) => { setPendingUserInput(req); },
           onClarification: (questions) => {
             setPendingQuestions(questions);
             setPlanPhase("clarifying");
@@ -3548,6 +3600,7 @@ function EditorPageInner() {
             onStatusChange: (status: string) => {
               if (status) setLiveStatus(status);
             },
+            onUserInputRequest: (req) => { setPendingUserInput(req); },
             onClarification: (questions) => {
               setPendingQuestions(questions);
               setPlanPhase("clarifying");
@@ -4196,6 +4249,10 @@ function EditorPageInner() {
               };
             })
           );
+        },
+        // onUserInputRequest — blocking "ask the user" prompt from a paused tool
+        (req) => {
+          setPendingUserInput(req);
         },
       );
     },
@@ -7490,6 +7547,30 @@ function EditorPageInner() {
     <ChatPopout currentUserId={authUser?.id ?? ""} />
     <ChatMessageToasts />
     <CollabPreviewSync iframeRef={iframeRef} />
+    {/* Blocking "ask the user" prompt from a paused tool (NotebookLM
+        duplicate-notebook / infographic-reuse fork). Floats above the chat
+        input so the choice is unmissable; answering resumes the paused turn. */}
+    {pendingUserInput && resolvedProjectId && (
+      <div className="fixed inset-x-0 bottom-28 z-[60] flex justify-center px-4 pointer-events-none">
+        <div className="pointer-events-auto w-full max-w-md">
+          <UserInputCard
+            key={pendingUserInput.requestId}
+            projectId={resolvedProjectId}
+            requestId={pendingUserInput.requestId}
+            prompt={pendingUserInput.prompt}
+            choices={pendingUserInput.choices}
+            allowFreeform={pendingUserInput.allowFreeform}
+            onAnswered={() =>
+              // Clear only if a newer prompt (e.g. the infographic's follow-up
+              // reuse/regenerate ask) hasn't already replaced this one.
+              setPendingUserInput((cur) =>
+                cur?.requestId === pendingUserInput.requestId ? null : cur,
+              )
+            }
+          />
+        </div>
+      </div>
+    )}
     {supabaseProvisionRequest && resolvedProjectId && workspaceId && (
       <SupabaseProvisionDialog
         open={!!supabaseProvisionRequest}

@@ -19,6 +19,14 @@ export interface SSEContext {
     options?: string[];
     context?: string;
   }) => void;
+  /** Inject a blocking "ask the user" prompt card (resolves a paused tool) */
+  addUserInputMessage?: (req: {
+    requestId: string;
+    prompt: string;
+    kind?: string;
+    choices?: { label: string; value: string }[];
+    allowFreeform: boolean;
+  }) => void;
 }
 
 /**
@@ -250,6 +258,25 @@ export function dispatchSSEEvent(
         question: q.question,
         options: Array.isArray(q.options) ? q.options : [],
         context: q.context as string | undefined,
+      });
+    }
+    return {};
+  }
+
+  // ─── Blocking user-input request (tool paused the turn) ──────
+  if (parsed.type === "user_input_request") {
+    const req = parsed.data;
+    if (req?.requestId && req?.prompt && ctx.addUserInputMessage) {
+      ctx.addUserInputMessage({
+        requestId: req.requestId,
+        prompt: req.prompt,
+        kind: req.kind,
+        choices: Array.isArray(req.choices) ? req.choices : undefined,
+        allowFreeform: req.allowFreeform !== false,
+      });
+      store.setActiveAgentProgress({ phase: "clarifying", message: "Waiting for your choice" });
+      ctx.updateMessageFields(ctx.assistantId, {
+        agentProgress: { phase: "clarifying", message: "Waiting for your choice" },
       });
     }
     return {};

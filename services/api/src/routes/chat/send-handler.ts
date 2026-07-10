@@ -42,6 +42,7 @@ import { handleAutoContinue, handleEmptyResponseRetry } from "./stream-recovery.
 import { handleAutoFixPreview, handleVersionAndMemory, handleFinalCleanup, handleStreamError } from "./post-processing.js";
 import { writeStreamBuffer, shouldBufferType, type BufferedEvent, type StreamBuffer } from "./stream-buffer.js";
 import { getRateLimitState } from "../../ai/rate-limit-state.js";
+import { registerUserInputEmitter, cancelUserInputsForProject } from "./user-input-registry.js";
 
 /**
  * BUG-TRACE-002 instrumentation helper. Wraps a post-stream phase so the
@@ -405,6 +406,17 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         };
 
         const state = createInitialState();
+
+        // Register this stream as the channel for blocking "ask the user"
+        // prompts (tools that pause mid-turn for a human decision, e.g. the
+        // NotebookLM duplicate-notebook / infographic-reuse forks). The tool
+        // handler awaits requestUserInput(); the emitter below surfaces it as
+        // a `user_input_request` SSE event the frontend renders as a choice
+        // card. Answered via POST /projects/:id/chat/user-input.
+        const unregisterUserInput = registerUserInputEmitter(projectId, (req) => {
+          stream.writeSSE({ data: JSON.stringify({ type: "user_input_request", data: req }) }).catch(() => {});
+        });
+
         const keepAlive = setInterval(async () => {
           try { await stream.writeSSE({ data: JSON.stringify({ type: "keep_alive" }) }); } catch {}
         }, 10_000);
@@ -812,6 +824,10 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
           } finally {
             unsubToolEvents();
             releaseTracker();
+            // Stop accepting user-input answers for this turn and cancel any
+            // still-pending prompt so a paused tool can't hang forever.
+            unregisterUserInput();
+            cancelUserInputsForProject(projectId);
             // Stop heartbeat messages immediately — post-processing (auto-fix,
             // version, memory) can take seconds and we don't want the frontend
             // to show stale "Building detailed presentation…" status.
@@ -870,6 +886,8 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           if (thinkingLoopWatchdog) clearInterval(thinkingLoopWatchdog);
+          unregisterUserInput();
+          cancelUserInputsForProject(projectId);
           await handleStreamError(stream, state, err, projectId, keepAlive, softHeartbeat);
           // Mark buffer as done + record error so resume clients can surface it.
           flushBuffer(true, errMsg);
