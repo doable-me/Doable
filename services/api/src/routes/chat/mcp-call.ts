@@ -12,6 +12,7 @@ import { zValidator } from "@hono/zod-validator";
 import { sql } from "../../db/index.js";
 import { projectQueries, workspaceQueries, connectorQueries } from "@doable/db";
 import { getConnectorManager, McpAuthRequiredError } from "../../mcp/connector-manager.js";
+import { persistInfographicAsset } from "../../mcp/infographic-persist.js";
 import type { AuthEnv } from "../../middleware/auth.js";
 
 const mcpCallSchema = z.object({
@@ -85,7 +86,16 @@ export function registerMcpCallRoute(app: Hono<AuthEnv>) {
             .join("\n");
           return c.json({ success: false, error: text || "Tool error", content: result.content });
         }
-        return c.json({ success: true, content: result.content });
+        // Mirror tool-bridge.ts's build-time behavior: rewrite a completed
+        // NotebookLM infographic's image_url from the raw, dev-machine-only
+        // MCP URL to a durable project-relative path (and persist the bytes
+        // into public/infographics/). Without this, an MCP-Apps component
+        // that fetches the infographic at RUNTIME via this exact endpoint
+        // (rather than the agent embedding it at build time) ends up with a
+        // URL that dies after the notebooklm job's 10-minute TTL and can
+        // never work post-deploy. Best-effort / no-op for every other tool.
+        const content = await persistInfographicAsset(projectId, toolName, result.content);
+        return c.json({ success: true, content });
       } catch (err) {
         if (err instanceof McpAuthRequiredError) {
           return c.json({ success: false, code: "AUTH_REQUIRED", error: `${err.connectorName} needs to be reconnected — sign in to load its data.`, loginUrl: err.loginUrl });
