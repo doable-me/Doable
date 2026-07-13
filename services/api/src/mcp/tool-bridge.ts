@@ -23,12 +23,23 @@ interface UserInputMarker {
   kind?: string;
   choices?: UserInputChoice[];
   allowFreeform?: boolean;
-  resubmit: {
+  /**
+   * How to re-invoke once the user answers. When OMITTED, the tool is simply
+   * retried with the SAME args — used for "fix something out-of-band, then
+   * retry" forks like re-authentication (sync your cookies, then click Retry).
+   */
+  resubmit?: {
     /** Tool parameter to set to the chosen value on re-invocation. */
     param: string;
     /** Optional coercion for the chosen value. Default: string. */
     type?: "string" | "boolean" | "number";
   };
+  /**
+   * If the user's answer equals this value, give up instead of re-invoking and
+   * return the tool's current result (e.g. the underlying auth error) so the
+   * model reports it honestly.
+   */
+  cancelValue?: string;
 }
 
 function extractUserInputMarker(result: unknown): UserInputMarker | null {
@@ -36,8 +47,8 @@ function extractUserInputMarker(result: unknown): UserInputMarker | null {
   const raw = sc?.userInputRequest;
   if (!raw || typeof raw !== "object") return null;
   const m = raw as Record<string, unknown>;
+  if (typeof m.prompt !== "string") return null;
   const resubmit = m.resubmit as Record<string, unknown> | undefined;
-  if (typeof m.prompt !== "string" || !resubmit || typeof resubmit.param !== "string") return null;
   const choices = Array.isArray(m.choices)
     ? (m.choices as unknown[])
         .map((c) => c as Record<string, unknown>)
@@ -49,14 +60,18 @@ function extractUserInputMarker(result: unknown): UserInputMarker | null {
     kind: typeof m.kind === "string" ? m.kind : undefined,
     choices,
     allowFreeform: typeof m.allowFreeform === "boolean" ? m.allowFreeform : undefined,
-    resubmit: {
-      param: resubmit.param as string,
-      type: resubmit.type === "boolean" || resubmit.type === "number" ? resubmit.type : "string",
-    },
+    resubmit:
+      resubmit && typeof resubmit.param === "string"
+        ? {
+            param: resubmit.param,
+            type: resubmit.type === "boolean" || resubmit.type === "number" ? resubmit.type : "string",
+          }
+        : undefined,
+    cancelValue: typeof m.cancelValue === "string" ? m.cancelValue : undefined,
   };
 }
 
-function coerceAnswer(value: string, type: UserInputMarker["resubmit"]["type"]): unknown {
+function coerceAnswer(value: string, type: NonNullable<UserInputMarker["resubmit"]>["type"]): unknown {
   if (type === "boolean") return value === "true" || value === "1" || value.toLowerCase() === "yes";
   if (type === "number") {
     const n = Number(value);
@@ -195,8 +210,11 @@ export function createMcpTools(
               let currentArgs = args;
               let hops = 0;
               while (projectId && hops < 4) {
+                // NB: a marker is honoured even on an isError result — the
+                // re-auth fork returns isError (so non-Doable clients still see
+                // a failure) but is recoverable once the user re-syncs cookies.
                 const marker = extractUserInputMarker(result);
-                if (!marker || result.isError) break;
+                if (!marker) break;
                 hops += 1;
                 console.log(`[MCP:${connectorName}] user_input_required for ${tool.name} — pausing turn (hop ${hops})`);
                 // Coalesce identical concurrent asks (e.g. summary + infographic
@@ -217,19 +235,33 @@ export function createMcpTools(
                 });
                 if (answer.cancelled) {
                   console.log(`[MCP:${connectorName}] user_input ${tool.name} cancelled (${answer.reason}) — returning guidance to model`);
-                  result = {
-                    content: [{
-                      type: "text",
-                      text:
-                        answer.reason === "timeout"
-                          ? "The user did not respond in time, so no choice was made and the action was not completed. Let the user know and ask again if they still want it."
-                          : "No answer channel was available to ask the user, so the action was not completed. Ask the user directly in your reply which option they want, then call this tool again with their choice.",
-                    }],
-                    isError: false,
-                  };
+                  // Keep a real error result (e.g. the auth failure) as-is so the
+                  // model reports the actual problem rather than a vague "no answer".
+                  if (!result.isError) {
+                    result = {
+                      content: [{
+                        type: "text",
+                        text:
+                          answer.reason === "timeout"
+                            ? "The user did not respond in time, so no choice was made and the action was not completed. Let the user know and ask again if they still want it."
+                            : "No answer channel was available to ask the user, so the action was not completed. Ask the user directly in your reply which option they want, then call this tool again with their choice.",
+                      }],
+                      isError: false,
+                    };
+                  }
                   break;
                 }
-                currentArgs = { ...currentArgs, [marker.resubmit.param]: coerceAnswer(answer.value, marker.resubmit.type) };
+                // The user explicitly gave up (e.g. "Cancel" on the re-auth card):
+                // stop and surface the tool's current result.
+                if (marker.cancelValue !== undefined && answer.value === marker.cancelValue) {
+                  console.log(`[MCP:${connectorName}] user_input ${tool.name} declined by user — returning current result`);
+                  break;
+                }
+                // No resubmit param => "fix it out-of-band, then retry" (re-auth):
+                // re-invoke with the SAME args.
+                if (marker.resubmit) {
+                  currentArgs = { ...currentArgs, [marker.resubmit.param]: coerceAnswer(answer.value, marker.resubmit.type) };
+                }
                 xr.phase("call_tool");
                 result = await client.callTool(tool.name, currentArgs);
               }
