@@ -254,6 +254,27 @@ authedRoutes.post("/marketplace/listings/:id/install", async (c) => {
     return c.json({ error: "Already installed in this workspace" }, 409);
   }
 
+  // Backstop for grandfathered empty listings and direct-API installs that
+  // bypass the client-side disabled button. Symmetric with the publish gate
+  // below: installing zero-of-everything materialises an empty environment
+  // that changes nothing, which users perceive as a broken install.
+  // See doableinfo/marketplace_bug.md.
+  const totalItems =
+    (listing.skill_count ?? 0) +
+    (listing.rule_count ?? 0) +
+    (listing.knowledge_count ?? 0) +
+    (listing.connector_count ?? 0);
+  if (totalItems === 0) {
+    return c.json(
+      {
+        error:
+          "This bundle is empty and cannot be installed. It has no skills, rules, knowledge, or connectors.",
+        code: "EMPTY_BUNDLE",
+      },
+      400,
+    );
+  }
+
   // Try artifact-first install path
   const format = (listing.bundle_format ?? JSON_V1_FORMAT) as
     | typeof JSON_V1_FORMAT
