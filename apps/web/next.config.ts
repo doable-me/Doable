@@ -112,8 +112,15 @@ const nextConfig: NextConfig = {
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       {
+        // `microphone=(self)` (not the empty allowlist `()`) is required for
+        // the dashboard/editor voice-input button: with `()` the browser
+        // refuses microphone access to this document at the policy layer
+        // *before* the user's per-site setting is consulted, so
+        // permissions.query({name:'microphone'}) reports "denied" and every
+        // getUserMedia / SpeechRecognition call fails with not-allowed.
+        // See doableinfo/microphone_bug.md.
         key: "Permissions-Policy",
-        value: "camera=(), microphone=(), geolocation=(), fullscreen=(self)",
+        value: "camera=(), microphone=(self), geolocation=(), fullscreen=(self)",
       },
       {
         key: "Strict-Transport-Security",
