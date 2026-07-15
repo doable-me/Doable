@@ -147,6 +147,22 @@ export function useChat(
             setActiveAgentProgress(null);
             return;
           }
+          // Doable AI disabled for this project — surface a clear message in the
+          // chat instead of a generic failure. See doableinfo/doable_ai.md.
+          if (status === 503) {
+            const body = await response.json().catch(() => ({} as { code?: string; error?: string; hint?: string }));
+            if (body.code === "AI_DISABLED_FOR_PROJECT") {
+              const message = body.error ?? "Doable AI is disabled for this project.";
+              updateMessageFields(assistantId, {
+                content: body.hint ? `${message} ${body.hint}` : message,
+                agentProgress: { phase: "failed", message },
+                isStreaming: false,
+              });
+              setStreaming(false);
+              setActiveAgentProgress(null);
+              return;
+            }
+          }
           throw new Error(`Chat request failed: ${status}`);
         }
 

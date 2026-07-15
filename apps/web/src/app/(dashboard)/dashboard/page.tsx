@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Search, Plus, GitBranch, AlertCircle, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { Loader2, Search, Plus, GitBranch, AlertCircle, ArrowUpDown, ChevronUp, ChevronDown, FolderPlus } from "lucide-react";
 import { ToastContainer } from "@/components/ui/toast-container";
 import { TemplateCard as NewTemplateCard } from "@/components/templates/template-card";
 import { DASHBOARD_EVENTS, emitDashboardEvent } from "@/components/dashboard/sidebar";
@@ -16,12 +16,14 @@ import { useDashboard } from "./use-dashboard";
 import { ACCEPTED_EXTENSIONS } from "@/hooks/use-attachments";
 import { useMyShared } from "@/modules/discover/use-my-shared";
 import { CreateProjectDialog } from "@/modules/dashboard/components/create-project-dialog";
+import { AddProjectsToFolderDialog } from "@/modules/dashboard/components/add-projects-to-folder-dialog";
 import { apiCreateProject } from "@/lib/api";
 
 export default function DashboardPage() {
   const d = useDashboard();
   const shared = useMyShared();
   const [createOpen, setCreateOpen] = useState(false);
+  const [addExistingOpen, setAddExistingOpen] = useState(false);
 
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (d.sortKey !== col) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-30" />;
@@ -257,34 +259,63 @@ export default function DashboardPage() {
 
         {/* Empty State */}
         {!d.isLoading && d.activeTab !== "templates" && d.displayProjects.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
-              {d.searchQuery || d.statusFilter !== "all" || d.starredFilter
-                ? <Search className="h-8 w-8 text-muted-foreground" />
-                : <Plus className="h-8 w-8 text-muted-foreground" />}
+          d.activeFolderId && !d.searchQuery && d.statusFilter === "all" && !d.starredFilter ? (
+            /* Folder-empty state: offer real actions instead of a decorative
+               plus icon and copy that points at a hidden chatbox.
+               See doableinfo/folder_plus_button.md. */
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="h-16 w-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
+                <FolderPlus className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-medium text-foreground mb-2">This folder is empty</h3>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Create a new project inside <strong>{d.activeFolderName ?? "this folder"}</strong>,
+                or move existing projects here.
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  onClick={() => setCreateOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Create a project here
+                </button>
+                <button
+                  onClick={() => setAddExistingOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" /> Add existing projects
+                </button>
+              </div>
             </div>
-            <h3 className="text-lg font-medium text-foreground mb-2">
-              {d.searchQuery ? "No projects found"
-                : d.statusFilter !== "all" || d.starredFilter ? "No matching projects"
-                : d.activeFolderId ? "This folder is empty"
-                : "No projects yet"}
-            </h3>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              {d.searchQuery ? `No projects match "${d.searchQuery}". Try a different search.`
-                : d.statusFilter !== "all" || d.starredFilter ? "Try adjusting your filters."
-                : "Describe what you want to build in the chat above, or import an existing project from GitHub."}
-            </p>
-            {!d.searchQuery && d.statusFilter === "all" && !d.starredFilter && !d.activeFolderId && (
-              <button onClick={() => d.setShowImportGitHub(true)} className="mt-4 flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors">
-                <GitBranch className="h-3.5 w-3.5" /> Import from GitHub
-              </button>
-            )}
-            {(d.searchQuery || d.statusFilter !== "all" || d.starredFilter) && (
-              <button onClick={() => { d.setSearchQuery(""); d.setStatusFilter("all"); d.setStarredFilter(false); }} className="mt-4 text-sm text-brand-400 hover:text-brand-300 transition-colors">
-                Clear all filters
-              </button>
-            )}
-          </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="h-16 w-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
+                {d.searchQuery || d.statusFilter !== "all" || d.starredFilter
+                  ? <Search className="h-8 w-8 text-muted-foreground" />
+                  : <Plus className="h-8 w-8 text-muted-foreground" />}
+              </div>
+              <h3 className="text-lg font-medium text-foreground mb-2">
+                {d.searchQuery ? "No projects found"
+                  : d.statusFilter !== "all" || d.starredFilter ? "No matching projects"
+                  : "No projects yet"}
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                {d.searchQuery ? `No projects match "${d.searchQuery}". Try a different search.`
+                  : d.statusFilter !== "all" || d.starredFilter ? "Try adjusting your filters."
+                  : "Describe what you want to build in the chat above, or import an existing project from GitHub."}
+              </p>
+              {!d.searchQuery && d.statusFilter === "all" && !d.starredFilter && (
+                <button onClick={() => d.setShowImportGitHub(true)} className="mt-4 flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors">
+                  <GitBranch className="h-3.5 w-3.5" /> Import from GitHub
+                </button>
+              )}
+              {(d.searchQuery || d.statusFilter !== "all" || d.starredFilter) && (
+                <button onClick={() => { d.setSearchQuery(""); d.setStatusFilter("all"); d.setStarredFilter(false); }} className="mt-4 text-sm text-brand-400 hover:text-brand-300 transition-colors">
+                  Clear all filters
+                </button>
+              )}
+            </div>
+          )
         )}
 
         {/* Load More */}
@@ -366,8 +397,25 @@ export default function DashboardPage() {
             templateId: input.templateId,
             frameworkId: input.frameworkId,
             workspaceId: activeWsId,
+            // When a folder is active, route the new project into it. The
+            // backend already accepts folderId; the frontend just never sent
+            // it, so folder-scoped creates silently landed in the workspace
+            // root. See doableinfo/folder_plus_button.md.
+            folderId: d.activeFolderId ?? undefined,
           });
           d.router.push(`/editor/${res.data.id}`);
+        }}
+      />
+
+      <AddProjectsToFolderDialog
+        open={addExistingOpen}
+        onOpenChange={setAddExistingOpen}
+        folderId={d.activeFolderId}
+        folderName={d.activeFolderName}
+        workspaceId={typeof window !== "undefined" ? localStorage.getItem("doable_active_workspace_id") ?? undefined : undefined}
+        onAdd={async (ids) => {
+          await Promise.all(ids.map((id) => d.handleMoveToFolder(id, d.activeFolderId)));
+          d.fetchProjects();
         }}
       />
     </div>

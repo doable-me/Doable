@@ -44,6 +44,7 @@ export function ProfileSection({
   initials,
   profileSaving,
   profileSuccess,
+  profileError,
   onSave,
 }: {
   user: { displayName?: string; email?: string; avatarUrl?: string | null } | null;
@@ -52,6 +53,7 @@ export function ProfileSection({
   initials: string;
   profileSaving: boolean;
   profileSuccess: boolean;
+  profileError: string | null;
   onSave: (e: FormEvent) => void;
 }) {
   return (
@@ -93,6 +95,11 @@ export function ProfileSection({
           />
           <p className="text-xs text-muted-foreground">Contact support to change your email address.</p>
         </div>
+        {profileError && (
+          <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            {profileError}
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {/* BUG-006: disable Save when display name is empty/whitespace-only */}
           <Button

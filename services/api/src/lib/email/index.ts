@@ -275,6 +275,26 @@ export async function initEmailService(sql: postgres.Sql): Promise<void> {
   activeProvider = await resolveProvider(sql);
   console.log(`[Email] Provider ready: ${activeProvider.name}`);
 
+  // Console-only delivery is a development convenience: it prints the email
+  // body to stdout and reports success without ever sending anything. In
+  // production that silently swallows every transactional email (password
+  // resets, invites, etc.) while the API reports 200 to the caller. Turn the
+  // silent fallback into a loud, structured boot error so ops can alert on it
+  // instead of discovering it via "the reset email never arrived".
+  // See doableinfo/forgot_password.md.
+  if (activeProvider.name === "console" && process.env.NODE_ENV === "production") {
+    console.error(
+      JSON.stringify({
+        event: "email_provider_misconfigured",
+        level: "error",
+        message:
+          "[Email] Running the console provider in production — NO email is actually being sent. Configure EMAIL_PROVIDER (resend/smtp/google) or set a provider via the admin Email panel.",
+        provider: "console",
+        env: process.env.NODE_ENV,
+      }),
+    );
+  }
+
   // Log verification status (non-blocking — admin can verify via UI)
   if (activeProvider.verify && activeProvider.name !== "console") {
     const ok = await activeProvider.verify();

@@ -8,6 +8,9 @@ import { sql } from "../db/index.js";
 import { communityQueries } from "@doable/db/queries/community";
 import { marketplaceFeaturedQueries } from "@doable/db/queries/marketplace-featured";
 import { getKVStore } from "@doable/shared/kv-store";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join, relative } from "node:path";
+import { getProjectPath } from "../ai/project-files.js";
 
 const featured = marketplaceFeaturedQueries(sql);
 const kv = getKVStore();
@@ -19,6 +22,117 @@ const COMMUNITY_CATEGORIES_TTL_MS = 5 * 60 * 1000;
 export const communityRoutes = new Hono<AuthEnv>({ strict: false });
 
 const community = communityQueries(sql);
+
+// Directories that must never be copied into a remix — build output,
+// dependencies, VCS metadata, and other regenerable state. Checked at every
+// depth, not just the top level: monorepos have nested node_modules.
+const REMIX_IGNORED_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  ".next",
+  ".turbo",
+  ".vite",
+  ".cache",
+  ".parcel-cache",
+  ".svelte-kit",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "coverage",
+  ".nyc_output",
+]);
+
+// Binary file extensions that would corrupt the project_files TEXT column
+// (NUL bytes are rejected by PostgreSQL UTF8) or bloat the payload with
+// bytes that will be regenerated anyway. Aligned with
+// version-control/snapshot.ts, which solves the same disk→TEXT problem.
+const REMIX_BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".avif", ".bmp", ".tiff",
+  ".woff", ".woff2", ".ttf", ".otf", ".eot",
+  ".mp3", ".mp4", ".webm", ".mov", ".avi", ".ogg", ".wav", ".flac",
+  ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar",
+  ".pdf", ".psd", ".ai", ".sketch",
+  ".exe", ".dll", ".so", ".dylib", ".bin", ".wasm",
+  ".class", ".jar", ".pyc",
+  ".db", ".sqlite", ".sqlite3",
+]);
+
+// Per-file cap. Anything larger than this in a source tree is either a
+// bundled binary (skip) or a runaway text blob (skip — remix isn't a
+// mirror). 1 MiB matches version-control/snapshot.ts.
+const REMIX_MAX_FILE_SIZE = 1024 * 1024;
+
+/**
+ * Read a source project's files for remixing. Prefers the on-disk tree
+ * (getProjectPath) — the live source of truth for every project once its dev
+ * server has started, and the ONLY place chat/agent-generated files live.
+ * Falls back to the project_files table for template-only projects whose disk
+ * tree was never materialized (or was garbage-collected).
+ *
+ * Previously remix read only from project_files, which is populated by
+ * template scaffolding + remix but NOT by the AI code-gen chat — so remixing
+ * any chat-built project returned "Source project has no files" (400).
+ *
+ * The walker excludes ignored directories at every depth, skips binary
+ * extensions, and enforces a per-file size cap so binary bytes never reach
+ * the project_files.content TEXT column (a NUL byte would 500 the whole
+ * transaction with "invalid byte sequence for encoding UTF8: 0x00").
+ * See doableinfo/discover-remix.md.
+ */
+async function readSourceFiles(
+  sourceProjectId: string
+): Promise<Array<{ file_path: string; content: string }>> {
+  const root = getProjectPath(sourceProjectId);
+  let hasDiskTree = false;
+  try {
+    hasDiskTree = (await stat(root)).isDirectory();
+  } catch {
+    hasDiskTree = false;
+  }
+
+  if (!hasDiskTree) {
+    // Disk tree missing → fall back to the DB side-table.
+    return sql<{ file_path: string; content: string }[]>`
+      SELECT file_path, content FROM project_files
+      WHERE project_id = ${sourceProjectId}
+    `;
+  }
+
+  const out: Array<{ file_path: string; content: string }> = [];
+  async function walk(dir: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (REMIX_IGNORED_DIRS.has(entry.name)) continue;
+        await walk(join(dir, entry.name));
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const abs = join(dir, entry.name);
+      const rel = relative(root, abs).split(/[/\\]/).join("/");
+
+      const dot = entry.name.lastIndexOf(".");
+      const ext = dot === -1 ? "" : entry.name.slice(dot).toLowerCase();
+      if (REMIX_BINARY_EXTENSIONS.has(ext)) continue;
+
+      const st = await stat(abs).catch(() => null);
+      if (!st || st.size > REMIX_MAX_FILE_SIZE) continue;
+
+      const content = await readFile(abs, "utf8").catch(() => null);
+      if (content === null) continue;
+      // Defensive: even with the extension filter, a binary blob under a
+      // text-looking name (or a file the model wrote with an embedded NUL)
+      // would 500 the transaction. Drop anything with a NUL byte.
+      if (content.includes("\u0000")) continue;
+
+      out.push({ file_path: rel, content });
+    }
+  }
+  await walk(root);
+  return out;
+}
 
 function generateProjectSlug(name: string): string {
   return (
@@ -225,14 +339,19 @@ communityRoutes.post(
       return c.json({ error: "Project not found or not public" }, 404);
     }
 
-    // Get source project files
-    const sourceFiles = await sql<{ file_path: string; content: string }[]>`
-      SELECT file_path, content FROM project_files
-      WHERE project_id = ${sourceProjectId}
-    `;
+    // Get source project files — disk-first (the live source of truth for
+    // chat-built projects), falling back to project_files for template-only
+    // projects. See doableinfo/discover-remix.md.
+    const sourceFiles = await readSourceFiles(sourceProjectId!);
 
     if (sourceFiles.length === 0) {
-      return c.json({ error: "Source project has no files" }, 400);
+      return c.json(
+        {
+          error: "Source project has no files to remix. It may be an empty draft.",
+          code: "SOURCE_HAS_NO_FILES",
+        },
+        400
+      );
     }
 
     // Get user's default workspace

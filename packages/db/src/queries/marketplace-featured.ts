@@ -31,8 +31,12 @@ export interface DiscoverFeaturedRow {
 export function marketplaceFeaturedQueries(sql: postgres.Sql) {
   return {
     async listFeaturedListings(limit = 12): Promise<MarketplaceListingWithPublisher[]> {
+      // Hide empty bundles from the featured strip. Same rationale as
+      // browseListings — installing an empty bundle is a no-op that users
+      // perceive as broken. See doableinfo/marketplace_bug.md.
       return sql<MarketplaceListingWithPublisher[]>`
         SELECT * FROM mv_marketplace_featured
+        WHERE (skill_count + rule_count + knowledge_count + connector_count) > 0
         ORDER BY install_count DESC, avg_rating DESC
         LIMIT ${Math.min(limit, 50)}
       `;

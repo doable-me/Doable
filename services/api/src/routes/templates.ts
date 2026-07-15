@@ -8,6 +8,7 @@ import { getTemplates, getTemplate, getCategories } from "../templates/registry.
 import { scaffolder } from "../templates/scaffolder.js";
 import { buildTemplatePreviewHtml } from "../templates/preview-builder.js";
 import { createProject as materializeProjectOnDisk } from "../projects/file-manager.js";
+import { getUserWorkspaceIdWithMinRole } from "./projects/helpers.js";
 
 export const templateRoutes = new Hono<AuthEnv>({ strict: false });
 
@@ -146,7 +147,7 @@ templateRoutes.post(
     "json",
     z.object({
       projectName: z.string().min(1).max(128),
-      workspaceId: z.string().uuid().optional(),
+      workspaceId: z.string().uuid(),
     })
   ),
   async (c) => {
@@ -159,19 +160,16 @@ templateRoutes.post(
       return c.json({ error: "Template not found" }, 404);
     }
 
-    // Get the user's workspace (use provided or default)
-    let wsId = workspaceId;
+    // BUG-WS-002: workspaceId is required — silently falling back to the
+    // caller's default (oldest) workspace mis-routes projects. A user with
+    // multiple workspaces who remixes a template from a non-primary workspace
+    // would have the new project land in their first workspace regardless of
+    // intent. Require an explicit workspaceId and verify the caller is at
+    // least a member of it — same hardening already applied to POST /projects
+    // (`services/api/src/routes/projects/list-routes.ts`).
+    const wsId = await getUserWorkspaceIdWithMinRole(userId, "member", workspaceId);
     if (!wsId) {
-      const [ws] = await sql<{ workspace_id: string }[]>`
-        SELECT workspace_id FROM workspace_members
-        WHERE user_id = ${userId}
-        ORDER BY joined_at ASC
-        LIMIT 1
-      `;
-      if (!ws) {
-        return c.json({ error: "No workspace found" }, 400);
-      }
-      wsId = ws.workspace_id;
+      return c.json({ error: "Access denied — requires member role or higher" }, 403);
     }
 
     // Generate slug from project name

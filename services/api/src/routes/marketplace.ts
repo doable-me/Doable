@@ -254,6 +254,27 @@ authedRoutes.post("/marketplace/listings/:id/install", async (c) => {
     return c.json({ error: "Already installed in this workspace" }, 409);
   }
 
+  // Backstop for grandfathered empty listings and direct-API installs that
+  // bypass the client-side disabled button. Symmetric with the publish gate
+  // below: installing zero-of-everything materialises an empty environment
+  // that changes nothing, which users perceive as a broken install.
+  // See doableinfo/marketplace_bug.md.
+  const totalItems =
+    (listing.skill_count ?? 0) +
+    (listing.rule_count ?? 0) +
+    (listing.knowledge_count ?? 0) +
+    (listing.connector_count ?? 0);
+  if (totalItems === 0) {
+    return c.json(
+      {
+        error:
+          "This bundle is empty and cannot be installed. It has no skills, rules, knowledge, or connectors.",
+        code: "EMPTY_BUNDLE",
+      },
+      400,
+    );
+  }
+
   // Try artifact-first install path
   const format = (listing.bundle_format ?? JSON_V1_FORMAT) as
     | typeof JSON_V1_FORMAT
@@ -483,6 +504,26 @@ authedRoutes.post("/marketplace/listings/:id/publish", async (c) => {
   });
   if (!built) {
     return c.json({ error: "Source environment not found" }, 404);
+  }
+
+  // Refuse to publish an empty bundle. Installing one creates an empty
+  // environment that changes nothing, which users perceive as a broken
+  // install. Publishing empty is always a mistake. See
+  // doableinfo/marketplace_bug.md.
+  const totalItems =
+    (built.summary.skills ?? 0) +
+    (built.summary.rules ?? 0) +
+    (built.summary.knowledge ?? 0) +
+    (built.summary.connectors ?? 0);
+  if (totalItems === 0) {
+    return c.json(
+      {
+        error:
+          "Cannot publish an empty bundle. Add at least one skill, rule, knowledge file, or connector.",
+        code: "EMPTY_BUNDLE",
+      },
+      400,
+    );
   }
 
   const nextStatus: "published" | "pending" = built.requiresReview ? "pending" : "published";

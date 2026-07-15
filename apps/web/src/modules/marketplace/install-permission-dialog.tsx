@@ -216,11 +216,20 @@ export function InstallPermissionDialog({
           )}
         </div>
 
+        {rows.length === 0 && state === "idle" && (
+          <p className="text-right text-xs text-muted-foreground">
+            Nothing to install — this bundle has no skills, rules, knowledge, or connectors.
+          </p>
+        )}
+
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={state === "installing"}>
             <X className="mr-1 h-3.5 w-3.5" /> Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={state === "installing" || state === "done"}>
+          {/* An empty bundle installs an empty environment that changes nothing —
+              the user perceives that as "nothing happened". Block it here.
+              See doableinfo/marketplace_bug.md. */}
+          <Button onClick={handleConfirm} disabled={state === "installing" || state === "done" || rows.length === 0}>
             {state === "installing" ? (
               <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Installing...</>
             ) : state === "done" ? (

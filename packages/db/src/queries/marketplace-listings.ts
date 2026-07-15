@@ -28,6 +28,19 @@ export function marketplaceListingQueries(sql: postgres.Sql) {
       // Build dynamic WHERE clauses
       const whereFragments: postgres.PendingQuery<postgres.Row[]>[] = [
         sql`ml.status = 'published'`,
+        // Hide empty bundles from the marketplace grid. Installing an empty
+        // bundle creates an empty environment that changes nothing, which
+        // users perceive as a broken install. The publish endpoint now
+        // rejects new empty bundles at publish time; this filter also hides
+        // any that were grandfathered in before that gate landed. EXISTS
+        // short-circuits so this is cheap even at scale.
+        // See doableinfo/marketplace_bug.md.
+        sql`(
+          EXISTS (SELECT 1 FROM environment_skill_refs      WHERE environment_id = ml.environment_id)
+          OR EXISTS (SELECT 1 FROM environment_rule_refs      WHERE environment_id = ml.environment_id)
+          OR EXISTS (SELECT 1 FROM environment_context_refs   WHERE environment_id = ml.environment_id)
+          OR EXISTS (SELECT 1 FROM environment_connector_refs WHERE environment_id = ml.environment_id)
+        )`,
       ];
 
       if (opts?.categorySlug) {

@@ -234,6 +234,33 @@ coreAuthRoutes.get("/me", authMiddleware, async (c) => {
   });
 });
 
+// ─── PATCH /auth/me ────────────────────────────────────────
+// Update the authenticated user's own profile. Only display_name is editable
+// here; email changes go through a separate verification flow. The settings
+// page called this endpoint but no handler existed, so every save returned a
+// silent 404 and the edit was discarded (see doableinfo/display_name.md).
+coreAuthRoutes.patch("/me", authMiddleware, async (c) => {
+  const userId = c.get("userId" as never) as string;
+  const body = await c.req.json().catch(() => ({}));
+
+  const raw = (body as { displayName?: unknown }).displayName;
+  if (typeof raw !== "string") {
+    return c.json({ error: "displayName must be a string" }, 400);
+  }
+  const sanitized = stripHtmlTags(raw).trim();
+  if (sanitized.length === 0) {
+    return c.json({ error: "Display name must contain visible text" }, 400);
+  }
+  if (sanitized.length > 80) {
+    return c.json({ error: "Display name must be 80 characters or less" }, 400);
+  }
+
+  const updated = await users.update(userId, { displayName: sanitized });
+  if (!updated) return c.json({ error: "User not found" }, 404);
+
+  return c.json({ user: sanitizeUser(updated) });
+});
+
 // ─── /auth/forgot-password and /auth/password-reset ──────────
 // Inner logic for "I forgot my password, email me a link". Returns a
 // generic envelope so callers cannot use timing or status codes to
@@ -273,14 +300,35 @@ async function processForgotPassword(emailInput: unknown): Promise<{ ok: true } 
 
     // Never let a missing SMTP config / transient mailer failure turn
     // the response into a 5xx — that would leak whether the address is
-    // registered and break the enumeration guard. sendTemplatedEmail
-    // already log-and-noops when no provider is configured.
-    await sendTemplatedEmail(user.email, "password-reset", {
+    // registered and break the enumeration guard. But DO capture the
+    // enqueue result and emit a structured log ops can alert on, instead of
+    // fire-and-forget: a silently dropped reset email is exactly the failure
+    // reported in doableinfo/forgot_password.md. The client still gets the
+    // generic 200 either way, so the enumeration guard is preserved.
+    const emailHash = createHash("sha256").update(user.email).digest("hex");
+    const enqueued = await sendTemplatedEmail(user.email, "password-reset", {
       resetUrl,
       userName: displayName,
     }).catch((err) => {
-      console.warn("[Auth] password-reset email dispatch failed (non-fatal):", err);
+      console.error(
+        JSON.stringify({
+          event: "password_reset_email_dispatch_error",
+          level: "error",
+          email_hash: emailHash,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return false;
     });
+    if (!enqueued) {
+      console.error(
+        JSON.stringify({
+          event: "password_reset_email_enqueue_failed",
+          level: "error",
+          email_hash: emailHash,
+        }),
+      );
+    }
   } catch (err) {
     console.error("[Auth] Forgot password error:", err);
     // Swallow so we still return the generic success envelope.

@@ -259,6 +259,26 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
         return c.json({ error: "Viewers cannot use AI chat" }, 403);
       }
 
+      // Honour the project's Doable AI toggle. The runtime AI proxy
+      // (/__doable/ai/*) already gates on project_ai_settings.enabled, but the
+      // editor's code-generation chat never read the row, so flipping the
+      // toggle off had no effect here. Read the same field and short-circuit
+      // with the same 503/AI_DISABLED_FOR_PROJECT contract so the client can
+      // surface a consistent error. See doableinfo/doable_ai.md.
+      const [aiRow] = await sql<{ enabled: boolean }[]>`
+        SELECT enabled FROM project_ai_settings WHERE project_id = ${projectId} LIMIT 1
+      `;
+      if (aiRow && aiRow.enabled === false) {
+        return c.json(
+          {
+            error: "Doable AI is disabled for this project",
+            code: "AI_DISABLED_FOR_PROJECT",
+            hint: "Re-enable in Project Settings → Doable AI to resume chat.",
+          },
+          503,
+        );
+      }
+
       // BUG-AI-020: enforce zero-balance before streaming begins. Previously
       // the credit pre-check did not exist, so workspaces with monthlyMax=0
       // (or fully-consumed balances) could still trigger a full chat stream
