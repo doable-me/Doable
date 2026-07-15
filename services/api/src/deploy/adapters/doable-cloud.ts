@@ -310,9 +310,26 @@ export class DoableCloudAdapter implements DeployAdapter {
       // The build adapter's outputDir is the project root for Nuxt; the
       // canonical layout is .output/{server,public}. Stage to dist-server/
       // so node-standalone can ExecStart at dist-server/index.mjs.
+      //
+      // Guard against TanStack Start: modern @lovable.dev/vite-tanstack-config
+      // (and any Nitro-based framework) ALSO emits .output/server/index.mjs
+      // — a Nitro cloudflare-module Workers entry that has NO `.listen()`
+      // and only exports `{ fetch }`. Running that under Node binds no port
+      // and the process idles/exits silently. If we didn't guard, this
+      // branch would fire AFTER the TanStack branch above and overwrite
+      // the correct dist-server/index.mjs (our TANSTACK_NODE_SERVER_ENTRY)
+      // with the unusable Workers entry — causing "deploy succeeded but
+      // URL 404s" (BUG-2026-07-15-tanstack-deploy-live-but-404, project
+      // a99b5fdc-9277-4e65-af52-f0e83782cfb2 → welcome-mat-tj35b). The
+      // TanStack branch above already staged its own Node HTTP server for
+      // this project; a real Nuxt project would not satisfy
+      // detectTanStackStart, so this only blocks the incorrect clobber.
       const nuxtOutput = path.join(PROJECTS_ROOT, projectId, ".output");
       const nuxtServer = path.join(nuxtOutput, "server", "index.mjs");
-      if (existsSync(nuxtServer)) {
+      if (
+        existsSync(nuxtServer) &&
+        !detectTanStackStart(path.join(PROJECTS_ROOT, projectId))
+      ) {
         const distServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
         await rm(distServer, { recursive: true, force: true });
         await mkdir(distServer, { recursive: true });
@@ -464,6 +481,31 @@ export class DoableCloudAdapter implements DeployAdapter {
         console.log(
           `[doable-cloud] Staged Django source layout at ${distServer} ` +
             `for project ${projectId}`
+        );
+      }
+
+      // Safety net (BUG-2026-07-15-tanstack-deploy-live-but-404): after every
+      // framework staging branch, if `dist-server/wrangler.json` still exists
+      // it means we staged a Nitro cloudflare-module Workers entry — an
+      // `index.mjs` that only exports `{ fetch }` and has no `.listen()`. When
+      // node spawns it, nothing binds a port and the process idles/exits
+      // silently, but startProcessApp would time out with an opaque "did not
+      // bind" error. Detect it here and fail with a clear, actionable message
+      // so the deployment record is marked `failed` (not `live`) and the user
+      // sees a real error instead of a URL that 404s. Applies to every
+      // framework — any branch that leaves wrangler.json in dist-server has
+      // misstaged the output.
+      const stagedDistServer = path.join(PROJECTS_ROOT, projectId, "dist-server");
+      if (existsSync(path.join(stagedDistServer, "wrangler.json"))) {
+        throw new Error(
+          `DEPLOY_TARGET_MISMATCH: staged dist-server/ contains wrangler.json, ` +
+            `which means the Nitro cloudflare-module (Cloudflare Workers) output ` +
+            `was picked as the runtime entry. Node cannot run a Workers module ` +
+            `— it exports { fetch } but never calls .listen(), so the process ` +
+            `would exit without binding a port. Expected a Node HTTP server ` +
+            `entry (created by the TanStack Start branch above, or a real Nuxt/` +
+            `SvelteKit/Astro node-adapter output). Check the framework detection ` +
+            `and staging order in adapters/doable-cloud.ts.`,
         );
       }
 

@@ -28,7 +28,8 @@ import { pythonAsgiAdapter } from "../runtime/adapters/python-asgi.js";
 import { staticFilesAdapter } from "../runtime/adapters/static-files.js";
 import { allocateProcessPort } from "../runtime/port-allocator.js";
 import { getEffectiveCfApiToken } from "../lib/cloudflare-token.js";
-import { addProcessRoute, caddyAdminAvailable } from "../runtime/caddy-admin.js";
+import { addProcessRoute, caddyAdminAvailable, removeRoute } from "../runtime/caddy-admin.js";
+import { stopProcessApp, tcpProbe } from "../runtime/process-supervisor.js";
 import type { RuntimeAdapter, RuntimeContext } from "../runtime/types.js";
 import { getProjectPath } from "../ai/project-files.js";
 import { detectTanStackStart } from "../projects/detect-tanstack-start.js";
@@ -378,23 +379,30 @@ export async function runPipeline(
     // domain (no per-host route), so registering one here would wrongly bind
     // the main domain. Process-kind apps need the subdomain topology.
     if (topology === "subdomain") {
-      try {
-        await registerRuntimeForDeploy({
-          projectId,
-          projectSlug: subdomain,
-          workspaceSlug: workspace.slug,
-          siteDir: path.join(process.env.SITES_DIR ?? "/data/sites", subdomain, environment === "preview" ? "test" : "live"),
-          projectDir: getProjectPath(projectId),
-          frameworkId: (project as { framework_id?: string }).framework_id ?? "vite-react",
-          userId,
-          publicHostname: new URL(deployResult.url).hostname,
-        });
-      } catch (err) {
-        console.warn(
-          `[pipeline] Runtime registration warning for ${projectId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
+      // BUG-2026-07-15-tanstack-deploy-live-but-404: previously this catch
+      // silently swallowed runtime-start failures — the process could exit
+      // without binding a port, and the pipeline still marked the deployment
+      // `live` with a URL that 404'd because Caddy was never wired.
+      //
+      // For process-kind frameworks (SSR: TanStack Start, Next.js standalone,
+      // Nuxt, SvelteKit, etc.) the runtime is REQUIRED for the deploy to be
+      // usable — if `startProcessApp` didn't bind the port, if `addProcessRoute`
+      // failed to reach the Caddy admin API, or if the `project_runtime` upsert
+      // errored, the public URL is dead. Rethrow so the outer catch marks the
+      // deployment `failed` with a real error message the user can act on.
+      //
+      // Static-only projects don't reach this branch (topology gate above); a
+      // failure here is always about process-kind runtime setup.
+      await registerRuntimeForDeploy({
+        projectId,
+        projectSlug: subdomain,
+        workspaceSlug: workspace.slug,
+        siteDir: path.join(process.env.SITES_DIR ?? "/data/sites", subdomain, environment === "preview" ? "test" : "live"),
+        projectDir: getProjectPath(projectId),
+        frameworkId: (project as { framework_id?: string }).framework_id ?? "vite-react",
+        userId,
+        publicHostname: new URL(deployResult.url).hostname,
+      });
     }
 
     // ── 5. Track artifacts ───────────────────────────────
@@ -574,27 +582,86 @@ async function registerRuntimeForDeploy(input: RegisterRuntimeInput): Promise<vo
     userId: input.userId,
   };
 
+  // Atomic runtime setup (BUG-2026-07-15-tanstack-deploy-live-but-404):
+  // For process-kind deploys the three steps below are mutually dependent —
+  //   (1) start the child process (must actually bind its allocated port)
+  //   (2) install the per-host Caddy reverse_proxy route so the public URL
+  //       reaches 127.0.0.1:PORT
+  //   (3) upsert the project_runtime row so the supervisor can reconcile
+  //       and the runtime is visible to /runtime/* / admin tools
+  // If any step after (1) throws, we're left with an orphan process on an
+  // allocated port with no route and no DB record. Clean up (stop process +
+  // delete route) then re-throw so the pipeline marks the deployment failed
+  // instead of leaving a "deployed but 404" URL for the user.
   const handle = await runtime.start(ctx);
 
-  // For process-kind, also insert a per-host Caddy route so traffic to
-  // the public hostname reverse-proxies to 127.0.0.1:PORT. Skip silently
-  // when the admin API isn't reachable (dev environment, etc.).
-  if (isProcess && allocatedPort && (await caddyAdminAvailable())) {
-    await addProcessRoute({
-      slug: input.projectSlug,
-      hostname: input.publicHostname,
-      upstream: { kind: "tcp-port", addr: allocatedPort.addr },
-    });
-  }
+  let processStartedForCleanup = isProcess;
+  let caddyRouteInstalledForCleanup = false;
+  try {
+    // Fix 4b (defence-in-depth): startProcessApp already polls the port for
+    // ~15s and throws if the process exits or never binds, but a
+    // framework-adapter that shells out to systemd/docker/etc. may report
+    // success without an equivalent check. Explicitly re-verify here for the
+    // TCP-port model so we NEVER mark a deploy live with a dead upstream.
+    if (isProcess && allocatedPort) {
+      const bound = await tcpProbe(
+        allocatedPort.host,
+        allocatedPort.port,
+        1500,
+      );
+      if (!bound) {
+        throw new Error(
+          `RUNTIME_UPSTREAM_DEAD: ${input.frameworkId} runtime claimed to start ` +
+            `for ${input.projectSlug} but nothing is listening on ` +
+            `${allocatedPort.host}:${allocatedPort.port}. The child process ` +
+            `probably exited before binding — check dist-server/.doable-server.log.`,
+        );
+      }
+    }
 
-  await upsertRuntimeRow({
-    projectId: input.projectId,
-    frameworkId: input.frameworkId,
-    runtimeKind: isProcess ? "process" : "static",
-    listenKind: isProcess ? "tcp-port" : null,
-    listenAddr: isProcess ? handle.listenAddr : null,
-    systemdUnit: isProcess ? handle.id : null,
-  });
+    // For process-kind, also insert a per-host Caddy route so traffic to
+    // the public hostname reverse-proxies to 127.0.0.1:PORT. Skip silently
+    // when the admin API isn't reachable (dev environment, etc.).
+    if (isProcess && allocatedPort && (await caddyAdminAvailable())) {
+      await addProcessRoute({
+        slug: input.projectSlug,
+        hostname: input.publicHostname,
+        upstream: { kind: "tcp-port", addr: allocatedPort.addr },
+      });
+      caddyRouteInstalledForCleanup = true;
+    }
+
+    await upsertRuntimeRow({
+      projectId: input.projectId,
+      frameworkId: input.frameworkId,
+      runtimeKind: isProcess ? "process" : "static",
+      listenKind: isProcess ? "tcp-port" : null,
+      listenAddr: isProcess ? handle.listenAddr : null,
+      systemdUnit: isProcess ? handle.id : null,
+    });
+  } catch (err) {
+    // Rollback partial state, best-effort. Failures during cleanup are logged
+    // but never masked — the original error is what the pipeline surfaces.
+    if (caddyRouteInstalledForCleanup) {
+      await removeRoute(input.projectSlug).catch((cleanupErr) => {
+        console.warn(
+          `[pipeline] Cleanup: removeRoute(${input.projectSlug}) failed:`,
+          cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
+        );
+      });
+    }
+    if (processStartedForCleanup) {
+      try {
+        stopProcessApp(input.projectDir);
+      } catch (cleanupErr) {
+        console.warn(
+          `[pipeline] Cleanup: stopProcessApp(${input.projectDir}) failed:`,
+          cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
+        );
+      }
+    }
+    throw err;
+  }
 }
 
 interface UpsertRuntimeRowInput {

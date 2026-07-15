@@ -23,6 +23,7 @@ import { xray } from "../integrations/xray.js";
 import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
 import { jailedSpawn } from "../sandbox/orchestrator.js";
 import { pinLovableTanstackConfigSync } from "./tanstack-pin.js";
+import { detectTanStackStart } from "../projects/detect-tanstack-start.js";
 
 const projects = projectQueries(sql);
 
@@ -332,10 +333,25 @@ export async function runBuild(
 
   const outputDir = path.join(projectDir, spec.outputDir);
 
+  // For TanStack Start projects, force Nitro's `node-server` preset. Modern
+  // @lovable.dev/vite-tanstack-config defaults Nitro to `cloudflare-module`
+  // which emits a Workers-style .output/server/index.mjs that only exports
+  // { fetch } — running it under Node binds no port. The doable-cloud staging
+  // adapter has explicit guards (dist/server/server.js takes priority, and
+  // the Nuxt branch is TanStack-guarded), but this closes the ambiguity at
+  // the source: any Nitro output emitted alongside the WinterCG dist/server/
+  // is a valid Node listener too, so a future adapter reorder or config drift
+  // cannot silently regress into publishing a Workers module.
+  // See BUG-2026-07-15-tanstack-deploy-live-but-404.
+  const tanstackNitroEnv: Record<string, string> = detectTanStackStart(projectDir)
+    ? { NITRO_PRESET: "node-server", NITRO_OUTPUT_DIR: ".output" }
+    : {};
+
   // Build the safe env once — used by both jailed and fallback paths.
   const safeEnv = buildSafeEnv({
     ...userEnvVars,
     ...spec.env,
+    ...tanstackNitroEnv,
     NODE_ENV: "production",
   });
 
