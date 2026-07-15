@@ -19,6 +19,14 @@ export interface DeployInput {
    * (admin-managed wildcard CNAME covers the hostname).
    */
   skipDnsRegistration?: boolean;
+  /**
+   * Per-app client data token (the origin-bound `dpk_c_…` key). Process-kind
+   * adapters stage it next to the runtime so the SSR server can inject
+   * `window.__DOABLE_DATA_TOKEN` into rendered HTML — the SSR analogue of the
+   * static injectDataToken(). Absent for static publishes (they inject into
+   * index.html directly).
+   */
+  dataToken?: string | null;
 }
 
 export interface DeployResult {

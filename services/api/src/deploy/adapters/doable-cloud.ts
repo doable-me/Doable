@@ -284,6 +284,20 @@ export class DoableCloudAdapter implements DeployAdapter {
         if (existsSync(tsLock)) {
           await cp(tsLock, path.join(distServer, "package-lock.json"));
         }
+        // Stage the per-app data token next to the runtime so the SSR entry
+        // (index.mjs) can inject window.__DOABLE_DATA_TOKEN into rendered HTML —
+        // the static injectDataToken() no-ops for SSR (no index.html). Written
+        // before setupProjectUser so the chown below hands it to the app user;
+        // survives host reboots (the boot reconcile re-runs the same entry which
+        // re-reads this file). It is the same client-tier key already shipped in
+        // the bundle as VITE_DOABLE_PROJECT_KEY, so this is not a new secret.
+        if (input.dataToken) {
+          await writeFile(
+            path.join(distServer, ".doable-data-token"),
+            input.dataToken,
+            "utf-8",
+          );
+        }
         installNodeProductionDeps(distServer, projectId);
         setupProjectUser(distServer, input.projectSlug);
         console.log(

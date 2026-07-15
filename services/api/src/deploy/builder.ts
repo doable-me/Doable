@@ -22,6 +22,7 @@ import {
 import { xray } from "../integrations/xray.js";
 import { shouldJail, getHardeningLevel } from "../runtime/hardening-level.js";
 import { jailedSpawn } from "../sandbox/orchestrator.js";
+import { pinLovableTanstackConfigSync } from "./tanstack-pin.js";
 
 const projects = projectQueries(sql);
 
@@ -241,6 +242,11 @@ export async function runBuild(
   // Failures here are classified as `build_failed_install` so the frontend can
   // distinguish "bad code" (build_failed_compile) from "bad deps / registry
   // unreachable" (build_failed_install) per BUG-PUB-004 acceptance criteria.
+    // Lovable TanStack Start imports: pin the vite-tanstack-config to a dist/-emitting
+  // version so the build output matches what the deploy adapter stages. No-op for
+  // non-TanStack projects; when it re-pins it forces the install below.
+  const tanstackNeedsRepin = pinLovableTanstackConfigSync(projectDir, onLog);
+
   const nodeModulesPath = path.join(projectDir, "node_modules");
   const packageJsonPath = path.join(projectDir, "package.json");
   const requiredBuildTool = (adapter as { requiredBuildTool?: string }).requiredBuildTool;
@@ -249,7 +255,7 @@ export async function runBuild(
     : null;
   const nodeModulesMissing = !existsSync(nodeModulesPath);
   const buildToolMissing = buildToolPath !== null && !existsSync(buildToolPath);
-  if (adapter.family === "node" && existsSync(packageJsonPath) && (nodeModulesMissing || buildToolMissing)) {
+  if (adapter.family === "node" && existsSync(packageJsonPath) && (nodeModulesMissing || buildToolMissing || tanstackNeedsRepin)) {
     const reason = nodeModulesMissing
       ? "node_modules/ missing"
       : `${requiredBuildTool} missing from node_modules (likely a --omit=dev install)`;
@@ -277,6 +283,20 @@ export async function runBuild(
         error: `Dependency install failed: ${message}`,
         errorCode: "build_failed_install",
       };
+    }
+  }
+
+  // A pin-triggered reinstall (npm install) prunes the @doable/* SDK that the
+  // pipeline linked before the build, so the build would fail resolving
+  // "@doable/data". Re-link after the reinstall to restore them. Only runs when
+  // we actually re-pinned (TanStack projects on a .output-emitting config).
+  if (tanstackNeedsRepin) {
+    try {
+      const { linkDoableSdk } = await import("../projects/link-sdk.js");
+      await linkDoableSdk(projectDir);
+      onLog?.("[tanstack-pin] re-linked @doable/* SDK after pin reinstall\n");
+    } catch (err) {
+      onLog?.(`[tanstack-pin] re-link warning: ${err instanceof Error ? err.message : String(err)}\n`);
     }
   }
 
@@ -391,7 +411,7 @@ export async function runBuild(
   // on the root/raw paths too — running the local bin directly.
   let baseCmd = spec.command;
   let baseArgs = spec.args;
-  if (baseCmd === "npx" && baseArgs.length > 0) {
+  if (baseCmd === "npx" && baseArgs.length > 0 && baseArgs[0]) {
     baseCmd = path.join(projectDir, "node_modules", ".bin", baseArgs[0]);
     baseArgs = baseArgs.slice(1);
   }

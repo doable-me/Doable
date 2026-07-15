@@ -38,6 +38,7 @@ import { Readable } from "node:stream";
 import { stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import handlerMod from "./dist/server/server.js";
 
 const handler = handlerMod && handlerMod.fetch ? handlerMod : (handlerMod && handlerMod.default);
@@ -49,6 +50,19 @@ if (!handler || typeof handler.fetch !== "function") {
 const CLIENT = fileURLToPath(new URL("./dist/client/", import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
+// Per-app data token for @doable/ai|data (they read globalThis.__DOABLE_DATA_TOKEN).
+// From env or the .doable-data-token file staged next to this entry by
+// doable-cloud. Injected into SSR HTML below — the SSR analogue of the static
+// injectDataToken() (which needs an index.html the SSR path doesn't produce).
+const DATA_TOKEN = (() => {
+  if (process.env.__DOABLE_DATA_TOKEN) return process.env.__DOABLE_DATA_TOKEN;
+  try {
+    return readFileSync(fileURLToPath(new URL("./.doable-data-token", import.meta.url)), "utf8").trim();
+  } catch { return ""; }
+})();
+const TOKEN_SNIPPET = DATA_TOKEN
+  ? "<script>window.__DOABLE_DATA_TOKEN=" + JSON.stringify(DATA_TOKEN) + ";</script>"
+  : "";
 const MIME = {
   ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
   ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml",
@@ -96,6 +110,25 @@ createServer(async (req, res) => {
     });
     const out = {};
     response.headers.forEach((v, k) => { out[k] = v; });
+    const ct = response.headers.get("content-type") || "";
+    // Inject the per-app data token into SSR HTML so @doable/ai|data authenticate
+    // from the published origin (they read globalThis.__DOABLE_DATA_TOKEN, which
+    // preview sets via a bridge and static publishes bake into index.html).
+    if (TOKEN_SNIPPET && ct.includes("text/html")) {
+      let html = await response.text();
+      if (!html.includes("__DOABLE_DATA_TOKEN")) {
+        html = /<head[^>]*>/i.test(html)
+          ? html.replace(/(<head[^>]*>)/i, "$1" + TOKEN_SNIPPET)
+          : TOKEN_SNIPPET + html;
+      }
+      const buf = Buffer.from(html, "utf8");
+      delete out["content-length"];
+      delete out["content-encoding"];
+      out["content-length"] = String(buf.length);
+      res.writeHead(response.status, out);
+      res.end(buf);
+      return;
+    }
     res.writeHead(response.status, out);
     if (response.body) Readable.fromWeb(response.body).pipe(res);
     else res.end();

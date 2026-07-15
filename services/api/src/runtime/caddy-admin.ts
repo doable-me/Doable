@@ -70,23 +70,54 @@ export function buildProcessRoute(input: AddProcessRouteInput): CaddyRoute {
       ? `unix/${input.upstream.path}`
       : input.upstream.addr;
 
+  // Doable SDK backend carve-out. Generated apps call SAME-ORIGIN /__doable/*
+  // (ai chat, data, connector-proxy). Static publishes get this via the
+  // wildcard Caddy block; process-kind (SSR: Next/Nuxt/TanStack Start) apps are
+  // reverse-proxied whole-host to their own server, which 404s /__doable/*
+  // (breaking AI/data after deploy though it worked in preview). Route
+  // /__doable/* to the API BEFORE the catch-all app proxy so SSR apps keep the
+  // same behaviour as preview.
+  const apiAddr = process.env.DOABLE_API_ADDR ?? "127.0.0.1:4000";
+  const fwdHeaders = {
+    request: {
+      set: {
+        "X-Forwarded-Proto": ["https"],
+        "X-Forwarded-Host": ["{http.request.host}"],
+      },
+    },
+  };
+
   return {
     "@id": routeId(input.slug),
     match: [{ host: [input.hostname] }],
     handle: [
       {
-        handler: "reverse_proxy",
-        upstreams: [{ dial }],
-        transport: { protocol: "http" },
-        load_balancing: { try_duration: "5s" },
-        headers: {
-          request: {
-            set: {
-              "X-Forwarded-Proto": ["https"],
-              "X-Forwarded-Host": ["{http.request.host}"],
-            },
+        handler: "subroute",
+        routes: [
+          {
+            match: [{ path: ["/__doable/*"] }],
+            handle: [
+              {
+                handler: "reverse_proxy",
+                upstreams: [{ dial: apiAddr }],
+                transport: { protocol: "http" },
+                headers: fwdHeaders,
+              },
+            ],
+            terminal: true,
           },
-        },
+          {
+            handle: [
+              {
+                handler: "reverse_proxy",
+                upstreams: [{ dial }],
+                transport: { protocol: "http" },
+                load_balancing: { try_duration: "5s" },
+                headers: fwdHeaders,
+              },
+            ],
+          },
+        ],
       },
     ],
     terminal: true,

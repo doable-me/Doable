@@ -333,6 +333,10 @@ export async function runPipeline(
       environment,
       basePath: publishLoc.basePath,
       skipDnsRegistration: dnsMode === "wildcard",
+      // Per-app client token: process-kind adapters stage it beside the runtime
+      // so the SSR server injects window.__DOABLE_DATA_TOKEN (static publishes
+      // bake it into index.html at 4a below). Same key as VITE_DOABLE_PROJECT_KEY.
+      dataToken: publishDataToken,
     });
     const deployTimeMs = Date.now() - deployStart;
 
