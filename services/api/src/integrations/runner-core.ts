@@ -14,6 +14,67 @@ import {
   logUsage,
 } from "./runner-helpers.js";
 
+// ─── actionName resolution (normalize model-written names) ────────────
+//
+// The generating AI sometimes calls `useIntegration(integrationId, actionName)`
+// / `doable.integrations.run(...)` with a name derived from the chat-tool name
+// (underscored, integration-prefix stripped) rather than the exact registry
+// action id — e.g. it writes `text_to_speech` when the real action is
+// `elevenlabs-text-to-speech`. Rejecting that at runtime forces a redeploy or a
+// manual code edit, both lossy. Instead we resolve the requested name to a real
+// registered action BEFORE any lookup runs — generically, for EVERY integration,
+// with no hand-maintained table: fold case + separators and allow an optional
+// integration-id prefix, matching against the actions the registry/customActions
+// actually expose. A tiny semantic map covers pure abbreviations (`tts`, `stt`)
+// that normalization alone cannot derive.
+
+const SEMANTIC_ALIASES: Record<string, Record<string, string>> = {
+  elevenlabs: {
+    tts: "elevenlabs-text-to-speech",
+    speak: "elevenlabs-text-to-speech",
+    stt: "elevenlabs-speech-to-text",
+    transcribe: "elevenlabs-speech-to-text",
+  },
+};
+
+/** Fold a name to a comparison key: lowercase, strip every non-alphanumeric. */
+function foldName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** All real action names known for an integration (custom actions + registry). */
+function knownActionNames(integrationId: string): string[] {
+  const custom = Object.keys(customActions[integrationId] ?? {});
+  const piece = getIntegration(integrationId)?.actions ?? [];
+  return Array.from(new Set([...custom, ...piece]));
+}
+
+/**
+ * Resolve a model-written actionName to a real registered action.
+ * Exact match wins; else a normalized match (case/separator-insensitive, with an
+ * optional integration-id prefix); else a small semantic-alias map. Returns the
+ * original name unchanged when nothing matches, so the caller's "not found"
+ * error still fires with the real Available list.
+ */
+function resolveActionAlias(integrationId: string, actionName: string): string {
+  const known = knownActionNames(integrationId);
+  if (known.includes(actionName)) return actionName;
+
+  const byFold = new Map(known.map((n) => [foldName(n), n]));
+  const hit = byFold.get(foldName(actionName)) ?? byFold.get(foldName(`${integrationId}${actionName}`));
+  if (hit && hit !== actionName) {
+    console.warn(`[Integration] actionName-normalize ${integrationId}: '${actionName}' → '${hit}'`);
+    return hit;
+  }
+
+  const sem = SEMANTIC_ALIASES[integrationId]?.[actionName.toLowerCase()];
+  if (sem && known.includes(sem) && sem !== actionName) {
+    console.warn(`[Integration] actionName-alias ${integrationId}: '${actionName}' → '${sem}'`);
+    return sem;
+  }
+  return actionName;
+}
+
 // ─── Main Runner ─────────────────────────────────────────
 
 export async function runAction(params: RunActionParams): Promise<RunActionResult> {
@@ -23,6 +84,10 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
   if (!def) {
     return { success: false, output: null, error: `Unknown integration: ${params.integrationId}` };
   }
+
+  // Rewrite hallucinated actionNames onto the canonical registry ids before
+  // any lookup runs. Keeps runtime forgiving while the model's naming drifts.
+  params.actionName = resolveActionAlias(params.integrationId, params.actionName);
 
   const xr = xray.start({
     kind: "integration",
@@ -76,14 +141,20 @@ export async function runAction(params: RunActionParams): Promise<RunActionResul
 
     if (!action) {
       xr.end("error", `Action '${params.actionName}' not found`);
+      // Include custom (Doable-owned) actions in the "Available" list too —
+      // otherwise the error message hides Doable-custom actions like
+      // `elevenlabs-speech-to-text` that are ONLY in customActions.
+      const pieceNames = Array.isArray(resolvedActions)
+        ? resolvedActions.map((a: any) => a.name)
+        : resolvedActions && typeof resolvedActions === "object"
+          ? Object.keys(resolvedActions)
+          : [];
+      const customNames = Object.keys(customActions[params.integrationId] ?? {});
+      const available = Array.from(new Set([...pieceNames, ...customNames]));
       return {
         success: false, output: null,
         error: `Action '${params.actionName}' not found in ${params.integrationId}. Available: ${
-          Array.isArray(resolvedActions)
-            ? resolvedActions.map((a: any) => a.name).join(", ")
-            : resolvedActions && typeof resolvedActions === "object"
-              ? Object.keys(resolvedActions).join(", ")
-              : "unknown"
+          available.length > 0 ? available.join(", ") : "unknown"
         }`,
       };
     }
@@ -230,3 +301,4 @@ export async function getIntegrationActions(integrationId: string): Promise<Arra
 export function clearPieceCache(): void {
   pieceCache.clear();
 }
+

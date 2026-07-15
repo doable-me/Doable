@@ -8,6 +8,7 @@ import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { ClarificationFlow, PlanCard, PlanProgress } from "./plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
+import { IntegrationConnectDialog } from "@/modules/integrations/integration-connect-dialog";
 import { ActivityFeedPanel } from "../panels/activity-feed-panel";
 import {
   MessageSquare, Sparkles, Wrench, X, Loader2, Zap,
@@ -320,13 +321,25 @@ export function ChatPanel() {
         )}
       </div>
 
-      {/* Integration connect card */}
+      {/* Integration connect popup — in-editor modal with credential fields
+          (mirrors the Supabase dialog UX). Falls back to the lightweight
+          link-out card only when there's no workspace context to connect in. */}
       {pendingIntegrationRequest && (
-        <IntegrationConnectCard
-          request={pendingIntegrationRequest}
-          onDismiss={() => dismissIntegrationRequest(false)}
-          onConnected={() => dismissIntegrationRequest(true)}
-        />
+        workspaceId ? (
+          <IntegrationConnectDialog
+            request={pendingIntegrationRequest}
+            workspaceId={workspaceId}
+            projectId={projectId ?? undefined}
+            onDismiss={() => dismissIntegrationRequest(false)}
+            onConnected={() => dismissIntegrationRequest(true)}
+          />
+        ) : (
+          <IntegrationConnectCard
+            request={pendingIntegrationRequest}
+            onDismiss={() => dismissIntegrationRequest(false)}
+            onConnected={() => dismissIntegrationRequest(true)}
+          />
+        )
       )}
 
       {/* Supabase provision dialog */}
