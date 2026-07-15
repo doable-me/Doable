@@ -70,7 +70,9 @@ function authedUrl(owner: string, repo: string, token: string): string {
 }
 
 function ownerRepoFromUrl(url: string): { owner: string; repo: string } | null {
-  const m = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+  // Second capture strips only a trailing ".git" suffix; internal dots in the
+  // repo name (e.g. "smart-stack-3.0-design-system-new") must be preserved.
+  const m = url.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?(?=[/#?]|$)/);
   if (!m) return null;
   return { owner: m[1]!, repo: m[2]! };
 }
