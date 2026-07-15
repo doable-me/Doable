@@ -102,6 +102,18 @@ const nextConfig: NextConfig = {
     const installApex = installHost ? apexOf(installHost) : "";
     const apexAllow = installApex ? `https://*.${installApex}` : "";
     const apexAllowWs = installApex ? `wss://*.${installApex}` : "";
+    // The live app preview runs in a CROSS-ORIGIN iframe served from the API
+    // origin (NEXT_PUBLIC_API_URL, e.g. https://staging-api.doable.me). For the
+    // generated app to use the microphone (ElevenLabs STT / doable.voice.listen)
+    // and to autoplay TTS audio, the parent Permissions-Policy must DELEGATE
+    // those features to that child origin — `self` alone is not enough for a
+    // cross-origin child — and the preview <iframe> carries
+    // allow="microphone; autoplay".
+    const apiUrlRaw = process.env.NEXT_PUBLIC_API_URL || "";
+    const previewOrigin = apiUrlRaw
+      ? (() => { try { return new URL(apiUrlRaw).origin; } catch { return ""; } })()
+      : "";
+    const micList = previewOrigin ? `(self "${previewOrigin}")` : "(self)";
     // BUG-016: CSP was applying `unsafe-eval` + `unsafe-inline` to every
     // route, neutering XSS protection. The editor route legitimately needs
     // `unsafe-eval` (Monaco worker) and inline styles (Tailwind/Monaco),
@@ -113,7 +125,7 @@ const nextConfig: NextConfig = {
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       {
         key: "Permissions-Policy",
-        value: "camera=(), microphone=(), geolocation=(), fullscreen=(self)",
+        value: `camera=(), microphone=${micList}, autoplay=${micList}, geolocation=(), fullscreen=(self)`,
       },
       {
         key: "Strict-Transport-Security",
@@ -188,3 +200,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+

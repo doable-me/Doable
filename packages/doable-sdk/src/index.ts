@@ -88,6 +88,24 @@ export interface DoableClient {
      */
     list(): Promise<{ success: boolean; data: McpTool[]; error: { code: string; message: string } | null }>;
   };
+
+  /**
+   * Voice — always-on TTS & STT. Automatically uses ElevenLabs when the
+   * integration is connected, and transparently falls back to the browser's
+   * built-in SpeechSynthesis / SpeechRecognition when it is not. Generated
+   * apps MUST use ONLY this for voice — never call the elevenlabs integration
+   * directly. Works identically whether or not ElevenLabs is set up.
+   */
+  voice: {
+    /** Speak text aloud. Resolves once playback starts. Never throws. */
+    speak(text: string, opts?: { voice?: string }): Promise<{ engine: "elevenlabs" | "browser" | "none" }>;
+    /** Stop any in-progress speech (both engines). */
+    stopSpeaking(): void;
+    /** Record one utterance from the mic and return its transcript. Never throws. */
+    listen(opts?: { lang?: string; maxMs?: number }): Promise<{ text: string; engine: "elevenlabs" | "browser" | "none" }>;
+    /** Whether ElevenLabs is connected & usable for this project. */
+    isElevenLabsAvailable(): Promise<boolean>;
+  };
 }
 
 /**
@@ -151,6 +169,26 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
 
   const tokenManager = new TokenManager(resolvedConfig.apiKey);
 
+  // Shared playback handle so voice.stopSpeaking() can halt ElevenLabs audio.
+  let currentAudio: HTMLAudioElement | null = null;
+  // Default ElevenLabs voice (Sarah) used when the caller doesn't specify one.
+  const DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL";
+  // Cheap check: is ElevenLabs an ACTIVE connection for this project?
+  // /available only lists integrations with a live vault connection.
+  const elevenLabsAvailable = async (): Promise<boolean> => {
+    try {
+      const token = await tokenManager.getToken();
+      const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+      if (resolvedConfig.projectId) headers["x-doable-project-id"] = resolvedConfig.projectId;
+      const res = await fetch(`${resolvedConfig.proxyUrl}/available`, { headers });
+      if (!res.ok) return false;
+      const body = await res.json();
+      return (body.integrations ?? []).some((i: { id?: string }) => i.id === "elevenlabs");
+    } catch {
+      return false;
+    }
+  };
+
   return {
     integrations: {
       async run<T = unknown>(
@@ -208,6 +246,135 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
         } catch (err) {
           return { success: false, data: [], error: { code: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Failed to list MCP tools" } };
         }
+      },
+    },
+
+    voice: {
+      async speak(text: string, opts?: { voice?: string }): Promise<{ engine: "elevenlabs" | "browser" | "none" }> {
+        const t = (text ?? "").trim();
+        if (!t) return { engine: "none" };
+        const canAudio = typeof window !== "undefined" && typeof Audio !== "undefined";
+        // 1. Prefer ElevenLabs when reachable. Tolerant of the return shape the
+        //    action produces (a URL string) OR an object the model might expect.
+        if (canAudio) {
+          try {
+            const r = await callProxy<unknown>(
+              "elevenlabs",
+              "elevenlabs-text-to-speech",
+              { text: t, voice: opts?.voice ?? DEFAULT_VOICE },
+              resolvedConfig,
+              tokenManager,
+            );
+            const d = r.data as unknown;
+            const url =
+              typeof d === "string"
+                ? d
+                : d && typeof d === "object"
+                  ? ((d as Record<string, unknown>).audio_url ??
+                     (d as Record<string, unknown>).url ??
+                     (d as Record<string, unknown>).audioUrl) as string | undefined
+                  : undefined;
+            if (r.success && typeof url === "string" && url) {
+              try { currentAudio?.pause(); } catch { /* ignore */ }
+              const audio = new Audio(url);
+              currentAudio = audio;
+              await audio.play();
+              return { engine: "elevenlabs" };
+            }
+          } catch { /* fall through to browser */ }
+        }
+        // 2. Fallback: browser SpeechSynthesis — always available, no key needed.
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          try {
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(t));
+            return { engine: "browser" };
+          } catch { /* ignore */ }
+        }
+        return { engine: "none" };
+      },
+
+      stopSpeaking(): void {
+        try { currentAudio?.pause(); } catch { /* ignore */ }
+        currentAudio = null;
+        try {
+          if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+        } catch { /* ignore */ }
+      },
+
+      async isElevenLabsAvailable(): Promise<boolean> {
+        return elevenLabsAvailable();
+      },
+
+      async listen(opts?: { lang?: string; maxMs?: number }): Promise<{ text: string; engine: "elevenlabs" | "browser" | "none" }> {
+        if (typeof window === "undefined") return { text: "", engine: "none" };
+        const cap = Math.min(opts?.maxMs ?? 6000, 15000);
+        // 1. ElevenLabs Scribe when connected: record a clip → base64 → transcribe.
+        if (
+          (await elevenLabsAvailable()) &&
+          typeof navigator !== "undefined" &&
+          navigator.mediaDevices?.getUserMedia &&
+          typeof MediaRecorder !== "undefined"
+        ) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const rec = new MediaRecorder(stream);
+            const chunks: Blob[] = [];
+            rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+            const stopped = new Promise<void>((resolve) => { rec.onstop = () => resolve(); });
+            rec.start();
+            await new Promise((r) => setTimeout(r, cap));
+            rec.stop();
+            await stopped;
+            stream.getTracks().forEach((tr) => tr.stop());
+            const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const s = reader.result as string;
+                resolve(s.includes(",") ? s.split(",")[1] : s);
+              };
+              reader.onerror = () => reject(new Error("read failed"));
+              reader.readAsDataURL(blob);
+            });
+            const r = await callProxy<unknown>(
+              "elevenlabs",
+              "elevenlabs-speech-to-text",
+              { audioBase64: base64, mimeType: blob.type, languageCode: opts?.lang },
+              resolvedConfig,
+              tokenManager,
+            );
+            const d = r.data as unknown;
+            const text = typeof d === "string" ? d : d && typeof d === "object" ? String((d as Record<string, unknown>).text ?? "") : "";
+            if (r.success && text) return { text, engine: "elevenlabs" };
+          } catch { /* fall through to browser */ }
+        }
+        // 2. Fallback: browser SpeechRecognition (live mic).
+        const w = window as unknown as Record<string, unknown>;
+        const SR = (w.SpeechRecognition ?? w.webkitSpeechRecognition) as (new () => any) | undefined;
+        if (SR) {
+          try {
+            return await new Promise((resolve) => {
+              const rec = new SR();
+              rec.lang = opts?.lang ?? "en-US";
+              rec.interimResults = false;
+              rec.maxAlternatives = 1;
+              let done = false;
+              const finish = (text: string) => {
+                if (done) return;
+                done = true;
+                try { rec.stop(); } catch { /* ignore */ }
+                resolve({ text, engine: "browser" });
+              };
+              rec.onresult = (e: any) => finish(e.results?.[0]?.[0]?.transcript ?? "");
+              rec.onerror = () => finish("");
+              rec.onend = () => finish("");
+              rec.start();
+              setTimeout(() => finish(""), cap);
+            });
+          } catch { /* ignore */ }
+        }
+        return { text: "", engine: "none" };
       },
     },
   };
@@ -458,3 +625,4 @@ async function callMcpProxy<T>(
 }
 
 export type { DoableSDKConfig as Config, DoableClient as Client };
+
