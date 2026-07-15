@@ -39,6 +39,7 @@ describe("data-worker/config defaults", () => {
   it("ENABLED is false only when explicitly set to '0'", async () => {
     process.env.DOABLE_APP_DB_ENABLED = "0";
     // Cache-busting query string forces a fresh module load so the env read re-runs.
+    // @ts-expect-error - query string is used for cache busting in Node.js dynamic import
     const disabled = await import("../config.js?disabled");
     assert.equal(disabled.DOABLE_APP_DB_ENABLED, false);
     delete process.env.DOABLE_APP_DB_ENABLED;
