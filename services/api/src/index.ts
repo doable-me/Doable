@@ -65,6 +65,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { sql } from "./db/index.js";
 import { handleWebSocketUpgrade } from "./routes/preview-proxy/ws-proxy.js";
+import { handleLovableChatBridge } from "./routes/preview-proxy/proxy-handler.js";
 import { rateLimiter, getTrustedClientIp } from "./middleware/rate-limit.js";
 import { getConnectorManager } from "./mcp/connector-manager.js";
 import { getCopilotManager } from "./ai/providers/copilot-manager.js";
@@ -407,6 +408,32 @@ if (_hardening === "prod" || _hardening === "staging") {
     );
   }
 }
+
+// ─── Lovable /api/chat top-level bridge ──────────────────────
+// Preview iframes for Lovable-imported TanStack Start apps run under
+// /preview/:projectId/ but use `useChat({ transport: DefaultChatTransport({
+// api: "/api/chat" }) })` — the client resolves that ROOT-relative path
+// against the iframe origin (zantaz-api.doable.me), NOT the vite base, so
+// the browser hits POST /api/chat on the API host directly, bypassing the
+// preview-proxy's own /preview/:projectId/api/chat intercept. Register a
+// top-level handler here BEFORE mountRoutes (so the per-route auth
+// middleware doesn't intercept) that pulls the projectId out of the
+// Referer header (the iframe URL always contains /preview/<uuid>/) and
+// delegates to the same handleLovableChatBridge helper. Same generic
+// bridge: no source edit to imported projects, works for every Lovable
+// AI-chat import. See BUG-2026-07-15-lovable-ai-chat.
+app.post("/api/chat", async (c) => {
+  const referer = c.req.header("referer") || c.req.header("origin") || "";
+  const match = referer.match(/\/preview\/([0-9a-f-]{36})/i);
+  if (!match || !match[1]) {
+    return c.text(
+      "No preview projectId in Referer — /api/chat is only bridged when called from a Doable preview iframe",
+      400,
+    );
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return handleLovableChatBridge(c as any, match[1]);
+});
 
 // ─── Routes ─────────────────────────────────────────────────
 mountRoutes(app);

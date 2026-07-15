@@ -63,6 +63,109 @@ const DATA_TOKEN = (() => {
 const TOKEN_SNIPPET = DATA_TOKEN
   ? "<script>window.__DOABLE_DATA_TOKEN=" + JSON.stringify(DATA_TOKEN) + ";</script>"
   : "";
+
+// Doable API origin — where /__doable/ai/chat lives. Defaults to the co-located
+// API on 127.0.0.1:4000; can be overridden with DOABLE_API_ORIGIN env for
+// cross-host installs.
+const DOABLE_API_ORIGIN = process.env.DOABLE_API_ORIGIN || "http://127.0.0.1:4000";
+
+// ── Lovable /api/chat → Doable /__doable/ai/chat bridge ──────────────────────
+// Lovable-exported TanStack Start apps ship a self-hosted AI chat pattern:
+//   client: useChat({ transport: DefaultChatTransport({ api: "/api/chat" }) })
+//   server: src/routes/api/chat.ts reads process.env.LOVABLE_API_KEY and calls
+//           createLovableAiGatewayProvider — which does not exist on Doable.
+// On Doable, AI credits + provider routing live at POST /__doable/ai/chat and
+// require Authorization: Bearer <window.__DOABLE_DATA_TOKEN>. Rather than force
+// every imported project to be rewritten, intercept POST /api/chat here BEFORE
+// the SSR handler ever sees it, translate the AI-SDK UIMessage[] body into the
+// Doable ChatMessage[] format, forward with the staged data token, and emit the
+// response in the AI-SDK v5 UI Message Stream shape @ai-sdk/react's useChat
+// expects. Non-streaming under the hood (Doable's stream:false JSON response),
+// re-emitted as a single-shot text-delta event so useChat/toUIMessageStream
+// rendering works unchanged. Applies to EVERY Lovable AI-chat import — no
+// per-project source edits, no rebuild. See BUG-2026-07-15-lovable-ai-chat.
+async function readRequestBody(req) {
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function extractText(m) {
+  if (typeof m?.content === "string") return m.content;
+  if (Array.isArray(m?.parts)) {
+    return m.parts.filter((p) => p && p.type === "text").map((p) => p.text || "").join("");
+  }
+  return "";
+}
+
+async function proxyLovableChat(req, res) {
+  const raw = await readRequestBody(req);
+  let body = {};
+  try { body = JSON.parse(raw || "{}"); } catch { body = {}; }
+  const uiMessages = Array.isArray(body.messages) ? body.messages : [];
+  const messages = uiMessages
+    .map((m) => ({ role: (m && m.role) || "user", content: extractText(m) }))
+    .filter((m) => typeof m.content === "string" && m.content.length > 0);
+  if (messages.length === 0) {
+    res.writeHead(400, { "content-type": "text/plain" });
+    res.end("Empty messages");
+    return;
+  }
+  if (!DATA_TOKEN) {
+    res.writeHead(500, { "content-type": "text/plain" });
+    res.end("Doable data token unavailable — is .doable-data-token staged?");
+    return;
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(DOABLE_API_ORIGIN + "/__doable/ai/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer " + DATA_TOKEN,
+        origin: "http://" + (req.headers.host || HOST),
+      },
+      body: JSON.stringify({ messages, stream: false }),
+    });
+  } catch (err) {
+    res.writeHead(502, { "content-type": "text/plain" });
+    res.end("Doable AI unreachable: " + (err && err.message || err));
+    return;
+  }
+  if (!upstream.ok) {
+    const errText = await upstream.text().catch(() => "");
+    res.writeHead(upstream.status, { "content-type": "text/plain" });
+    res.end("Doable AI error " + upstream.status + ": " + errText.slice(0, 500));
+    return;
+  }
+  let payload;
+  try { payload = await upstream.json(); }
+  catch { payload = { content: "" }; }
+  const content = (payload && typeof payload.content === "string") ? payload.content : "";
+
+  // AI SDK v5 UI Message Stream (single-shot). @ai-sdk/react useChat consumes
+  // these events via DefaultChatTransport and renders the assistant message.
+  const msgId = "m_" + Date.now().toString(36);
+  const events = [
+    { type: "start" },
+    { type: "start-step" },
+    { type: "text-start", id: msgId },
+    { type: "text-delta", id: msgId, delta: content },
+    { type: "text-end", id: msgId },
+    { type: "finish-step" },
+    { type: "finish" },
+  ];
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+    "x-vercel-ai-ui-message-stream": "v1",
+  });
+  for (const ev of events) res.write("data: " + JSON.stringify(ev) + "\\n\\n");
+  res.write("data: [DONE]\\n\\n");
+  res.end();
+}
 const MIME = {
   ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
   ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml",
@@ -76,6 +179,17 @@ const MIME = {
 createServer(async (req, res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+
+    // Lovable AI-chat bridge: intercept POST /api/chat BEFORE the SSR handler
+    // so Lovable-exported chatbots (which self-host /api/chat + LOVABLE_API_KEY)
+    // work on Doable without any source edit. Forwards to /__doable/ai/chat
+    // with the staged Bearer token and re-emits the response as an AI-SDK v5
+    // UI Message Stream so @ai-sdk/react's useChat renders it unchanged.
+    if (pathname === "/api/chat" && req.method === "POST") {
+      await proxyLovableChat(req, res);
+      return;
+    }
+
     // Static client asset? ("/" is always SSR; never serve directory paths.)
     if (pathname !== "/" && !pathname.endsWith("/") && !pathname.includes("..")) {
       const fp = join(CLIENT, pathname.replace(/^\\/+/, ""));

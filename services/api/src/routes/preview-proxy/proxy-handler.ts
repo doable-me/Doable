@@ -401,12 +401,152 @@ function renderInstallingDepHTML(pkg: string): string {
 </html>`;
 }
 
+/**
+ * Lovable-imported AI chat bridge (preview-side twin of the SSR-entry bridge
+ * in deploy/tanstack-node-server-entry.ts). Lovable-exported TanStack Start
+ * apps ship a client that calls the app's OWN `POST /api/chat` backend which
+ * reads `process.env.LOVABLE_API_KEY` and calls Lovable's AI gateway — a
+ * pattern that doesn't exist on Doable. In the preview iframe those relative
+ * `/api/chat` calls arrive here as `/preview/:projectId/api/chat`; forwarding
+ * them straight to vite dev either 404s or 500s. Intercept them and forward
+ * to Doable's own `/__doable/ai/chat` (per-project AI credits) with the
+ * user's identity baked into the mint (mirrors the token minted by
+ * `/preview/:projectId/__doable/token`), translating between AI-SDK
+ * UIMessage[] and Doable ChatMessage[] on the way in and re-emitting the
+ * response as an AI-SDK v5 UI Message Stream on the way out.
+ * See BUG-2026-07-15-lovable-ai-chat.
+ */
+export async function handleLovableChatBridge(
+  c: Parameters<Parameters<typeof previewRoutes.all>[1]>[0],
+  projectId: string,
+): Promise<Response> {
+  const [row] = await sql<{ workspace_id: string }[]>`
+    SELECT workspace_id FROM projects WHERE id = ${projectId} LIMIT 1
+  `;
+  if (!row) return c.text("Project not found", 404);
+
+  // Resolve viewer identity from the platform session (same two sources the
+  // /__doable/token endpoint uses). Fail-open on the userId — an anonymous
+  // preview viewer still gets to chat; the token they mint just has no user
+  // stamp, which for /__doable/ai/chat only affects per-user rate/budget
+  // accounting (project quota still applies).
+  let viewerUserId: string | undefined;
+  const authHeader = c.req.header("Authorization");
+  let sessionToken: string | undefined =
+    authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : undefined;
+  if (!sessionToken) {
+    const cookieHeader = c.req.header("Cookie") ?? "";
+    const m = cookieHeader.match(/(?:^|;\s*)doable_access_token=([^;]+)/);
+    if (m?.[1]) {
+      try { sessionToken = decodeURIComponent(m[1]); } catch { sessionToken = m[1]; }
+    }
+  }
+  if (sessionToken) {
+    try {
+      const payload = await verifyAccessToken(sessionToken);
+      if (payload.sub && UUID_RE.test(payload.sub)) viewerUserId = payload.sub;
+    } catch { /* fall through */ }
+  }
+
+  const token = await signProjectJwt(
+    {
+      projectId,
+      workspaceId: row.workspace_id,
+      ...(viewerUserId ? { userId: viewerUserId } : {}),
+      kind: "connector-proxy",
+    },
+    PROJECT_JWT_SECRET,
+  );
+
+  // Translate AI-SDK UIMessage[] → Doable ChatMessage[]
+  let body: Record<string, unknown> = {};
+  try { body = (await c.req.json()) as Record<string, unknown>; } catch { body = {}; }
+  const uiMessages = Array.isArray(body.messages) ? (body.messages as Array<Record<string, unknown>>) : [];
+  const messages = uiMessages
+    .map((m) => {
+      const role = (typeof m.role === "string" && m.role) || "user";
+      if (typeof m.content === "string") return { role, content: m.content };
+      const parts = Array.isArray(m.parts) ? (m.parts as Array<Record<string, unknown>>) : [];
+      const text = parts
+        .filter((p) => p && p.type === "text")
+        .map((p) => (typeof p.text === "string" ? p.text : ""))
+        .join("");
+      return { role, content: text };
+    })
+    .filter((m) => m.content.length > 0);
+  if (messages.length === 0) return c.text("Empty messages", 400);
+
+  const apiOrigin = process.env.DOABLE_INTERNAL_API_ORIGIN || "http://127.0.0.1:4000";
+  let upstream: Response;
+  try {
+    upstream = await fetch(apiOrigin + "/__doable/ai/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer " + token,
+        origin: apiOrigin,
+      },
+      body: JSON.stringify({ messages, stream: false }),
+    });
+  } catch (err) {
+    return c.text(
+      "Doable AI unreachable: " + (err instanceof Error ? err.message : String(err)),
+      502,
+    );
+  }
+  if (!upstream.ok) {
+    const errText = await upstream.text().catch(() => "");
+    return c.text(
+      "Doable AI error " + upstream.status + ": " + errText.slice(0, 500),
+      upstream.status as 400 | 401 | 403 | 500 | 502 | 503,
+    );
+  }
+  const payload = (await upstream.json().catch(() => ({ content: "" }))) as { content?: string };
+  const content = typeof payload.content === "string" ? payload.content : "";
+
+  // AI-SDK v5 UI Message Stream (single-shot). @ai-sdk/react useChat consumes
+  // these events via DefaultChatTransport and renders the assistant message.
+  const msgId = "m_" + Date.now().toString(36);
+  const events = [
+    { type: "start" },
+    { type: "start-step" },
+    { type: "text-start", id: msgId },
+    { type: "text-delta", id: msgId, delta: content },
+    { type: "text-end", id: msgId },
+    { type: "finish-step" },
+    { type: "finish" },
+  ];
+  const sseBody =
+    events.map((ev) => "data: " + JSON.stringify(ev) + "\n\n").join("") +
+    "data: [DONE]\n\n";
+  return new Response(sseBody, {
+    status: 200,
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-vercel-ai-ui-message-stream": "v1",
+    },
+  });
+}
+
 previewRoutes.all("/preview/:projectId/*", async (c) => {
   const projectId = c.req.param("projectId");
 
   // Validate UUID to prevent enumeration/probing (Bug-108)
   if (!UUID_RE.test(projectId)) {
     return c.text("Not found", 404);
+  }
+
+  // Lovable-imported AI chat bridge (see handleLovableChatBridge above).
+  // Intercept POST /api/chat BEFORE waking vite dev so the imported chatbot
+  // works the moment the preview loads — no reliance on the app's own
+  // /api/chat server route, no LOVABLE_API_KEY, no source edit.
+  if (c.req.method === "POST") {
+    const proxyPath = new URL(c.req.url).pathname;
+    if (proxyPath.endsWith("/api/chat")) {
+      return await handleLovableChatBridge(c, projectId);
+    }
   }
 
   // While `npm install <pkg>` is auto-running for this project (triggered by
