@@ -347,12 +347,25 @@ export async function runBuild(
     ? { NITRO_PRESET: "node-server", NITRO_OUTPUT_DIR: ".output" }
     : {};
 
+  // Modern React / TanStack Start projects with a full @radix-ui + AI-SDK +
+  // shadcn stack (700 MB+ node_modules) can blow past V8's default
+  // `--max-old-space-size` during vite's `transforming` phase — the child
+  // Node process self-aborts with "Reached heap limit" around ~510 MB when
+  // bwrap mounts a fresh /proc that hides the host's actual memory from V8.
+  // Give the build subprocess an explicit 4 GB old-space so vite/rollup can
+  // walk large dep graphs. Generic (helps ANY Node-family build), bounded
+  // (not unlimited), and user-overridable — a user-supplied NODE_OPTIONS is
+  // appended so downstream flags win. See BUG-2026-07-15-vite-oom-482b18d6.
+  const buildNodeOptions =
+    `--max-old-space-size=4096 ${(userEnvVars.NODE_OPTIONS ?? "").trim()}`.trim();
+
   // Build the safe env once — used by both jailed and fallback paths.
   const safeEnv = buildSafeEnv({
     ...userEnvVars,
     ...spec.env,
     ...tanstackNitroEnv,
     NODE_ENV: "production",
+    NODE_OPTIONS: buildNodeOptions,
   });
 
   // Wave 29: route build outbound HTTP through an operator-supplied proxy.
