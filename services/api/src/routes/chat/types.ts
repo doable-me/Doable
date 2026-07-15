@@ -48,6 +48,15 @@ export interface ChatStreamState {
    * for the editor's "Supabase provisioning complete" re-prompt instead.
    */
   awaitingSupabaseProvision: boolean;
+  /**
+   * True once `request_integration` opened the Connect-integration dialog this
+   * turn. The credential does not exist until the user completes that dialog,
+   * so auto-continue must NOT fire — otherwise the model races ahead against
+   * an empty <connected-integrations> block and guesses actionNames (e.g.
+   * `text_to_speech` instead of `elevenlabs-text-to-speech`). The turn must end
+   * and the fresh manifest is picked up on the next user message.
+   */
+  awaitingIntegrationConnect: boolean;
   /** Artifacts produced by a tool, keyed by toolName, awaiting attachment to the next tool_result for that tool. */
   pendingArtifacts: Map<string, Array<{ url: string; fileName: string; mimeType: string; sizeBytes: number }>>;
   /** Buffer for detecting untagged reasoning at the start of model output. */
@@ -114,6 +123,7 @@ export function createInitialState(): ChatStreamState {
     deferredError: undefined,
     awaitingMcpWidget: false,
     awaitingSupabaseProvision: false,
+    awaitingIntegrationConnect: false,
     pendingArtifacts: new Map(),
     leadingTextBuffer: "",
     leadingTextFlushed: false,

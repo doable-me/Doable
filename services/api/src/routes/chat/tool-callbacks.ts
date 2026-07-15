@@ -360,6 +360,14 @@ export function createToolProgressCallbacks(
             },
           };
           stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
+          // Mirror awaitingSupabaseProvision: request_integration only OPENS the
+          // Connect dialog and returns; the credential isn't live until the user
+          // completes it. Flag the turn so handleAutoContinue does NOT nudge the
+          // model to keep building — otherwise the model races ahead against an
+          // empty <connected-integrations> block and guesses actionNames
+          // (e.g. `text_to_speech` instead of `elevenlabs-text-to-speech`).
+          // The editor re-prompts once the connection exists.
+          state.awaitingIntegrationConnect = true;
         }
       }
       if (toolName === "provision_supabase") {

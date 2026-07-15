@@ -135,6 +135,18 @@ export async function handleAutoContinue(
     return;
   }
 
+  // If `request_integration` opened the Connect-integration dialog this turn,
+  // the third-party credential is not live until the user completes the popup.
+  // Auto-continuing here nudges the model to keep building against an empty
+  // <connected-integrations> block — at which point it guesses actionNames
+  // (e.g. `text_to_speech` instead of `elevenlabs-text-to-speech`) and the
+  // generated app throws at runtime. End the turn; the fresh manifest is
+  // picked up on the next user message.
+  if (state.awaitingIntegrationConnect) {
+    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — awaiting integration connect dialog`);
+    return;
+  }
+
   // BUG-VISUAL-EDIT-001: a Visual Edit turn arrives with full selector
   // context, so 3 read-only cycles is too tight a ceiling — the model often
   // legitimately needs 3-4 reads to locate the JSX before committing the
