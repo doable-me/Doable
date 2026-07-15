@@ -95,9 +95,13 @@ export async function persistInfographicAsset(
     await writeFile(destFile, bytes);
     log(`saved ${bytes.length}B -> ${destFile} (project ${projectId})`);
 
-    // Rewrite image_url to the durable, deploy-safe project-relative path so the
-    // agent embeds `<img src="/infographics/<jobId>.jpg">`.
-    payload.image_url = `/${relPath}`;
+    // Rewrite image_url to a RELATIVE project path (no leading slash) so the agent
+    // embeds `<img src="infographics/<jobId>.jpg">`. Relative resolves correctly in
+    // BOTH the editor preview (served under /preview/<projectId>/, where a leading
+    // slash would hit the auth-gated api root and return 401) AND on deploy (app
+    // root). Branch a4c09a9 shipped a leading slash — reverted here after live
+    // trace showed the preview iframe 401ing on GET /infographics/*.
+    payload.image_url = relPath;
     const rewritten = content.slice();
     rewritten[textIdx] = { type: "text", text: JSON.stringify(payload) };
     return rewritten;

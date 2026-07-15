@@ -47,6 +47,7 @@ import { teamChatRoutes } from "./routes/team-chat.js";
 import { designCommentRoutes } from "./routes/design-comments.js";
 import { internalRoutes } from "./routes/internal.js";
 import { notificationRoutes } from "./routes/notifications.js";
+import { notebooklmRoutes } from "./routes/notebooklm.js";
 import { planRoutes } from "./routes/plan.js";
 import { directSaveRoutes } from "./direct-save/index.js";
 import artifactsRoutes from "./routes/artifacts.js";
@@ -77,6 +78,12 @@ app.route("/auth", authRoutes);
 // Preview reverse proxy — forwards /preview/:projectId/* to the Vite dev server.
 // Must be before other catch-all routes.
 app.route("/", previewRoutes);
+// NotebookLM extension bridge: POST /sync-cookies + GET /auth-events. No Bearer
+// required — proxies straight to the standalone NotebookLM MCP server on
+// 127.0.0.1:3001 (which does its own per-user_token auth). Must be mounted
+// BEFORE any subrouter that installs `.use("*", authMiddleware)` on "/" so
+// the extension's tokenless requests don't get intercepted by auth.
+app.route("/", notebooklmRoutes);
 // Connector-bridge proxy — POST /__doable/connector-proxy/:integration/:action.
 // Lets static-kind generated apps reach connected integrations server-side
 // without ever holding the raw secret. JWT-protected, allowlist-gated, audited.
