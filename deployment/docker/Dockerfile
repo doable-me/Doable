@@ -40,6 +40,13 @@ COPY mcp-servers/markdown-builder/package.json mcp-servers/markdown-builder/
 COPY mcp-servers/pdf-builder/package.json mcp-servers/pdf-builder/
 COPY mcp-servers/presentation-builder/package.json mcp-servers/presentation-builder/
 COPY mcp-servers/spreadsheet-builder/package.json mcp-servers/spreadsheet-builder/
+# notebooklm/server is a workspace member (pnpm-workspace.yaml). Without
+# its package.json in this stage, `pnpm install --frozen-lockfile` errors
+# with "workspace package not found: notebooklm-mcp-server" and the whole
+# build fails. Docker deploys don't spawn NLM (only bare-metal does — the
+# notebooklm tmux window in start.sh), so we only need the resolution to
+# succeed here; no build target for it below.
+COPY mcp-servers/notebooklm/server/package.json mcp-servers/notebooklm/server/
 
 # Skip Puppeteer's bundled Chromium during `pnpm install` — the api stage
 # installs Chrome (and uses apt-chromium as the runtime executable) later.
@@ -52,6 +59,12 @@ COPY mcp-servers/spreadsheet-builder/package.json mcp-servers/spreadsheet-builde
 # `unzip` in PATH, breaking the entire build.
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+# Same reasoning for Playwright — notebooklm-mcp-server's postinstall runs
+# `playwright install chromium`, which would fetch ~180MB into the deps
+# layer for a service the Docker path never spawns. Skip it to keep the
+# image small; bare-metal server-setup.sh runs the postinstall unrestricted
+# because bare-metal actually launches NLM.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 

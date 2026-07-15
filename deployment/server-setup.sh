@@ -1293,6 +1293,17 @@ info "Building workspace packages (docore, dovault)..."
 cd "$INSTALL_DIR"
 pnpm --filter=docore run build || warn "docore build emitted errors — API may fail to start"
 pnpm --filter=dovault run build || warn "dovault build emitted errors — sandbox features may degrade"
+
+# start.sh line 77 launches `node mcp-servers/notebooklm/server/dist/server.js`
+# in the notebooklm tmux window. That path is a build artifact — it doesn't
+# exist on a fresh clone, so without this step run-service.sh crash-loops on
+# ENOENT and voice/infographic features never come up. The package build
+# script is `vite build && tsc`, but vite is only used to bundle
+# src/mcp-app.html (the embeddable MCP-App UI). server.ts is compiled by tsc
+# alone, so we invoke tsc directly and skip vite — that also avoids adding a
+# vite install-time dependency to the setup path.
+pnpm --filter=notebooklm-mcp-server exec tsc \
+  || warn "notebooklm-mcp-server build failed — voice/infographic features unavailable"
 ok "Workspace packages built"
 
 info "Building Next.js..."
