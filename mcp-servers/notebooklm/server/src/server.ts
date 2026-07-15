@@ -422,6 +422,56 @@ function registerTools(server: McpServer) {
         };
     }
 
+    // --- Helper: NotebookLM session is not authenticated ---
+    // Cookies were never synced, or the Google session expired. This is
+    // recoverable by a human action (sync cookies via the Chrome extension),
+    // so — like the disambiguation fork — we return a userInputRequest marker
+    // and let the host PAUSE the turn and ask. The marker has NO `resubmit`
+    // param: once the user re-syncs and clicks Retry, the host simply re-invokes
+    // the SAME call, and getClient() picks up the fresh cookies (the
+    // /sync-cookies handler evicts the stale cached client).
+    //
+    // isError stays true so non-Doable clients (ChatGPT / Claude Desktop), which
+    // ignore structuredContent, still see a proper failure with the text below.
+    function buildReauthResponse(userToken: string | undefined, context: string) {
+        const reauthKey = userToken || '__legacy__';
+        pushReauthEvent(reauthKey);
+        logToFile(`[MCP] 🔐 ${context}: not authenticated. Pushed reauth event for ${reauthKey} — asking user to re-sync cookies.`);
+        return {
+            content: [{
+                type: "text" as const,
+                text: `🔐 **NotebookLM needs you to sign in again.**\n\n` +
+                    `Your Google session isn't synced. Open the Doable Chrome extension, make sure you're signed in to NotebookLM, and let it sync your cookies.\n\n` +
+                    `STOP here — do NOT retry on your own and do NOT tell the user it simply failed. Ask the user to re-sync, WAIT for them to confirm, then call this same tool again with the identical arguments.`
+            }],
+            structuredContent: {
+                userInputRequest: {
+                    kind: "reauth_required",
+                    prompt: "NotebookLM isn't signed in. Open the Doable Chrome extension and sync your Google session, then hit Retry.",
+                    choices: [
+                        { label: "I've synced — retry", value: "retry" },
+                        { label: "Cancel", value: "cancel" },
+                    ],
+                    allowFreeform: false,
+                    cancelValue: "cancel",
+                    // No `resubmit` — nothing to change, just re-run the same call.
+                },
+            },
+            _meta: { status: "reauth_required" },
+            isError: true,
+        };
+    }
+
+    /** True when we hold cookies fresh enough for the native-fetch path. */
+    function hasFreshCookies(userToken: string | undefined): boolean {
+        try {
+            const { cookies, fresh } = getCookiesForUser(userToken);
+            return fresh && cookies.length > 0;
+        } catch {
+            return false;
+        }
+    }
+
     // --- Tool: ping (Debug) ---
     server.tool(
         "ping",
@@ -477,6 +527,11 @@ function registerTools(server: McpServer) {
             const notebookIdOverride = args.notebook_id;
             logToFile(`[MCP] Request: Summary for ${targetUrl} (user: ${userToken || 'legacy'})`);
             let notebookId = "unknown";
+            // Fast pre-flight: with no synced cookies this can only fail. Ask the
+            // user to sign in NOW rather than after a long doomed round-trip.
+            if (!hasFreshCookies(userToken)) {
+                return buildReauthResponse(userToken, "Summary");
+            }
             try {
                 const client = await getClient(userToken);
 
@@ -507,13 +562,7 @@ function registerTools(server: McpServer) {
                 }
                 // AUTH FAILURE HANDLER
                 if (e.message.includes("Authentication required")) {
-                    const reauthKey = userToken || '__legacy__';
-                    pushReauthEvent(reauthKey);
-                    logToFile(`[MCP] ⚠️ Summary auth failed. Pushed reauth event for ${reauthKey}.`);
-                    return {
-                        content: [{ type: "text", text: `🔐 **Authentication needed.** Your browser extension should prompt you to log in. Please try again after logging in.` }],
-                        isError: true
-                    };
+                    return buildReauthResponse(userToken, "Summary");
                 }
                 logToFile(`Error: ${e.message}`);
                 return { content: [{ type: "text", text: `Error generating summary: ${e.message}` }], isError: true };
@@ -594,7 +643,7 @@ function registerTools(server: McpServer) {
             try {
                 const client = await getClient(userToken);
                 if (!(client instanceof NativeFetchClient)) {
-                    return { content: [{ type: "text", text: "list_notebooks requires fresh synced cookies (native-fetch mode). Please re-sync via the Chrome extension." }], isError: true };
+                    return buildReauthResponse(userToken, "List notebooks");
                 }
                 const notebooks = await client.listAllNotebooks();
 
@@ -672,13 +721,7 @@ function registerTools(server: McpServer) {
                     return buildDisambiguationResponse(e);
                 }
                 if (e.message.includes("Authentication required")) {
-                    const reauthKey = userToken || '__legacy__';
-                    pushReauthEvent(reauthKey);
-                    logToFile(`[MCP] ⚠️ Question auth failed. Pushed reauth event for ${reauthKey}.`);
-                    return {
-                        content: [{ type: "text" as const, text: `🔐 **Authentication needed.** Your browser extension should prompt you to log in. Please try again after logging in.` }],
-                        isError: true
-                    };
+                    return buildReauthResponse(userToken, "Question");
                 }
                 logToFile(`Error: ${e.message}`);
                 return wrapError(`Error asking question: ${e.message}`);
@@ -705,6 +748,14 @@ function registerTools(server: McpServer) {
             const notebookIdOverride: string | undefined = flat.notebook_id;
             const regenerate: boolean | undefined = flat.regenerate;
             logToFile(`[MCP] Request: Infographic for ${video_url} (user: ${userToken || 'legacy'})`);
+
+            // Fast pre-flight: without synced cookies the native-fetch path can't
+            // work, and we'd otherwise spin up a job that fails auth and then
+            // blocks ~120s waiting for a re-sync that nobody was asked for. Ask
+            // the user to sign in up front instead.
+            if (!hasFreshCookies(userToken)) {
+                return buildReauthResponse(userToken, "Infographic");
+            }
 
             // Cleanup old jobs
             cleanupOldJobs();
@@ -771,13 +822,7 @@ function registerTools(server: McpServer) {
                             return buildDisambiguationResponse(e);
                         }
                         if (e.message?.includes("Authentication required")) {
-                            const reauthKey = userToken || '__legacy__';
-                            pushReauthEvent(reauthKey);
-                            logToFile(`[MCP] ⚠️ Infographic pre-check auth failed. Pushed reauth event for ${reauthKey}.`);
-                            return {
-                                content: [{ type: "text" as const, text: `🔐 **Authentication needed.** Your browser extension should prompt you to log in. Please try again after logging in.` }],
-                                isError: true
-                            };
+                            return buildReauthResponse(userToken, "Infographic pre-check");
                         }
                         // Any other pre-check failure (e.g. a transient RPC hiccup)
                         // is non-fatal — fall through to the normal job-creation
@@ -956,6 +1001,11 @@ function registerTools(server: McpServer) {
                 }
 
                 if (job.status === 'failed') {
+                    // Session died mid-generation (the in-job re-auth wait gave up).
+                    // Recoverable by a human: ask them to re-sync, then retry.
+                    if (/session expired|authentication required/i.test(job.error ?? "")) {
+                        return buildReauthResponse(userToken, "Infographic job");
+                    }
                     return { content: [{ type: "text" as const, text: `❌ Job failed: ${job.error}` }], isError: true };
                 }
 
