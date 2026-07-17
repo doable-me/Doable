@@ -525,7 +525,7 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         return {
           success: true, _sseHint: "integration_required" as const,
           integrationId: args.integrationId, displayName, logoUrl, reason: args.reason,
-          message: `Requested integration "${displayName}". The user will see a Connect button.`,
+          message: `✋ STOP THIS TURN NOW. The "${displayName}" Connect popup is now open for the user. Do NOT call any more tools and do NOT create or edit any files this turn. End immediately with ONE short sentence telling the user to connect ${displayName} (or decline). Building resumes AUTOMATICALLY after they act — you will be re-prompted then. Continuing to build now would be wrong: the credential does not exist yet.`,
         };
       },
     }),
