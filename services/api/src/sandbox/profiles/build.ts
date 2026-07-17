@@ -27,12 +27,27 @@ export function buildProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfil
         { host: NPM_CACHE_DIR, jail: "/.npm-cache" },
       ],
       tmpfs: [
-        { jail: "/tmp", sizeBytes: 500 * MB },
+        // BUG-2026-07-15-vite-oom-482b18d6: TanStack Start / React projects
+        // with ~50 @radix-ui components + AI-SDK + shadcn produce dist bundles
+        // approaching 15 MB per environment (client + server). Vite writes to
+        // /tmp/vite during rollup finalize; the previous 500 MB was fine for
+        // small SPAs but tight for large graphs. 1 GB is generous headroom
+        // without exposing more of the host filesystem.
+        { jail: "/tmp", sizeBytes: 1 * GB },
         { jail: "/run", sizeBytes: 10 * MB },
       ],
       procOverlay: {
         cpuinfo: { cores: 2, modelName: "Synthetic CPU", mhz: 1000 },
-        meminfo: { totalKb: 1024 * 1024, availableKb: 512 * 1024 },
+        // BUG-2026-07-15-vite-oom-482b18d6: bumped meminfo from 1 GB to 6 GB.
+        // V8 sizes its default `--max-old-space-size` from the memory the
+        // process sees (via /proc/meminfo, since we ProcMountFresh here), so
+        // exposing 1 GB fell back to ~512 MB old-space and vite's
+        // `transforming` phase self-aborted with "Reached heap limit" for
+        // large React projects (~50 Radix components, 673 MB node_modules).
+        // 6 GB tells V8 to pick a ~4 GB default AND matches the
+        // limits.memBytes below (bumped in lockstep) so the cgroup doesn't
+        // OOM-kill Node before V8's own limit fires.
+        meminfo: { totalKb: 6 * 1024 * 1024, availableKb: 6 * 1024 * 1024 },
         uptimeSec: 1,
         loadavg: [0, 0, 0],
         mask: [
@@ -73,7 +88,15 @@ export function buildProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfil
       seccompDeny: [...sys.syscallFloors],
     },
     limits: {
-      memBytes: 1 * GB,
+      // BUG-2026-07-15-vite-oom-482b18d6: raised from 1 GB to 6 GB.
+      // Vite/rollup transforming large React graphs (Radix + AI-SDK +
+      // shadcn) peaks at ~2-3 GB resident. The cgroup memBytes IS the hard
+      // ceiling — before this, Node hit the limit around ~510 MB (V8's
+      // dynamic default from the fake /proc/meminfo=1GB) and self-aborted
+      // with "Reached heap limit", but a raised NODE_OPTIONS alone would
+      // just move the failure to a kernel OOM-kill unless memBytes was
+      // raised in lockstep. Kept in sync with procOverlay.meminfo above.
+      memBytes: 6 * GB,
       cpuQuotaPercent: 100,
       nproc: 512,
       nofile: 8192,
@@ -85,13 +108,23 @@ export function buildProfile(ctx: SpawnContext, sys: SystemRules): SandboxProfil
       deny: [...sys.networkFloors, ...sys.profileNetworkDenies("build")],
     },
     env: {
-      allowlist: ["PATH", "LANG", "HOME", "NODE_ENV"],
+      // BUG-2026-07-15-vite-oom-482b18d6: NODE_OPTIONS is BOTH on the
+      // allowlist (so caller-supplied flags pass through) AND injected
+      // with an explicit --max-old-space-size=4096 so V8 always has the
+      // ceiling regardless of what builder.ts propagates. Without this,
+      // the sandbox --clearenv drops any inherited NODE_OPTIONS and V8
+      // falls back to its dynamic default computed from the fake
+      // /proc/meminfo — which is why large React builds OOM'd at ~510 MB
+      // even after we bumped procOverlay + memBytes above. Injecting here
+      // is idempotent (V8 accepts the last --max-old-space-size wins).
+      allowlist: ["PATH", "LANG", "HOME", "NODE_ENV", "NODE_OPTIONS"],
       inject: {
         HOME: "/work",
         PWD: "/work",
         USER: "builder",
         PATH: "/usr/local/bin:/usr/bin:/bin",
         NODE_ENV: "production",
+        NODE_OPTIONS: "--max-old-space-size=4096",
       },
     },
     timeoutMs: 300_000,
