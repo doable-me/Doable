@@ -41,6 +41,36 @@ async function restartDevServerForProject(projectId: string | null | undefined, 
   }
 }
 
+/**
+ * Evict the project's cached AI chat session after an integration is connected
+ * so the NEXT chat turn recreates the session with (a) the updated tool set and
+ * (b) a fresh `<connected-integrations>` system-prompt manifest that lists the
+ * newly-connected service. Without this, the in-memory SDK session keeps the
+ * manifest it was created with, so after connecting ElevenLabs the AI would
+ * still see it as NOT connected and re-fire `request_integration` in a loop
+ * instead of building the voice feature. Mirrors checkAndEvictOnProviderChange:
+ * clear the in-memory maps AND null the persisted copilot_session_id so
+ * resolveSession does a full fresh CREATE (a resume refreshes tools but NOT the
+ * systemPrompt manifest).
+ */
+async function evictAiSessionForProject(projectId: string | null | undefined): Promise<void> {
+  if (!projectId) return;
+  try {
+    const { evictProjectSessions } = await import("./chat/session-state.js");
+    const evicted = evictProjectSessions(projectId);
+    await sql`
+      UPDATE ai_sessions
+      SET copilot_session_id = NULL, updated_at = now()
+      WHERE project_id = ${projectId} AND copilot_session_id IS NOT NULL
+    `;
+    if (evicted > 0) {
+      console.log(`[Integrations] Evicted ${evicted} cached AI session(s) for ${projectId} to pick up integration change`);
+    }
+  } catch (err) {
+    console.warn(`[Integrations] AI session eviction failed for ${projectId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
 // ─── Connections (auth required) ───────────────────────────
 
 // GET /integrations/connections
@@ -132,6 +162,11 @@ integrationConnectionRoutes.post(
 
       // Restart dev server so new env vars are available immediately
       await restartDevServerForProject(body.projectId, userId);
+
+      // Evict the cached AI session so the next chat turn sees the newly
+      // connected integration in its tool set + <connected-integrations>
+      // manifest (prevents a request_integration re-fire loop after connect).
+      await evictAiSessionForProject(body.projectId);
 
       return c.json({
         data: {

@@ -7595,16 +7595,36 @@ function EditorPageInner() {
         request={pendingIntegrationRequest}
         workspaceId={workspaceId}
         projectId={resolvedProjectId ?? undefined}
-        onDismiss={() => setPendingIntegrationRequest(null)}
-        onConnected={() => {
-          const dn = pendingIntegrationRequest.displayName;
+        onDismiss={() => {
+          const req = pendingIntegrationRequest;
           setPendingIntegrationRequest(null);
-          // Give the API-triggered dev-server restart a moment to settle,
-          // then re-prompt the AI to resume building with the new integration.
-          setTimeout(() => {
+          // User cancelled the Connect popup. For ElevenLabs / voice, the AI
+          // paused mid-build waiting on the connection (awaitingIntegrationConnect),
+          // so it will never resume on its own. Re-prompt it to finish the voice
+          // feature using the doable.voice helper, which transparently falls back
+          // to the browser's built-in speech API when ElevenLabs isn't connected.
+          if (req.integrationId === "elevenlabs") {
             sendMessage(
-              `${dn} is now connected. Please continue building the feature you were working on, using the ${dn} integration.`,
+              "I don't want to connect ElevenLabs right now. Please continue building the voice feature using the built-in doable.voice helper — it will automatically use the browser's built-in speech API as a fallback.",
             );
+          }
+        }}
+        onConnected={() => {
+          const req = pendingIntegrationRequest;
+          const dn = req.displayName;
+          setPendingIntegrationRequest(null);
+          // Give the API-triggered dev-server restart + AI-session eviction a
+          // moment to settle, then re-prompt the AI to resume building.
+          setTimeout(() => {
+            if (req.integrationId === "elevenlabs") {
+              sendMessage(
+                "ElevenLabs is now connected. Please continue building the voice feature using the doable.voice helper — it will now use real ElevenLabs voices.",
+              );
+            } else {
+              sendMessage(
+                `${dn} is now connected. Please continue building the feature you were working on, using the ${dn} integration.`,
+              );
+            }
           }, 2000);
         }}
       />
