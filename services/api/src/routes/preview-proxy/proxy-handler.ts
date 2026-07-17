@@ -462,6 +462,12 @@ export async function handleLovableChatBridge(
   let body: Record<string, unknown> = {};
   try { body = (await c.req.json()) as Record<string, unknown>; } catch { body = {}; }
   const uiMessages = Array.isArray(body.messages) ? (body.messages as Array<Record<string, unknown>>) : [];
+  // Response-shape detection (BUG-2026-07-17-lovable-chat-shape): the AI-SDK
+  // `useChat` client sends UIMessages carrying a `parts[]` array and consumes an
+  // SSE UI-message stream; a plain-`fetch` client sends `{ role, content }` and
+  // does `res.json().reply`. Detect which flavor the caller speaks so BOTH styles
+  // of Lovable-imported chatbot work on import with no per-app source edits.
+  const wantsUiStream = uiMessages.some((m) => Array.isArray((m as { parts?: unknown }).parts));
   const messages = uiMessages
     .map((m) => {
       const role = (typeof m.role === "string" && m.role) || "user";
@@ -503,6 +509,14 @@ export async function handleLovableChatBridge(
   }
   const payload = (await upstream.json().catch(() => ({ content: "" }))) as { content?: string };
   const content = typeof payload.content === "string" ? payload.content : "";
+
+  // Non-streaming clients (plain `fetch("/api/chat")` → `res.json()` reading
+  // `.reply`) cannot parse an SSE body — `res.json()` throws on `data: ...`.
+  // Return the JSON shape they expect. `{ reply }` is Lovable's non-streaming
+  // convention; `message`/`content` are mirrored for other simple variants.
+  if (!wantsUiStream) {
+    return c.json({ reply: content, message: content, content });
+  }
 
   // AI-SDK v5 UI Message Stream (single-shot). @ai-sdk/react useChat consumes
   // these events via DefaultChatTransport and renders the assistant message.
