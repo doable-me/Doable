@@ -26,6 +26,7 @@ import {
   getReactRefreshPreambleSnippet,
   ERROR_CAPTURE_SNIPPET,
   CONNECTOR_BRIDGE_SNIPPET,
+  deAsyncTanstackClientEntry,
 } from "./injected-scripts.js";
 
 const publicApiUrl =
@@ -71,6 +72,14 @@ const adapterCache = new Map<string, FrameworkAdapter>();
 type InjectionTask = {
   patterns: { regex: RegExp; insertBefore: boolean }[];
   snippet: string;
+  /**
+   * Optional in-place rewrite applied to the text emitted BEFORE this task's
+   * marker (and to the buffered text on the overflow/EOF fallback). Lets a task
+   * transform the region it consumes — e.g. de-async the TanStack client-entry
+   * <script> that lives in <head> — without buffering the whole document. Must
+   * be a pure, length-tolerant string transform; other tasks are unaffected.
+   */
+  rewriteBefore?: (text: string) => string;
 };
 
 /**
@@ -117,7 +126,8 @@ function makeInjectionStream(
         const insertAt = matched.insertBefore ? matched.idx : matched.idx + matched.len;
         const before = buffered.slice(0, insertAt);
         const after = buffered.slice(insertAt);
-        controller.enqueue(encoder.encode(before + task.snippet));
+        const rewritten = task.rewriteBefore ? task.rewriteBefore(before) : before;
+        controller.enqueue(encoder.encode(rewritten + task.snippet));
         buffered = after;
         taskIdx++;
         continue;
@@ -125,7 +135,8 @@ function makeInjectionStream(
       if (atEof || buffered.length >= MAX_BUFFER) {
         // No marker found — append snippet at the end of what we have so
         // far so it ships rather than being dropped silently.
-        controller.enqueue(encoder.encode(buffered + task.snippet));
+        const rewritten = task.rewriteBefore ? task.rewriteBefore(buffered) : buffered;
+        controller.enqueue(encoder.encode(rewritten + task.snippet));
         buffered = "";
         taskIdx++;
         continue;
@@ -917,18 +928,32 @@ previewRoutes.all("/preview/:projectId/*", async (c) => {
         // 2. Connector-bridge + error capture + tracker — at the END of
         //    <head> (before </head>) so they sit after the page's own meta
         //    but before <body>.
+        //    `rewriteBefore` de-asyncs the TanStack Start dev client-entry
+        //    <script> IF it appears in <head> (defensive — some TanStack
+        //    versions/streams place it there). See task 3 for the common case.
         {
           patterns: [
             { regex: /<\/head>/i, insertBefore: true },
             { regex: /<body[^>]*>/i, insertBefore: true },
           ],
           snippet: headBundle,
+          rewriteBefore: deAsyncTanstackClientEntry,
         },
         // 3. Visual-edit bridge — at the END of <body> (before </body>) so
         //    the DOM has rendered before the bridge wires up.
+        //    `rewriteBefore` de-asyncs the TanStack Start dev client-entry
+        //    <script type="module" async …/virtual:tanstack-start-*-entry>.
+        //    TanStack Start streams it near the END of <body> (right after the
+        //    inline `self.$_TSR` bootstrap), so it lands in THIS task's consumed
+        //    region. `async` makes it run before `$_TSR` is available →
+        //    "Invariant failed: Expected to find bootstrap data on window.$_TSR"
+        //    → hydration aborts → blank preview. Dropping `async` restores the
+        //    deferred, in-order execution TanStack's production build relies on.
+        //    No-op for every other project shape — the tag isn't present.
         {
           patterns: [{ regex: /<\/body>/i, insertBefore: true }],
           snippet: bodySnippet,
+          rewriteBefore: deAsyncTanstackClientEntry,
         },
       ]);
 

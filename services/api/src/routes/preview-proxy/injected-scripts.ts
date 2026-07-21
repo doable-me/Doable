@@ -316,6 +316,34 @@ export function getReactRefreshPreambleSnippet(projectId: string): string {
 </script>`;
 }
 
+/**
+ * TanStack-Start hydration ordering fix (blank-preview).
+ *
+ * TanStack Start's dev SSR emits the client-entry as
+ *   <script type="module" async src="…/@id/virtual:tanstack-start-dev-client-entry">
+ * in <head>, but streams the `window.$_TSR` bootstrap (router manifest + route
+ * data) far later, INSIDE <body>. An `async` module executes the instant it
+ * loads — before the parser reaches `$_TSR` — so client hydration reads a
+ * missing `$_TSR` and throws
+ *   "Invariant failed: Expected to find bootstrap data on window.$_TSR".
+ * Hydration aborts, React discards the SSR markup, and the preview goes blank.
+ *
+ * Dropping `async` turns it into a *deferred* module: it runs only after the
+ * document is fully parsed, so the inline `self.$_TSR = …` script (which runs
+ * during parse) is guaranteed to be set first. This is the same ordering
+ * TanStack Start's production build already relies on.
+ *
+ * Scoped to the literal `virtual:tanstack-start-*-entry` script tag so no other
+ * script — and no non-TanStack project — is ever touched. A no-op when the tag
+ * is absent (plain Vite/React, Next.js, static) or already lacks `async`.
+ */
+export function deAsyncTanstackClientEntry(html: string): string {
+  return html.replace(
+    /<script\b[^>]*\bsrc="[^"]*virtual:tanstack-start-(?:dev-client|server)-entry[^"]*"[^>]*>/gi,
+    (tag) => tag.replace(/\s+async(?:="[^"]*")?/i, ""),
+  );
+}
+
 export function getStorageNamespaceSnippet(projectId: string): string {
   return `<script>
 (function() {
@@ -429,6 +457,18 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
   // attempts and the user sees "Auto-fix paused ... after N attempts". Scoped to
   // connector-surface strings so generic app text is not over-matched.
   var CONNECTOR_AUTH_RE = /unauthorized|missing authorization|invalid or expired token|__doable\\/(data|ai)|\\bRATE_LIMITED\\b|\\bBUDGET_EXCEEDED\\b/i;
+  // TANSTACK-START WARM-UP FALSE POSITIVE: on a cold boot the per-project dev
+  // server binds its port BEFORE TanStack Start's Vite plugin has registered its
+  // dev virtual modules, so the client's import() of the bootstrap entry
+  // (virtual:tanstack-start-dev-client-entry) 404s for ~1-2s. The app self-heals
+  // on the next reload once the module resolves (see the blank-mount reload loop
+  // below). Feeding this to the auto-fix loop is a false positive: the only
+  // "fix" lives in the platform-locked build settings.ts / src/start.tsx, so the
+  // model can't touch it — it burns fix attempts (and 1 credit each) and the user
+  // sees "Auto-fix paused". Scoped to the literal virtual-module id family so a
+  // real application 404 is never matched. This mirrors the HMR_WS / CONNECTOR_AUTH
+  // drops above. See doableinfo/Lovable_import_preview_error_fix.md.
+  var TANSTACK_DEV_ENTRY_RE = /virtual:tanstack-start-(?:dev-client|server)-entry|tanstack-start-dev-client-entry/i;
   function appMounted() {
     try {
       var root = document.getElementById('root');
@@ -442,6 +482,7 @@ export const ERROR_CAPTURE_SNIPPET = `<script>
     if (msg && (msg.includes('ResizeObserver') || msg.includes('Script error') && !source)) return;
     if (msg && HMR_WS_RE.test(String(msg))) return;
     if (msg && CONNECTOR_AUTH_RE.test(String(msg))) return;
+    if (msg && TANSTACK_DEV_ENTRY_RE.test(String(msg))) return;
     errors.push({
       message: String(msg || 'Unknown error'),
       source: source || '',
