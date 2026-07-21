@@ -317,17 +317,90 @@ export function createDoableClient(config?: DoableSDKConfig): DoableClient {
           typeof MediaRecorder !== "undefined"
         ) {
           try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const rec = new MediaRecorder(stream);
+            // Explicit audio constraints. `getUserMedia({ audio: true })`
+            // accepts the browser's default constraint set, which on
+            // Windows/Linux Chrome does NOT enable autoGainControl by
+            // default — a quiet mic then produces a recording whose peak
+            // amplitude is below Scribe's speech-detection floor, and
+            // Scribe returns text:"" and words:[] (zero-word transcript
+            // for a valid webm/opus stream, the exact symptom of the empty
+            // response). The three flags below are Web Audio Working
+            // Group standards and every browser that ships MediaRecorder
+            // supports them; requesting them explicitly makes the capture
+            // robust across all platforms without hurting quality when a
+            // good mic is used.
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+            });
+            // Force an explicit webm/opus mimeType. Some Chrome builds
+            // report an empty `rec.mimeType` when `start()` runs without a
+            // timeslice, and the fallback `"audio/webm"` string in the
+            // Blob constructor produces bytes whose container claim
+            // doesn't match the actual codec — Scribe reads the EBML
+            // header, can't reconcile the codec, and yields no words.
+            // Pinning the mimeType at construction guarantees the bytes
+            // match what we tell the server (and Scribe).
+            const preferredMime =
+              [
+                "audio/webm;codecs=opus",
+                "audio/webm",
+                "audio/ogg;codecs=opus",
+              ].find((m) =>
+                typeof MediaRecorder.isTypeSupported === "function"
+                  ? MediaRecorder.isTypeSupported(m)
+                  : false,
+              ) ?? "";
+            const rec = preferredMime
+              ? new MediaRecorder(stream, { mimeType: preferredMime })
+              : new MediaRecorder(stream);
             const chunks: Blob[] = [];
-            rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-            const stopped = new Promise<void>((resolve) => { rec.onstop = () => resolve(); });
-            rec.start();
+            // Await BOTH `dataavailable` (at least once, with real bytes)
+            // AND `stop`. Chrome ≥ 120 sometimes emits `stop` before the
+            // final `dataavailable` completes when `start()` has no
+            // timeslice — the original code only awaited `stop`, then
+            // read `chunks` while empty and shipped a bare-header webm.
+            // Waiting for both events (plus using a timeslice below so
+            // `dataavailable` also fires periodically) makes the blob
+            // deterministically complete before we base64-encode it.
+            let dataResolve!: () => void;
+            const dataFired = new Promise<void>((resolve) => { dataResolve = resolve; });
+            let stopResolve!: () => void;
+            const stopFired = new Promise<void>((resolve) => { stopResolve = resolve; });
+            rec.ondataavailable = (e) => {
+              if (e.data.size > 0) chunks.push(e.data);
+              dataResolve();
+            };
+            rec.onstop = () => stopResolve();
+            // 500ms timeslice: every 500ms MediaRecorder flushes a
+            // properly-terminated webm cluster into `dataavailable`. The
+            // concatenated blob is therefore a valid, seekable file even
+            // if the browser reorders end-of-stream events, and
+            // `dataavailable` is guaranteed to have fired at least once
+            // long before `stop`, eliminating the race described above.
+            rec.start(500);
             await new Promise((r) => setTimeout(r, cap));
             rec.stop();
-            await stopped;
+            await Promise.all([dataFired, stopFired]);
             stream.getTracks().forEach((tr) => tr.stop());
-            const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+            const mimeUsed = rec.mimeType || preferredMime || "audio/webm";
+            const blob = new Blob(chunks, { type: mimeUsed });
+            // Guard: a webm/opus blob smaller than ~2 KB is a bare
+            // container header with no audible content — the mic was
+            // muted, the OS returned a null device, or permission
+            // granted a virtual/loopback sink. Falling through to the
+            // browser SpeechRecognition path saves an ElevenLabs API
+            // call that would deterministically return "" and lets the
+            // caller distinguish "silence" from "recognised silence".
+            if (blob.size < 2048) {
+              throw new Error(
+                "voice.listen: captured audio too small (" + blob.size + "B); " +
+                "check the microphone permission and selected device",
+              );
+            }
             const base64 = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
               reader.onloadend = () => {
