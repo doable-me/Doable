@@ -13,6 +13,7 @@ import type { DeployAdapter } from "./adapter.js";
 import {
   DoableCloudAdapter,
   generateSubdomain,
+  getPublishedSiteDir,
   registerCloudflareDns,
   SitesDirUnwritableError,
 } from "./adapters/doable-cloud.js";
@@ -397,7 +398,14 @@ export async function runPipeline(
         projectId,
         projectSlug: subdomain,
         workspaceSlug: workspace.slug,
-        siteDir: path.join(process.env.SITES_DIR ?? "/data/sites", subdomain, environment === "preview" ? "test" : "live"),
+        // Must match the directory doable-cloud actually wrote to:
+        // `${SITES_DIR}/${PUBLISH_SUBDOMAIN_PREFIX}${envPrefix}${subdomain}/live/`.
+        // Recomputing the join here (with the raw subdomain and a preview/live
+        // switch that doesn't exist in doable-cloud) desyncs whenever
+        // PUBLISH_SUBDOMAIN_PREFIX is set, so the static-files runtime start()
+        // throws "siteDir missing or empty" and marks the deploy failed even
+        // though the adapter wrote the files.
+        siteDir: path.join(getPublishedSiteDir(subdomain, environment), "live"),
         projectDir: getProjectPath(projectId),
         frameworkId: (project as { framework_id?: string }).framework_id ?? "vite-react",
         userId,

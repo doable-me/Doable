@@ -55,6 +55,26 @@ export function isHmrWsConnectError(text: string): boolean {
 }
 
 /**
+ * TanStack-Start dev-entry warm-up transient. On a cold boot the per-project dev
+ * server binds its port BEFORE TanStack Start's Vite plugin has registered its
+ * dev virtual modules, so a request for the bootstrap entry
+ * (virtual:tanstack-start-dev-client-entry) — and, transitively, the SSR "/"
+ * document — 404s for ~1-2s. It self-heals once the module resolves. Surfacing
+ * it to the auto-fix loop is a false positive: the only "fix" lives in the
+ * platform-locked build settings.ts / src/start.tsx, so the model burns attempts
+ * (and a credit each) and dead-ends. Detect the shape so the caller can re-verify
+ * and drop it if it has already cleared. See
+ * doableinfo/Lovable_import_preview_error_fix.md.
+ */
+export const TANSTACK_DEV_ENTRY_RE =
+  /virtual:tanstack-start-(?:dev-client|server)-entry|tanstack-start-dev-client-entry/i;
+
+/** True when `raw` looks like the TanStack-Start dev-entry warm-up transient. */
+export function isTanstackStartWarmupTransient(raw: string): boolean {
+  return TANSTACK_DEV_ENTRY_RE.test(raw);
+}
+
+/**
  * Detect if HTML contains Vite's error overlay markup.
  * Returns the extracted error message or null.
  */
@@ -109,6 +129,25 @@ async function doableImportNowResolves(base: string, raw: string): Promise<boole
     }
   }
   return true;
+}
+
+/**
+ * Re-verify that TanStack Start's dev client entry now resolves. Used to drop
+ * the warm-up 404 transient (isTanstackStartWarmupTransient) only while it is
+ * still warming — a PERSISTENT dev-entry failure (never 2xx) is NOT swallowed,
+ * so a genuinely broken setup still surfaces. Returns true only when the entry
+ * serves 2xx (i.e. the dev server has finished wiring its virtual modules).
+ */
+async function tanstackDevEntryNowResolves(base: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${base}/@id/virtual:tanstack-start-dev-client-entry`, {
+      headers: { Accept: "application/javascript" },
+      signal: AbortSignal.timeout(3000),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function detectPreviewError(projectId: string): Promise<PreviewErrorInfo | null> {
@@ -168,6 +207,13 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
           if (isDoableResolveTransient(clean) && (await doableImportNowResolves(base, clean))) {
             continue;
           }
+          // TanStack-Start cold-boot: during warm-up the dev middleware can answer
+          // an entry-file request with the SSR NotFoundComponent (carrying the
+          // dev-entry reference) until its virtual modules are wired. Drop while the
+          // dev entry still doesn't resolve. See preview-errors §page-probe above.
+          if (isTanstackStartWarmupTransient(body) && !(await tanstackDevEntryNowResolves(base))) {
+            continue;
+          }
           return {
             message: `Error in ${file}: ${clean}`,
             source: file,
@@ -219,6 +265,10 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
           if (isDoableResolveTransient(clean) && (await doableImportNowResolves(base, clean))) {
             return null;
           }
+          // TanStack-Start cold-boot warm-up transient (see file-probe/page-probe).
+          if (isTanstackStartWarmupTransient(body) && !(await tanstackDevEntryNowResolves(base))) {
+            return null;
+          }
           return { message: `Error in ${file}: ${clean}`, source: file, raw: clean };
         } catch {
           return null; // network blip — dev server may be restarting
@@ -254,6 +304,20 @@ export async function detectPreviewError(projectId: string): Promise<PreviewErro
         }
       } else {
         const body = await pageRes.text();
+        // TanStack-Start cold-boot 404: the SSR "/" document is the app's own
+        // NotFoundComponent (rendered because the dev bootstrap entry hasn't been
+        // wired yet) and carries the dev-entry reference / router manifest. Match
+        // the raw body (not the truncated `clean`, so the fingerprint isn't sliced
+        // off) and re-verify. NOTE the polarity is INVERTED vs doableImportNowResolves:
+        // here the fingerprint IS the failure, so a dev entry that STILL doesn't
+        // resolve means "still warming" → drop; once it resolves, a "/" error is
+        // real and is surfaced. A persistent dev-entry 404 is also dropped, which
+        // loses nothing — the only remedy is in the platform-locked build settings.ts
+        // / src/start.tsx that the auto-fixer cannot edit (same rationale as the
+        // unconditional HMR-ws drop). See doableinfo/Lovable_import_preview_error_fix.md.
+        if (isTanstackStartWarmupTransient(body) && !(await tanstackDevEntryNowResolves(base))) {
+          return null;
+        }
         const clean = body
           .replace(/<[^>]+>/g, " ")
           .replace(/\s+/g, " ")

@@ -138,6 +138,30 @@ export const customActions: Record<string, Record<string, CustomAction>> = {
         const formData = new FormData();
         formData.append("file", blob, `recording.${ext}`);
         formData.append("model_id", "scribe_v1");
+        console.log(
+          `[elevenlabs-stt] audioBytes=${audioBuffer.length} mimeType=${cleanMimeType} ext=${ext} language=${languageCode ?? "auto"}`,
+        );
+        // TEMP DIAGNOSTIC: dump the received blob so we can eyeball it with
+        // `file` and `ffprobe` on the server. Keeps only the most recent one
+        // to avoid disk-fill. Remove once the empty-transcript root cause
+        // is confirmed and fixed.
+        try {
+          const { writeFile } = await import("node:fs/promises");
+          await writeFile(`/tmp/stt-last.${ext}`, audioBuffer);
+        } catch { /* diagnostic only */ }
+        // Suppress non-speech audio-event tags. Scribe defaults to emitting
+        // bracketed markers like `[music]`, `[laughter]`, `[outro jingle]`,
+        // `[silence]` for non-speech regions, and when a short utterance is
+        // followed by silence/ambient (the default 6s mic window in
+        // doable-sdk voice.listen almost always is), Scribe returns ONLY the
+        // event tag — no words. The caller then renders `[outro jingle]` as
+        // the "transcript", which looks broken. `tag_audio_events=false`
+        // makes Scribe return the transcript text alone (empty string when
+        // no speech was heard), which is the shape voice.listen expects and
+        // falls back cleanly on. Also request diarize=false so single-speaker
+        // clips aren't wrapped in per-turn metadata.
+        formData.append("tag_audio_events", "false");
+        formData.append("diarize", "false");
         if (languageCode) formData.append("language_code", languageCode);
 
         const response = await fetch(`${baseUrl}/v1/speech-to-text`, {
@@ -155,7 +179,38 @@ export const customActions: Record<string, Record<string, CustomAction>> = {
         }
 
         const data = await response.json() as Record<string, unknown>;
-        const text = (data.text ?? data.transcript ?? "") as string;
+        let text = (data.text ?? data.transcript ?? "") as string;
+
+        // Defence in depth: if a build of Scribe ever ignores tag_audio_events
+        // (or a future model surfaces stray tags in `text`), strip any leading
+        // `[…]` markers so they never leak into the UI as fake transcription.
+        // Only strips WHOLE bracketed spans — a legitimate phrase like "hello
+        // [world] there" is preserved character-for-character in normal use
+        // (Scribe emits only tag OR words, never mixed inline).
+        text = text.replace(/\[[^\]]*\]/g, "").trim();
+
+        // Fallback: some Scribe responses return `text: ""` even when the
+        // per-word `words` array carries real transcribed content. Rebuild the
+        // transcript from `words[].text` when the top-level text is empty. Only
+        // include entries typed as spoken words (`type: "word"` or unset — the
+        // spacing entries are typed `spacing` and audio-event entries are
+        // `audio_event`, both to be skipped). Preserves the punctuation/spacing
+        // the words array itself encodes.
+        if (!text && Array.isArray(data.words)) {
+          const words = data.words as Array<{ text?: string; type?: string }>;
+          const rebuilt = words
+            .filter((w) => (w?.type ?? "word") === "word" || (w?.type === "spacing"))
+            .map((w) => (typeof w.text === "string" ? w.text : ""))
+            .join("")
+            .replace(/\[[^\]]*\]/g, "")
+            .trim();
+          if (rebuilt) text = rebuilt;
+        }
+
+        const wordsArr = Array.isArray(data.words) ? (data.words as Array<Record<string, unknown>>) : [];
+        console.log(
+          `[elevenlabs-stt] scribe response: text.length=${text.length} preview=${JSON.stringify(text.slice(0, 100))} durationSecs=${data.audio_duration_secs ?? "?"} langProb=${data.language_probability ?? "?"} language=${(data.language_code as string) ?? "?"} wordCount=${wordsArr.length} wordsHead=${JSON.stringify(wordsArr.slice(0, 5))}`,
+        );
 
         return text;
       },

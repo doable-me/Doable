@@ -80,6 +80,16 @@ export const credentialVault = {
    * Get and decrypt credentials for an integration
    */
   async get(userId: string, integrationId: string, workspaceId: string, projectId?: string): Promise<DecryptedConnection | null> {
+    // Guard against an empty userId: `integration_connections.user_id` is a uuid
+    // column, so binding `""` as a `user_id = ${userId}` parameter fails with
+    // Postgres 22P02 (invalid input syntax for type uuid: "") and Hono returns
+    // 500 to the caller. The preview `/preview/:id/__doable/token` endpoint
+    // legitimately mints a JWT without a userId when the viewer can't be
+    // identified — those requests must still be able to reach workspace/project
+    // scoped connections. Omit the user-scope predicates entirely when userId
+    // is empty; the OR chain still resolves via `scope = 'workspace'` (and
+    // project-scope when projectId is provided).
+    const hasUserId = typeof userId === "string" && userId.length > 0;
     const [row] = await sql`
       SELECT ic.*,
              CASE
@@ -92,14 +102,15 @@ export const credentialVault = {
         AND ic.workspace_id = ${workspaceId}
         AND ic.status = 'active'
         AND (
-          ic.user_id = ${userId}
-          OR ic.scope = 'workspace'
+          ${hasUserId ? sql`ic.user_id = ${userId} OR` : sql``}
+          ic.scope = 'workspace'
           ${projectId ? sql`OR (ic.scope = 'project' AND ic.project_id = ${projectId})` : sql``}
         )
       ORDER BY
-        CASE WHEN ic.user_id = ${userId} THEN 0
-             WHEN ic.scope = 'project' THEN 1
-             ELSE 2 END,
+        CASE
+          ${hasUserId ? sql`WHEN ic.user_id = ${userId} THEN 0` : sql``}
+          WHEN ic.scope = 'project' THEN 1
+          ELSE 2 END,
         ic.updated_at DESC
       LIMIT 1
     `;

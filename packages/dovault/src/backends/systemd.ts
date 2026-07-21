@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import type { ResourceBackend } from "./types.js";
 import type { ResourceLimits, WrapResult } from "../types.js";
 
@@ -46,11 +46,32 @@ export class SystemdBackend implements ResourceBackend {
     } catch {
       return (this._available = false);
     }
+    // Probe scope creation. Capture stderr so we can detect the "silent"
+    // failure mode where systemd-run's own exit code is 0 but scope creation
+    // failed at the polkit layer — observed on baremetal installs where the
+    // service account has no polkit session and no lingering user manager.
+    // The stderr line is "Failed to start transient scope unit: Interactive
+    // authentication required." Without this guard the backend reports
+    // available=true, downstream `wrapSpawn` prepends `systemd-run --scope
+    // -p MemoryMax=… --`, and every spawn re-hits the same polkit failure.
+    // Symptoms downstream: the wrapped child never runs (or runs without any
+    // cgroup limits), the systemd-run stderr noise gets interleaved into the
+    // pipeline, and the caller sees the useless "Build exited with code
+    // null" instead of picking bubblewrap and succeeding.
     try {
-      execSync(
-        "systemd-run --scope --quiet --property=Description=dovault-probe -- true",
-        { stdio: "pipe", timeout: 5000 },
+      const probe = spawnSync(
+        "systemd-run",
+        ["--scope", "--quiet", "--property=Description=dovault-probe", "--", "true"],
+        { stdio: ["ignore", "pipe", "pipe"], timeout: 5000 },
       );
+      const stderr = (probe.stderr ?? "").toString();
+      const scopeCreationFailed =
+        /Interactive authentication required|Failed to start transient scope unit/i.test(
+          stderr,
+        );
+      if (probe.status !== 0 || scopeCreationFailed) {
+        return (this._available = false);
+      }
       return (this._available = true);
     } catch {
       return (this._available = false);
