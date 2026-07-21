@@ -283,6 +283,55 @@ githubProjectRoutes.post("/:projectId/github/import", async (c) => {
       );
     }
 
+    // Lovable chatbot persona preservation.
+    //
+    // Doable's /api/chat bridge (commit 81491c3) routes AROUND the imported
+    // src/routes/api/chat.ts file — the persona Lovable hard-codes there as
+    // `streamText({ system: "You are Ember, the virtual barista..." })` is
+    // therefore never read at runtime, and imported chatbots answer as generic
+    // assistants. Extract that string once, at import time, and seed it into
+    // project_ai_settings.system_prompt_override — which ai-proxy.ts:768–775
+    // prepends to every subsequent chat request server-side, restoring the
+    // persona without any user action or source edit.
+    //
+    // Best-effort; never fail the import if extraction / DB write throws. The
+    // upsert uses COALESCE so an owner who has already customised the field
+    // in the Doable AI settings tab is never clobbered on re-import.
+    //
+    // See PRD: doableinfo/LOVABLE_CHATBOT_PERSONA_PRESERVATION.md
+    try {
+      const { extractLovableSystemPrompt } = await import(
+        "../../projects/extract-lovable-system-prompt.js"
+      );
+      const persona = await extractLovableSystemPrompt(projectPath);
+      if (persona) {
+        await sql`
+          INSERT INTO project_ai_settings
+            (project_id, workspace_id, system_prompt_override, updated_by)
+          VALUES (
+            ${projectId},
+            (SELECT workspace_id FROM projects WHERE id = ${projectId}),
+            ${persona},
+            ${userId}
+          )
+          ON CONFLICT (project_id) DO UPDATE
+            SET system_prompt_override =
+                  COALESCE(project_ai_settings.system_prompt_override, EXCLUDED.system_prompt_override),
+                updated_by = EXCLUDED.updated_by
+        `;
+        // Log the length, not the content — persona strings can contain
+        // owner-specific brand voice notes we don't want in server logs.
+        console.log(
+          `[github-import] seeded system_prompt_override (${persona.length} chars) for ${projectId}`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[github-import] Lovable system prompt extraction failed for ${projectId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     return c.json({ data: result, supabaseSetupRequired }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
