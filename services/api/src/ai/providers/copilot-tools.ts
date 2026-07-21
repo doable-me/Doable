@@ -15,7 +15,7 @@ import {
   listFiles,
   getProjectPath,
 } from "../../projects/file-manager.js";
-import { restartDevServer, isRunning } from "../../projects/dev-server.js";
+import { restartDevServer, isRunning, getDevServerUrl } from "../../projects/dev-server.js";
 import { ConfigGuard } from "dovault";
 import { defaultRegistry } from "../../frameworks/registry.js";
 import {
@@ -336,13 +336,33 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
     }),
 
     defineTool("deploy_preview", {
-      description: "Deploy the current project to a preview URL for testing",
+      description:
+        "Return the live preview URL for this project. The project's dev server is already running; " +
+        "this hands back the reachable URL you can open/fetch to verify the app renders. Does not publish anything.",
       parameters: {
         type: "object" as const,
-        properties: { message: { type: "string" as const, description: "Deployment commit message" } },
+        properties: { message: { type: "string" as const, description: "Optional note (unused)" } },
       },
       handler: async (_args: { message?: string }) => {
-        return { success: true, url: `https://preview-${projectId}.doable.dev`, message: "Preview deployed successfully" };
+        // The reachable preview is the running dev server behind the API's reverse
+        // proxy — the SAME URL the editor iframe loads (see getDevServerUrl:
+        // "works from any machine"). Build it from the PUBLIC API base so the URL
+        // is fetchable off-box (e.g. by the model's web_fetch), which the previous
+        // hardcoded `https://preview-<uuid>.doable.dev` was not (it doesn't
+        // resolve/serve — verified http=000 on dev). See
+        // doableinfo/Lovable_import_deploy_preview_unreachable_url_fix.md.
+        const rel = getDevServerUrl(projectId); // "/preview/<id>/" or null when not running
+        if (!rel) {
+          return {
+            success: false,
+            message:
+              "Dev server is not running yet — the preview URL isn't available. Wait a few seconds and retry; " +
+              "do not treat this as a code error to fix.",
+          };
+        }
+        const base = (process.env.NEXT_PUBLIC_API_URL ?? process.env.PUBLIC_URL ?? process.env.API_URL ?? "").replace(/\/+$/, "");
+        const url = base ? `${base}${rel}` : rel;
+        return { success: true, url, message: "Live preview is available." };
       },
     }),
 
