@@ -106,6 +106,23 @@ async function scanDirectory(dir: string, tools: Set<string>, depth = 0): Promis
         while ((match = intRegex.exec(content)) !== null) {
           tools.add(`${match[1]!}:${match[2]!}`);
         }
+        // Doable voice helpers: `doable.voice.speak(...)` wraps
+        // elevenlabs-text-to-speech and `doable.voice.listen(...)` wraps
+        // elevenlabs-speech-to-text (see packages/doable-sdk/src/index.ts
+        // voice.*). The codegen prompt (framework-prompts/vite-react.ts §0v)
+        // MANDATES the helpers over `integrations.run("elevenlabs", …)`, so
+        // no literal "elevenlabs" string appears in generated src and the
+        // integrations.run pattern above misses these actions. Without this
+        // branch the published key omits both actions and every TTS/STT call
+        // 403s TOOL_NOT_ALLOWED at runtime (works in preview only because the
+        // preview JWT is unrestricted). Scoped narrowly per-call: `.speak`
+        // implies TTS only; `.listen` implies STT only.
+        if (/\.voice\.speak\s*\(/.test(content)) {
+          tools.add("elevenlabs:elevenlabs-text-to-speech");
+        }
+        if (/\.voice\.listen\s*\(/.test(content)) {
+          tools.add("elevenlabs:elevenlabs-speech-to-text");
+        }
         // Dynamic dispatch: AI assistants / ReAct loops call
         // `doable.mcp.call(toolName, ...)` with a VARIABLE, so the literal-arg
         // regex above misses the tool name and the published key gets scoped
