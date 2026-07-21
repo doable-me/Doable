@@ -14,25 +14,24 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 - **pnpm** 9+ (`corepack enable` to activate)
 - **PostgreSQL** 16+ with extensions: `pgcrypto`, `pgvector`, `pg_trgm`
 
-### Setup
+### Setup (no root / sudo)
+
+You need **Node 22+**, **pnpm 9** (`corepack prepare pnpm@9.15.4 --activate`), and **Docker** with your user in the `docker` group (not root). Do **not** use Bun for this monorepo — it is pnpm/turbo-locked.
 
 ```bash
-# Clone the repo
-git clone https://github.com/doable-me/doable.git
-cd doable
+# Prefer nvm Node 22 on PATH (avoids IDE-bundled node)
+export PATH="$HOME/.nvm/versions/node/v22.23.1/bin:$PATH"
+corepack enable && corepack prepare pnpm@9.15.4 --activate
 
-# Install dependencies
-pnpm install
+# One-shot: writes .env, starts Postgres in Docker, install, migrate
+./scripts/dev-local.sh
 
-# Set up environment
+# Or manually:
 cp .env.example .env
-# Edit .env with your database credentials and secrets
-
-# Run database migrations
-pnpm db:migrate
-
-# Start all services
-pnpm dev
+# Set DATABASE_URL + DOABLE_KEK; leave DOABLE_HARDENING=off for laptop use
+docker compose -f deployment/docker/docker-compose.dev.yml \
+  --env-file deployment/docker/.env up postgres -d
+pnpm install && pnpm db:migrate && pnpm dev
 ```
 
 This starts:
@@ -40,7 +39,9 @@ This starts:
 - **API** (Hono) on `http://localhost:4000`
 - **WebSocket** (Yjs CRDT) on `ws://localhost:4001`
 
-### Docker Alternative
+Architecture / agents deep-dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+### Docker Alternative (full stack)
 
 ```bash
 ./deployment/docker/setup.sh

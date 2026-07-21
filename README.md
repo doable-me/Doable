@@ -38,8 +38,9 @@ Choose your path:
 # Try it locally in 60 seconds (Docker, no domain, no API keys required to boot)
 git clone https://github.com/doable-me/doable.git && cd doable && ./deployment/docker/setup.sh
 
-# Local dev (Node 22, pnpm, Postgres 16)
-pnpm install && cp .env.example .env && pnpm db:migrate && pnpm dev
+# Local dev (Node 22, pnpm, Postgres 16) — no root; Docker group OK
+./scripts/dev-local.sh && pnpm dev
+# or: cp .env.example .env && pnpm install && pnpm db:migrate && pnpm dev
 
 # Production VPS (Ubuntu 22.04/24.04 with a Cloudflare managed domain)
 ./deployment/server-setup.sh

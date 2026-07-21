@@ -21,7 +21,8 @@ venv/
 
 # Environment
 .env
-.env.example
+# Keep .env.example committed so local/no-root setup works out of the box
+!.env.example
 .env.local
 .env.*.local
 .env.docker
