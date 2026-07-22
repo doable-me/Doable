@@ -165,7 +165,7 @@ export function GitHubConnectDialog({
                 Connect your GitHub account
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
-                Authorize Doable to access your repositories so you can push and
+                Authorize Appbrics to access your repositories so you can push and
                 pull code.
               </p>
               <button

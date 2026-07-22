@@ -712,7 +712,7 @@ Workflow context type exported for JSDoc in workflow files.
 - Create `services/api/src/app-runtime/{index,config,types}.ts`.
 - Create `_ext/` loader hook + empty skills placeholders.
 - Add `docs/FORK_EXTENSIONS.md` listing hooks.
-- Feature flag: `DOABLE_APP_RUNTIME_ENABLED` (default `0` until Phase 2 ships).
+- Feature flag: `DOABLE_APP_RUNTIME_ENABLED` (ON by default; set `0` to opt out).
 
 **Done when:** package type-checks; flag off = zero behavior change.
 
@@ -808,7 +808,7 @@ Failure modes to watch: inventing Supabase without ask, putting secrets in sourc
 ## 13. Config / env reference
 
 ```bash
-DOABLE_APP_RUNTIME_ENABLED=0          # master switch
+DOABLE_APP_RUNTIME_ENABLED=0          # master switch — ON unless set to 0
 DOABLE_APP_WF_TIMEOUT_MS=30000
 DOABLE_APP_WF_MEMORY_MB=128
 DOABLE_APP_WF_MAX_CONCURRENCY=8
@@ -819,6 +819,8 @@ DOABLE_APP_SCHEDULER_TICK_MS=15000
 # Existing DB pool knobs still apply:
 # DOABLE_APP_DB_IDLE_MS, DOABLE_APP_DB_MAX_WORKERS, ...
 ```
+
+While enabled (default), `create_file` / `edit_file` reject `db.query` / `db.admin.query` / `db.exec` and Express/Fastify/Koa in app source files. Opt out with `DOABLE_APP_RUNTIME_ENABLED=0`.
 
 ---
 

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 /**
  * Platform-default embedding provider panel.
  *
- * Doable admins configure this ONCE during /setup (or later in /admin). All
+ * Appbrics admins configure this ONCE during /setup (or later in /admin). All
  * workspaces inherit silently — end users never see embeddings UI; they
  * just prompt "build me a chatbot" and runtime resolves the embedding
  * provider through this fallback.
@@ -174,7 +174,7 @@ export function Step2EmbeddingPanel() {
       {open && (
         <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border">
           <p className="text-xs text-muted-foreground">
-            End-users of apps built on Doable will never see this — they just
+            End-users of apps built on Appbrics will never see this — they just
             ask the AI to build a chatbot. The runtime calls this embedding
             provider to vectorise their documents. You can change it any time
             from <code className="text-foreground">/admin/ai-settings</code>.

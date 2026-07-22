@@ -329,7 +329,7 @@ projectListRoutes.post("/", async (c) => {
       console.error("[builtin-data] connector provision failed (project create):", err);
     });
   }
-  if (process.env.DOABLE_APP_RUNTIME_ENABLED === "1") {
+  if (process.env.DOABLE_APP_RUNTIME_ENABLED !== "0") {
     const { ensureRuntimeConnectorForProject } = await import(
       "../../mcp/builtin/runtime/register.js"
     );

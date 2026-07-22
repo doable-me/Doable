@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Twitter, Github, Linkedin } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 const linkColumns = [
   {
@@ -33,20 +34,13 @@ const linkColumns = [
 
 export function HomeFooter() {
   return (
-    <footer className="relative z-10 border-t border-gray-800/50">
+    <footer className="relative z-10 border-t border-white/5">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
-          {/* Brand column */}
           <div className="lg:col-span-2">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-brand-500 to-brand-300">
-                <span className="text-xs font-bold text-white self-end mb-1">D</span>
-                <span className="h-2 w-2 rounded-full bg-violet-700 self-end mb-2 ml-0.5 shrink-0" />
-              </div>
-              <span className="text-base font-semibold text-white">Doable</span>
-            </Link>
+            <BrandLogo variant="inverse" size="sm" />
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-gray-500">
-              Tell AI what you want to do and Doable gets it done.
+              Describe what you want and Appbrics builds it.
               From idea to deployed app in minutes.
             </p>
             <div className="mt-4 flex gap-4">
@@ -80,7 +74,6 @@ export function HomeFooter() {
             </div>
           </div>
 
-          {/* Link columns */}
           {linkColumns.map((col) => (
             <div key={col.title}>
               <h4 className="mb-3 text-sm font-semibold text-gray-300">
@@ -113,9 +106,9 @@ export function HomeFooter() {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-col gap-3 border-t border-gray-800/50 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-12 flex flex-col gap-3 border-t border-white/5 pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-gray-600">
-            &copy; {new Date().getFullYear()} Doable Works LLC. All rights reserved.
+            &copy; {new Date().getFullYear()} Appbrics. All rights reserved.
           </p>
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600">
             <Link href="/terms" className="hover:text-gray-400">
@@ -129,9 +122,6 @@ export function HomeFooter() {
             </Link>
             <Link href="/acceptable-use" className="hover:text-gray-400">
               Acceptable Use
-            </Link>
-            <Link href="/dmca" className="hover:text-gray-400">
-              DMCA
             </Link>
           </div>
         </div>

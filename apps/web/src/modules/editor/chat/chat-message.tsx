@@ -351,7 +351,7 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
         {/* Header row */}
         <div className="mb-1 flex items-center gap-2">
           <span className="text-xs font-semibold text-foreground">
-            {isUser ? "You" : "Doable AI"}
+            {isUser ? "You" : "Appbrics AI"}
           </span>
           <span className="text-xs text-muted-foreground">
             {new Date(message.timestamp).toLocaleTimeString([], {

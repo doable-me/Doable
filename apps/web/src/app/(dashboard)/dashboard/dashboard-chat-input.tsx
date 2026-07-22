@@ -98,7 +98,7 @@ export function ChatInput({
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      <div className="rounded-2xl border border-border bg-card shadow-lg transition-all focus-within:border-ring">
+      <div className="rounded-2xl border border-border/80 bg-card shadow-lg transition-all duration-200 focus-within:border-brand-500/50 focus-within:ring-2 focus-within:ring-brand-500/15 hover:border-brand-500/30">
         <div className="p-4 pb-2">
           <textarea
             className="w-full resize-none border-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none min-h-[48px]"
@@ -147,26 +147,25 @@ export function ChatInput({
               <Plus className="h-4 w-4" />
             </button>
             {/* Strategize / Work mode toggle */}
-            <div className="flex items-center rounded-full border border-border overflow-hidden ml-1">
+            <div className="flex items-center gap-0.5 rounded-lg ml-1">
               <button
                 onClick={startMode === "plan" ? undefined : onToggleMode}
-                className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
+                className={`flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-medium transition-all ${
                   startMode === "plan"
-                    ? "bg-blue-100 dark:bg-blue-600/20 text-blue-700 dark:text-blue-400"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
                 }`}
                 title="Strategize first, then do the work"
               >
                 <Target className="h-3 w-3" />
                 Strategize
               </button>
-              <div className="w-px h-4 bg-border" />
               <button
                 onClick={startMode === "agent" ? undefined : onToggleMode}
-                className={`flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium transition-all ${
+                className={`flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-medium transition-all ${
                   startMode === "agent"
-                    ? "bg-brand-100 dark:bg-brand-600/20 text-brand-700 dark:text-brand-400"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-brand-500/15 text-brand-700 dark:text-brand-400"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
                 }`}
                 title="Start working immediately"
               >

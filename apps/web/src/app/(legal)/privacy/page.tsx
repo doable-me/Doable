@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | Doable",
+  title: "Privacy Policy | Appbrics",
   description:
-    "How Doable Works LLC collects, uses, and protects your personal information.",
+    "How Appbrics collects, uses, and protects your personal information.",
 };
 
 export default function PrivacyPage() {
@@ -15,10 +15,10 @@ export default function PrivacyPage() {
       </p>
 
       <p>
-        This Privacy Policy explains how <strong>Doable Works LLC</strong>{" "}
-        (&ldquo;Doable,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or
+        This Privacy Policy explains how <strong>Appbrics</strong>{" "}
+        (&ldquo;Appbrics,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or
         &ldquo;our&rdquo;) collects, uses, and protects information when you use
-        the Doable platform at doable.me, dev.doable.me, and related services
+        the Appbrics platform at doable.me, dev.doable.me, and related services
         (the &ldquo;Service&rdquo;).
       </p>
 
@@ -71,7 +71,7 @@ export default function PrivacyPage() {
         </li>
         <li>Stripe for billing and subscription status</li>
         <li>
-          Integration partners that you authorize Doable to connect with on your
+          Integration partners that you authorize Appbrics to connect with on your
           behalf
         </li>
       </ul>
@@ -156,7 +156,7 @@ export default function PrivacyPage() {
           to protect rights, property, or safety
         </li>
         <li>
-          <strong>In a business transfer</strong> if Doable Works LLC is
+          <strong>In a business transfer</strong> if Appbrics is
           acquired, merged, or sells assets, in which case we will provide
           notice
         </li>
@@ -207,7 +207,7 @@ export default function PrivacyPage() {
 
       <h2>8. International Transfers</h2>
       <p>
-        Doable Works LLC is based in the United States. If you access the
+        Appbrics is based in the United States. If you access the
         Service from outside the U.S., your information may be transferred to,
         stored, and processed in the U.S. or other countries where our service
         providers operate. Where required, we use Standard Contractual Clauses
@@ -257,7 +257,7 @@ export default function PrivacyPage() {
         <a href="mailto:privacy@doable.me">privacy@doable.me</a>.
       </p>
       <p>
-        <strong>Doable Works LLC</strong>
+        <strong>Appbrics</strong>
         <br />
         Email: <a href="mailto:privacy@doable.me">privacy@doable.me</a>
       </p>

@@ -261,7 +261,7 @@ export function SupabaseProvisionDialog({
           <DialogTitle>Connect Supabase</DialogTitle>
           <DialogDescription>
             {reason ??
-              "Pick an existing Supabase project from your organization, or let Doable create a brand-new one. Either way the API keys are wired up automatically."}
+              "Pick an existing Supabase project from your organization, or let Appbrics create a brand-new one. Either way the API keys are wired up automatically."}
           </DialogDescription>
         </DialogHeader>
 

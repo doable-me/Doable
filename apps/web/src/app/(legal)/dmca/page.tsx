@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "DMCA & Copyright Policy | Doable",
-  description: "How to report copyright infringement on Doable.",
+  title: "DMCA & Copyright Policy | Appbrics",
+  description: "How to report copyright infringement on Appbrics.",
 };
 
 export default function DMCAPage() {
@@ -14,7 +14,7 @@ export default function DMCAPage() {
       </p>
 
       <p>
-        <strong>Doable Works LLC</strong> respects the intellectual property
+        <strong>Appbrics</strong> respects the intellectual property
         rights of others and expects users of the Service to do the same. We
         respond to clear notices of alleged copyright infringement that comply
         with the U.S. Digital Millennium Copyright Act (&ldquo;DMCA&rdquo;).
@@ -56,7 +56,7 @@ export default function DMCAPage() {
       <p>
         Send DMCA notices to:
         <br />
-        <strong>Doable Works LLC &mdash; DMCA Agent</strong>
+        <strong>Appbrics &mdash; DMCA Agent</strong>
         <br />
         Email: <a href="mailto:dmca@doable.me">dmca@doable.me</a>
       </p>

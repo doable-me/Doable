@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
-import { APP_DB_PROMPT_BLOCK, buildAppDbContext } from "../app-db-prompt.js";
+import { APP_DB_PROMPT_BLOCK, APP_DB_PROMPT_BLOCK_RUNTIME, buildAppDbContext } from "../app-db-prompt.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -40,9 +40,9 @@ describe("APP_DB_PROMPT_BLOCK content", () => {
 });
 
 describe("buildAppDbContext env gating", () => {
-  it("returns the prompt block when DOABLE_APP_DB_ENABLED is unset (enabled by default)", () => {
+  it("returns the runtime prompt when DB enabled and runtime unset (defaults ON)", () => {
     const result = buildAppDbContext({ env: {} });
-    assert.strictEqual(result, APP_DB_PROMPT_BLOCK);
+    assert.strictEqual(result, APP_DB_PROMPT_BLOCK_RUNTIME);
   });
 
   it("returns empty string when DOABLE_APP_DB_ENABLED is '0'", () => {
@@ -50,9 +50,22 @@ describe("buildAppDbContext env gating", () => {
     assert.strictEqual(result, "");
   });
 
-  it("returns the prompt block when DOABLE_APP_DB_ENABLED is '1'", () => {
+  it("returns the runtime prompt when DB=1 and runtime unset", () => {
     const result = buildAppDbContext({ env: { DOABLE_APP_DB_ENABLED: "1" } });
+    assert.strictEqual(result, APP_DB_PROMPT_BLOCK_RUNTIME);
+  });
+
+  it("returns legacy db.query prompt when runtime is explicitly '0'", () => {
+    const result = buildAppDbContext({
+      env: { DOABLE_APP_DB_ENABLED: "1", DOABLE_APP_RUNTIME_ENABLED: "0" },
+    });
     assert.strictEqual(result, APP_DB_PROMPT_BLOCK);
+  });
+
+  it("runtime prompt forbids raw db.query and teaches runtime.queries.run", () => {
+    assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("runtime.queries.run"));
+    assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("named queries"));
+    assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("Never call `db.query`"));
   });
 });
 

@@ -64,7 +64,7 @@ export function TemplatePreviewModal({
                 {template.name}
               </h2>
               <span className="text-[13px] text-muted-foreground shrink-0">
-                by Doable
+                by Appbrics
               </span>
             </div>
 

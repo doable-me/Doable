@@ -76,12 +76,81 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
    The FIRST account to sign up for the app is automatically the admin (\`user.isAdmin === true\`) — that's the owner who sets it up; everyone after is a normal user. \`db.admin.query\` is READ-ONLY (SELECT only) and the server REJECTS it for non-admins, so gate admin UI on \`user.isAdmin\` and let the server enforce the rest. Use plain \`db.query\` for a user's own data and \`db.admin.query\` only for genuine cross-user admin views.`;
 
 /**
+ * Same schema/RLS/auth rules as APP_DB_PROMPT_BLOCK, but app data access MUST use
+ * named queries (@doable/runtime) — raw db.query in UI is rejected by create_file/edit_file.
+ */
+export const APP_DB_PROMPT_BLOCK_RUNTIME: string = `## Per-app database
+
+**Per-app database + platform runtime (ENFORCED).** Schema is created at build time via \`data.*\` tools. App reads/writes go through **named Mustache queries** (\`.doable/backend/queries/*.sql\` + \`runtime.queries.run\`). **🚫 NEVER \`import ... from "@electric-sql/pglite"\` / \`new PGlite()\`.** **🚫 NEVER put SQL in React via \`db.query\` / \`db.admin.query\` / \`db.exec\`** — create_file/edit_file will REJECT those writes. Keep \`import { db } from "@doable/data"\` for **auth only** (\`db.auth.*\`). \`@doable/data\` and \`@doable/runtime\` are PRE-LINKED — never install them. Tools: \`data.query\`, \`data.migrate\`, \`data.schema\`, \`data.inspect\`, plus \`runtime.*\` (validate, upsert_query, test_query, …). Rules:
+
+0. **⛔ CREATE THE SCHEMA *BEFORE* ANY APP CODE — NON-NEGOTIABLE.** Order: (1) \`data.migrate\` create table(s) → (2) \`data.schema\` → (3) write \`.doable/backend/queries/*.sql\` → (4) wire UI with \`runtime.queries.run\`. Never skip migrate.
+1. **Always check \`data.schema\` first** before writing queries that reference a table.
+2. **Use \`data.migrate\`** (not \`data.exec\`) for every \`CREATE\`/\`ALTER\`/\`DROP\`. migration_id: \`NNNN_short_name\`. Use \`CREATE TABLE IF NOT EXISTS\`.
+3. **Enable RLS on EVERY table**, then pick public-read vs owner-scoped policies (same templates as before):
+
+   **(a) PUBLIC / SHARED content** — public_read SELECT + owner_write:
+   \`\`\`sql
+   CREATE TABLE <name> (
+     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     created_by  uuid NOT NULL DEFAULT (nullif(current_setting('app.user_id', true), ''))::uuid,
+     created_at  timestamptz NOT NULL DEFAULT now()
+   );
+   ALTER TABLE <name> ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY <name>_public_read ON <name> FOR SELECT USING (true);
+   CREATE POLICY <name>_owner_write ON <name> FOR ALL
+     USING (created_by::text = current_setting('app.user_id', true))
+     WITH CHECK (created_by::text = current_setting('app.user_id', true));
+   \`\`\`
+
+   **(b) PRIVATE per-user data** — owner policy only:
+   \`\`\`sql
+   CREATE TABLE <name> (
+     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     created_by  uuid NOT NULL DEFAULT (nullif(current_setting('app.user_id', true), ''))::uuid,
+     created_at  timestamptz NOT NULL DEFAULT now()
+   );
+   ALTER TABLE <name> ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY <name>_owner ON <name>
+     USING (created_by::text = current_setting('app.user_id', true))
+     WITH CHECK (created_by::text = current_setting('app.user_id', true));
+   \`\`\`
+   **In named-query SQL: NEVER set \`created_by\` and NEVER filter by it.** INSERT only business columns; RLS scopes rows.
+   **When SEEDING from THIS chat (data.query): do NOT hardcode \`created_by\` placeholders.**
+4. **For multi-tenant apps**, add \`workspace_id\` + membership policies as needed.
+5. **⛔ App data access = named queries ONLY (hard gate).** Example:
+   \`\`\`sql
+   -- .doable/backend/queries/list_leads.sql
+   SELECT id, title FROM leads ORDER BY created_at DESC LIMIT {{limit}}
+   \`\`\`
+   \`\`\`ts
+   import { runtime } from "@doable/runtime";
+   const r = await runtime.queries.run("list_leads", { limit: 50 });
+   if (!r.ok) throw new Error(r.error?.message);
+   \`\`\`
+   Use Mustache \`{{param}}\` binds — never string-splice user input into SQL files.
+6. **Never call \`db.query\` / \`db.admin.query\` / \`db.exec\` from app UI** — rejected by the platform. Schema changes only via \`data.migrate\` in chat.
+7. **🔐 USER ACCOUNTS / LOGIN — \`db.auth\` only** (still on \`@doable/data\`):
+   \`\`\`ts
+   import { db } from "@doable/data";
+   await db.auth.signup({ email, password, name });
+   await db.auth.login({ email, password });
+   const { user } = await db.auth.getUser();
+   await db.auth.logout();
+   \`\`\`
+   After sign-in, RLS applies to named-query runs automatically. Do NOT invent password tables.
+8. **🛡️ ADMIN DASHBOARDS** — gate UI on \`user?.isAdmin\` from \`db.auth.getUser()\`. For cross-user reads, use named queries against tables with public-read (or admin-appropriate) RLS — **never** \`db.admin.query\` SQL strings in components. Prefer \`runtime.queries.run\` / auto CRUD.`;
+
+/**
  * Returns the per-app database prompt block unless DOABLE_APP_DB_ENABLED==="0"
  * (the feature is ON by default; set the env var to "0" to opt out), otherwise
  * returns an empty string so the block is invisible when the feature is disabled.
+ *
+ * When app runtime is enabled (default; set DOABLE_APP_RUNTIME_ENABLED=0 to opt out),
+ * returns the named-query-enforced variant.
  */
 export function buildAppDbContext(opts?: { env?: Record<string, string | undefined> }): string {
   const env = opts?.env ?? process.env;
   if (env["DOABLE_APP_DB_ENABLED"] === "0") return "";
+  if (env["DOABLE_APP_RUNTIME_ENABLED"] !== "0") return APP_DB_PROMPT_BLOCK_RUNTIME;
   return APP_DB_PROMPT_BLOCK;
 }

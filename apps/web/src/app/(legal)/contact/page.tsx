@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Mail, Shield, AlertTriangle, FileText, Building2, MessageSquare } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Contact Us | Doable",
-  description: "Get in touch with Doable Works LLC.",
+  title: "Contact Us | Appbrics",
+  description: "Get in touch with Appbrics.",
 };
 
 const contacts = [
@@ -79,7 +79,7 @@ export default function ContactPage() {
 
       <h2>Company</h2>
       <p>
-        <strong>Doable Works LLC</strong>
+        <strong>Appbrics</strong>
         <br />
         Operator of doable.me and dev.doable.me
       </p>

@@ -178,12 +178,15 @@ function denyDataStoreMisuse(
   return {
     permissionDecision: "deny",
     permissionDecisionReason:
-      "🚫 This project has a built-in SERVER-SIDE database. Persist data ONLY via the inbuilt DB: " +
-      "`import { db } from \"@doable/data\"` then `await db.query(sql, params)` (create tables with the data.migrate tool). " +
+      "🚫 This project has a built-in SERVER-SIDE database. Persist data via named queries: " +
+      "write `.doable/backend/queries/<name>.sql`, then `import { runtime } from \"@doable/runtime\"` and " +
+      "`await runtime.queries.run(\"name\", params)` (create tables with the data.migrate tool). " +
+      "Use `import { db } from \"@doable/data\"` only for db.auth.*. " +
       "Do NOT use " + (usesPglite ? "@electric-sql/pglite / new PGlite()" : "localStorage/sessionStorage") +
-      " as the data store — it loses every row on reload and is NOT the inbuilt DB. @doable/data is PRE-LINKED (absent from package.json is expected) — import it directly, never install it. " +
+      " as the data store — it loses every row on reload and is NOT the inbuilt DB. " +
+      "@doable/runtime and @doable/data are PRE-LINKED (absent from package.json is expected). " +
       "(A trivial UI preference like a theme toggle may still use localStorage with a plain string value.) " +
-      "Rewrite this file to read and write through @doable/data.",
+      "Rewrite this file to use runtime.queries.run — raw db.query SQL in UI is rejected.",
   };
 }
 

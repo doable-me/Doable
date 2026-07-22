@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Cookie Policy | Doable",
-  description: "How Doable uses cookies and similar technologies.",
+  title: "Cookie Policy | Appbrics",
+  description: "How Appbrics uses cookies and similar technologies.",
 };
 
 export default function CookiesPage() {
@@ -14,7 +14,7 @@ export default function CookiesPage() {
       </p>
 
       <p>
-        This Cookie Policy explains how <strong>Doable Works LLC</strong> uses
+        This Cookie Policy explains how <strong>Appbrics</strong> uses
         cookies and similar technologies on doable.me, dev.doable.me, and
         related services (the &ldquo;Service&rdquo;).
       </p>

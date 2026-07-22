@@ -32,8 +32,18 @@ export function getFrameworkPrompt(frameworkId: string): FrameworkPrompt {
 /** Concatenate the prompt sections in canonical order. */
 export function renderFrameworkPrompt(frameworkId: string): string {
   const p = getFrameworkPrompt(frameworkId);
-  return [p.systemIntro, p.envConventions, p.routing, p.styling, p.fileShape, p.pwa, BACKEND_RUNTIME_SNIPPET]
-    .filter(Boolean).join("\n\n");
+  const runtimeOn = process.env.DOABLE_APP_RUNTIME_ENABLED !== "0";
+  return [
+    p.systemIntro,
+    p.envConventions,
+    p.routing,
+    p.styling,
+    p.fileShape,
+    p.pwa,
+    runtimeOn ? BACKEND_RUNTIME_SNIPPET : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export { BACKEND_RUNTIME_SNIPPET };

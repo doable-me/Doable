@@ -4,7 +4,7 @@
  * ActivityFeedPanel — real-time operations log panel.
  * Shows every tool call, file change, and command as it happens.
  * Toggleable from the chat panel header.
- * Preserves Doable's existing border/muted/brand design tokens.
+ * Preserves Appbrics' existing border/muted/brand design tokens.
  */
 
 import { memo, useRef, useEffect, useCallback } from "react";

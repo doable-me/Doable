@@ -74,7 +74,7 @@ export function StepCloudflare({ onNext, onBack, onSkip }: StepProps) {
           Cloudflare Tunnel
         </h2>
         <p className="text-sm text-muted-foreground">
-          We strongly recommend running Doable behind a Cloudflare Tunnel.
+          We strongly recommend running Appbrics behind a Cloudflare Tunnel.
           Your server never exposes ports 80 or 443 to the public internet — all
           traffic enters through Cloudflare's edge, with built-in DDoS
           protection and TLS.

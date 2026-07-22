@@ -12,12 +12,15 @@ app data access and automation go through this runtime.
 
 ## Core rules
 
-1. **Named queries are the default data path.** UI and workflows call the same
-   query names. Prefer `runtime.queries.run` / `ctx.queries.run` over raw SQL.
+1. **Named queries are the default data path — ENFORCED.** UI and workflows call the
+   same query names. Prefer `runtime.queries.run` / `ctx.queries.run`. create_file /
+   edit_file **reject** raw `db.query` / Express in app source while the runtime is on
+   (default; set `DOABLE_APP_RUNTIME_ENABLED=0` to opt out).
 2. **⛔ Never invent Express / Fastify / Koa / `server.js` / custom HTTP servers**
    for project backends. Use auto CRUD (`/__doable/api`) or named-query HTTP.
 3. **`@doable/runtime` is PRE-LINKED** (like `@doable/data`). Import it; do not
-   add it to `package.json` or run `install_package` for it.
+   add it to `package.json` or run `install_package` for it. `@doable/data` is for
+   **auth only** (`db.auth.*`).
 4. **Schema still comes from `data.migrate`.** Runtime does not replace
    `inbuilt-database` — it sits on top of the same PGlite + RLS.
 5. **Pick the right surface** (see decision table). Do not bolt cron into the

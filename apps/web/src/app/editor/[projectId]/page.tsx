@@ -16,6 +16,7 @@ import { CollabPreviewSync } from "@/modules/collaboration/components/collab-pre
 import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
 import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
 import { UserInputCard } from "@/modules/editor/chat/user-input-card";
+import { ToolActivitySummary } from "@/modules/editor/chat/tool-call-card";
 import { CollabTeamChatWrapper } from "@/modules/collaboration/components/collab-team-chat-wrapper";
 import { CollabPresenceSync } from "@/modules/collaboration/components/collab-presence-sync";
 import { FileTabPresenceDots } from "@/modules/collaboration/components/file-tab-presence-dots";
@@ -31,6 +32,7 @@ import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/com
 import {
   ArrowUp,
   ArrowLeft,
+  ArrowDown,
   RefreshCw,
   Smartphone,
   Tablet,
@@ -105,6 +107,7 @@ import {
   Boxes,
   Hammer,
   Target,
+  Database,
 } from "lucide-react";
 import {
   Dialog,
@@ -158,6 +161,7 @@ const SpeedPanel = dynamic(() => import("@/modules/editor/panels/speed-panel").t
 const HistoryPanel = dynamic(() => import("@/modules/editor/panels/history-panel").then(m => ({ default: m.HistoryPanel })), { ssr: false });
 const EnvironmentsPanel = dynamic(() => import("@/modules/environments/environments-panel").then(m => ({ default: m.EnvironmentsPanel })), { ssr: false });
 const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m => ({ default: m.SkillsPanel })), { ssr: false });
+const BackendPanel = dynamic(() => import("@/modules/editor/panels/backend-panel").then(m => ({ default: m.BackendPanel })), { ssr: false });
 
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -179,7 +183,7 @@ function extractErrorMessage(data: unknown): string {
 }
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "team" | "environment" | "skills" | "build";
+type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "team" | "environment" | "skills" | "build" | "backend";
 type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
@@ -191,6 +195,8 @@ interface ToolAction {
   isBookmarked?: boolean;
   filePath?: string;
   status?: "running" | "completed" | "failed";
+  startedAt?: number;
+  completedAt?: number;
 }
 
 interface ChatMsg {
@@ -261,7 +267,7 @@ function detectLanguage(filename: string): string {
 const AUTOSAVE_DELAY_MS = 1500;
 
 /** Tabs that render a full panel (replacing the preview pane) */
-const PANEL_TABS: ActiveTab[] = ["history", "cloud", "analytics", "files", "security", "speed", "environment", "skills", "build"];
+const PANEL_TABS: ActiveTab[] = ["history", "cloud", "analytics", "files", "security", "speed", "environment", "skills", "build", "backend"];
 
 /** All items available in the triple-dots "More" menu */
 interface MoreMenuItem {
@@ -273,6 +279,7 @@ interface MoreMenuItem {
 const MORE_MENU_ITEMS: MoreMenuItem[] = [
   { key: "design", icon: Palette, label: "Design" },
   { key: "cloud", icon: Cloud, label: "Cloud" },
+  { key: "backend", icon: Database, label: "Backend" },
   { key: "analytics", icon: BarChart3, label: "Analytics" },
   { key: "files", icon: FolderOpen, label: "Files" },
   { key: "security", icon: Shield, label: "Security" },
@@ -1361,7 +1368,7 @@ async function consumeStreamResume(
 // ─── Markdown Rendering (static — outside component for memoization) ────
 
 function formatInlineStatic(text: string): React.ReactNode {
-  const segments = text.split(/(\*\*.*?\*\*|`[^`]+`)/g);
+  const segments = text.split(/(\*\*.*?\*\*|\*[^*\n]+?\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
   return segments.map((seg, j) => {
     if (seg.startsWith("**") && seg.endsWith("**")) {
       return (
@@ -1370,14 +1377,35 @@ function formatInlineStatic(text: string): React.ReactNode {
         </strong>
       );
     }
+    if (seg.startsWith("*") && seg.endsWith("*") && seg.length > 2 && !seg.startsWith("**")) {
+      return (
+        <em key={j} className="italic text-foreground/90">
+          {seg.slice(1, -1)}
+        </em>
+      );
+    }
     if (seg.startsWith("`") && seg.endsWith("`")) {
       return (
         <code
           key={j}
-          className="rounded bg-secondary px-1.5 py-0.5 text-[13px] text-brand-700 dark:text-brand-300"
+          className="rounded-md bg-muted px-1.5 py-0.5 text-[12.5px] font-mono text-brand-700 dark:text-brand-300"
         >
           {seg.slice(1, -1)}
         </code>
+      );
+    }
+    const linkMatch = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a
+          key={j}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-brand-600 dark:text-brand-400 underline underline-offset-2 hover:text-brand-500"
+        >
+          {linkMatch[1]}
+        </a>
       );
     }
     return seg;
@@ -1394,14 +1422,14 @@ function formatContent(content: string) {
       return (
         <div
           key={i}
-          className="my-3 overflow-hidden rounded-lg border border-border"
+          className="my-3 overflow-hidden rounded-xl border border-border shadow-sm"
         >
           {lang && (
-            <div className="bg-secondary px-3 py-1.5 text-[11px] font-medium text-muted-foreground border-b border-border">
-              {lang}
+            <div className="flex items-center justify-between bg-muted/80 px-3 py-1.5 text-[11px] font-medium text-muted-foreground border-b border-border">
+              <span>{lang}</span>
             </div>
           )}
-          <pre className="overflow-x-auto bg-muted p-3 text-[13px] leading-relaxed text-foreground">
+          <pre className="overflow-x-auto bg-muted/40 p-3.5 text-[13px] leading-relaxed text-foreground">
             <code>{code}</code>
           </pre>
         </div>
@@ -1411,48 +1439,86 @@ function formatContent(content: string) {
     const textLines = part.split("\n");
     const elements: React.ReactNode[] = [];
     let listBuffer: { ordered: boolean; items: React.ReactNode[] } | null = null;
+    let paraBuffer: string[] = [];
 
     const flushList = () => {
       if (!listBuffer) return;
       if (listBuffer.ordered) {
         elements.push(
-          <ol key={`ol-${elements.length}`} className="my-1.5 ml-4 list-decimal space-y-0.5 text-foreground">
-            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
+          <ol key={`ol-${elements.length}`} className="my-2.5 ml-5 list-decimal space-y-1.5 text-[14px] leading-relaxed text-foreground">
+            {listBuffer.items.map((item, idx) => (<li key={idx} className="pl-0.5">{item}</li>))}
           </ol>
         );
       } else {
         elements.push(
-          <ul key={`ul-${elements.length}`} className="my-1.5 ml-4 list-disc space-y-0.5 text-foreground">
-            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
+          <ul key={`ul-${elements.length}`} className="my-2.5 ml-5 list-disc space-y-1.5 text-[14px] leading-relaxed text-foreground">
+            {listBuffer.items.map((item, idx) => (<li key={idx} className="pl-0.5">{item}</li>))}
           </ul>
         );
       }
       listBuffer = null;
     };
 
+    const flushPara = () => {
+      if (paraBuffer.length === 0) return;
+      const text = paraBuffer.join(" ").trim();
+      paraBuffer = [];
+      if (!text) return;
+      elements.push(
+        <p key={`p-${elements.length}`} className="my-2 text-[14px] leading-[1.65] text-foreground/95">
+          {formatInlineStatic(text)}
+        </p>
+      );
+    };
+
     for (let li = 0; li < textLines.length; li++) {
       const line = textLines[li]!;
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        flushList();
+        flushPara();
+        continue;
+      }
+
+      const hMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
+      if (hMatch) {
+        flushList();
+        flushPara();
+        const level = hMatch[1]!.length;
+        const headingCls =
+          level === 1
+            ? "mt-4 mb-2 text-[17px] font-semibold tracking-tight text-foreground"
+            : level === 2
+              ? "mt-3.5 mb-1.5 text-[15px] font-semibold tracking-tight text-foreground"
+              : "mt-3 mb-1 text-[14px] font-semibold text-foreground";
+        elements.push(
+          <div key={`h-${i}-${li}`} className={headingCls}>
+            {formatInlineStatic(hMatch[2] ?? "")}
+          </div>
+        );
+        continue;
+      }
+
       const ulMatch = line.match(/^\s*[-*]\s+(.*)/);
       const olMatch = line.match(/^\s*\d+\.\s+(.*)/);
 
       if (ulMatch) {
+        flushPara();
         if (!listBuffer || listBuffer.ordered) { flushList(); listBuffer = { ordered: false, items: [] }; }
         listBuffer.items.push(formatInlineStatic(ulMatch[1] ?? ""));
       } else if (olMatch) {
+        flushPara();
         if (!listBuffer || !listBuffer.ordered) { flushList(); listBuffer = { ordered: true, items: [] }; }
         listBuffer.items.push(formatInlineStatic(olMatch[1] ?? ""));
       } else {
         flushList();
-        elements.push(
-          <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
-            {formatInlineStatic(line)}
-            {li < textLines.length - 1 ? "\n" : ""}
-          </span>
-        );
+        paraBuffer.push(trimmed);
       }
     }
     flushList();
-    return <span key={i}>{elements}</span>;
+    flushPara();
+    return <div key={i} className="space-y-0.5">{elements}</div>;
   });
 }
 
@@ -2083,6 +2149,8 @@ function EditorPageInner() {
   const finalReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -2159,7 +2227,7 @@ function EditorPageInner() {
     }
   }, [resolvedProjectId]);
 
-  // ─── Sync Doable theme into preview iframe ──────────────────
+  // ─── Sync Appbrics theme into preview iframe ──────────────────
   // Watches host <html>.dark and posts {type:"doable-theme"} to the
   // preview iframe so the bridge inside it can toggle <html class="dark">
   // and run its dark-shim. Also responds to the iframe's
@@ -3047,6 +3115,8 @@ function EditorPageInner() {
                         isBookmarked: false,
                         filePath: (args.path ?? args.filePath ?? args.file) as string | undefined,
                         status: "completed" as const,
+                        startedAt: new Date(m.created_at).getTime(),
+                        completedAt: new Date(m.created_at).getTime(),
                       };
                     })
                   : undefined),
@@ -3683,7 +3753,7 @@ function EditorPageInner() {
 
     // Gap #7: a just-imported project that uses Supabase but has no Supabase
     // connection yet. Open the connect-Supabase dialog automatically so the
-    // user is prompted (and Doable then injects the creds into the sandbox)
+    // user is prompted (and Appbrics then injects the creds into the sandbox)
     // instead of the app silently rendering "Supabase is not configured".
     // One-shot: consume the flag so it never re-opens on later mounts.
     const supabaseSetupKey = `doable_supabase_setup_required_${resolvedProjectId}`;
@@ -3822,6 +3892,7 @@ function EditorPageInner() {
           isBookmarked: false,
           filePath,
           status: "running",
+          startedAt: Date.now(),
         };
         return prev.map((m) =>
           m.id === lastAssistant.id
@@ -3863,7 +3934,14 @@ function EditorPageInner() {
                   ...m,
                   toolActions: m.toolActions?.map((a) =>
                     a.id === runningAction.id
-                      ? { ...a, status: "completed" as const, description: keepExistingDesc ? a.description : finalDescription, filePath: filePath ?? a.filePath }
+                      ? {
+                          ...a,
+                          status: "completed" as const,
+                          description: keepExistingDesc ? a.description : finalDescription,
+                          filePath: filePath ?? a.filePath,
+                          completedAt: Date.now(),
+                          startedAt: a.startedAt ?? Date.now(),
+                        }
                       : a
                   ),
                 }
@@ -3880,6 +3958,8 @@ function EditorPageInner() {
           isBookmarked: false,
           filePath,
           status: "completed",
+          startedAt: Date.now(),
+          completedAt: Date.now(),
         };
         return prev.map((m) =>
           m.id === lastAssistant.id
@@ -4054,7 +4134,14 @@ function EditorPageInner() {
                     isStreaming: false,
                     // Mark any remaining "running" tool actions as completed
                     toolActions: m.toolActions?.map((a) =>
-                      a.status === "running" ? { ...a, status: "completed" as const } : a
+                      a.status === "running"
+                        ? {
+                            ...a,
+                            status: "completed" as const,
+                            completedAt: Date.now(),
+                            startedAt: a.startedAt ?? Date.now(),
+                          }
+                        : a
                     ),
                   }
                 : m
@@ -5048,6 +5135,7 @@ function EditorPageInner() {
                 isExpanded: false,
                 filePath,
                 status: "running" as const,
+                startedAt: Date.now(),
               }] }
             : m
         )
@@ -5064,7 +5152,14 @@ function EditorPageInner() {
             return {
               ...m,
               toolActions: m.toolActions?.map((a) =>
-                a.id === runningAction.id ? { ...a, status: "completed" as const } : a
+                a.id === runningAction.id
+                  ? {
+                      ...a,
+                      status: "completed" as const,
+                      completedAt: Date.now(),
+                      startedAt: a.startedAt ?? Date.now(),
+                    }
+                  : a
               ),
             };
           }
@@ -5126,14 +5221,13 @@ function EditorPageInner() {
       <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border bg-card px-2 md:px-3">
         {/* Left: Logo + Back arrow + Project name with dropdown */}
         <div className="flex items-center gap-2.5 min-w-0">
-          {/* Doable logo icon */}
+          {/* Appbrics logo icon */}
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-600 dark:to-brand-700 dark:border-transparent shadow-sm shadow-brand-700/20 dark:shadow-brand-900/30 hover:brightness-95 transition-all"
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 shadow-sm shadow-brand-700/20 hover:brightness-95 transition-all"
             title="Back to dashboard"
           >
-            <span className="text-sm font-bold text-brand-700 dark:text-white self-end mb-0.5">D</span>
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-700 dark:bg-violet-400 self-end mb-1.5 ml-0.5 shrink-0" />
+            <span className="text-sm font-bold text-white leading-none">A</span>
           </button>
 
           {/* Editable project name with dropdown chevron + status subtitle */}
@@ -5570,35 +5664,42 @@ function EditorPageInner() {
             ) : (
             <>
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 pt-4 space-y-4 scrollbar-thin flex flex-col">
+            <div className="relative flex-1 min-h-0 flex flex-col">
+            <div
+              ref={chatScrollRef}
+              onScroll={() => {
+                const el = chatScrollRef.current;
+                if (!el) return;
+                const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+                setShowScrollBtn(dist > 120);
+              }}
+              className="flex-1 overflow-y-auto px-4 pt-4 space-y-4 scrollbar-thin flex flex-col"
+            >
               <div className="flex-1" />
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center px-6">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600/10 mb-4">
-                    <Sparkles className="h-6 w-6 text-brand-700 dark:text-brand-400" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500/20 to-brand-600/10 mb-4 ring-1 ring-brand-500/20">
+                    <Sparkles className="h-6 w-6 text-brand-600 dark:text-brand-400" />
                   </div>
-                  <h3 className="text-sm font-medium text-foreground mb-1">
-                    Start a conversation
+                  <h3 className="text-sm font-semibold text-foreground mb-1">
+                    What should we build?
                   </h3>
                   <p className="text-[13px] text-muted-foreground max-w-[280px]">
-                    Describe what you want to build and Doable AI will generate
-                    the code for you.
+                    Describe your idea and Appbrics AI will design and code it with you.
                   </p>
-                  {/* Mode indicator in empty state */}
-                  <div className="mt-4 flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-[12px] text-muted-foreground">
+                  <div className="mt-4 flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-[12px] text-muted-foreground shadow-sm">
                     {chatMode === "agent" ? (
                       <>
-                        <Hammer className="h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />
+                        <Hammer className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
                         <span>Work mode — generates code</span>
                       </>
                     ) : (
                       <>
-                        <Target className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                        <span>Strategize mode — creates plans only</span>
+                        <Target className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+                        <span>Strategize mode — plans first</span>
                       </>
                     )}
                   </div>
-                  {/* Prompt starter chips in empty state */}
                   <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-[360px]">
                     {[
                       "Build a SaaS landing page",
@@ -5609,7 +5710,7 @@ function EditorPageInner() {
                       <button
                         key={starter}
                         onClick={() => sendMessage(starter)}
-                        className="rounded-full border border-border bg-secondary px-3.5 py-1.5 text-[13px] text-foreground hover:bg-accent hover:text-foreground hover:border-border transition-all"
+                        className="rounded-full border border-border/80 bg-background px-3.5 py-1.5 text-[13px] text-foreground shadow-sm hover:border-brand-500/40 hover:bg-brand-500/5 hover:text-foreground transition-all"
                       >
                         {starter}
                       </button>
@@ -5747,7 +5848,7 @@ function EditorPageInner() {
                                 : "text-brand-700 dark:text-brand-400"
                             }`}
                           >
-                            {msg.isError ? "Error" : "Doable AI"}
+                            {msg.isError ? "Error" : "Appbrics AI"}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
                             {msg.timestamp}
@@ -5806,7 +5907,7 @@ function EditorPageInner() {
                           className={`text-[14px] leading-relaxed ${
                             msg.isError
                               ? "text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-start gap-3 shadow-sm backdrop-blur-sm relative overflow-hidden"
-                              : "text-foreground"
+                              : "text-foreground max-w-prose"
                           }`}
                         >
                           {msg.isError && (
@@ -5857,18 +5958,11 @@ function EditorPageInner() {
                                 : <MemoizedMessageContent content={stripFunctionMarkup(msg.content)} />
                             )}
                             
-                            {/* Live Streaming Glowing Orb - visible while streaming, and
-                                afterwards as a summary when there are tool actions.
-                                NOTE: bg uses `bg-card/70 backdrop-blur-md` (not
-                                `bg-foreground/30`) so this card adapts to the
-                                active theme — `--foreground` is white in dark
-                                mode, which produced an ugly translucent-white
-                                overlay during presentation creation. `--card`
-                                is a slightly elevated panel color that reads
-                                as a subtle lift in both dark + light modes. */}
+                            {/* Activity timeline — Dyad-style cards with status + duration */}
                             {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (() => {
                               const allActions = msg.toolActions ?? [];
-                              // Reformat MCP tool descriptions and sanitize paths/PII at display time
+                              if (!msg.isStreaming && allActions.length === 0) return null;
+
                               const formatDescription = (action: ToolAction) => {
                                 if (action.toolName?.startsWith("mcp_")) {
                                   const parts = action.toolName.slice(4).split("_");
@@ -5877,93 +5971,60 @@ function EditorPageInner() {
                                     return parts.slice(verbIdx).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
                                   }
                                 }
-                                // Sanitize: strip absolute paths, UUIDs, emails
                                 let desc = action.description;
-                                desc = desc.replace(/\/[\w.\-/]+\/([\w.\-]+)/g, "$1"); // /abs/path/file → file
-                                desc = desc.replace(/[A-Za-z]:\\[\w.\\-]+\\([\w.\-]+)/g, "$1"); // C:\path\file → file
-                                desc = desc.replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, "***"); // UUIDs
-                                desc = desc.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "***@***"); // emails
+                                desc = desc.replace(/\/[\w.\-/]+\/([\w.\-]+)/g, "$1");
+                                desc = desc.replace(/[A-Za-z]:\\[\w.\\-]+\\([\w.\-]+)/g, "$1");
+                                desc = desc.replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, "***");
+                                desc = desc.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "***@***");
                                 return desc;
                               };
-                              if (!msg.isStreaming && allActions.length === 0) return null;
+
+                              const isExpanded = expandedToolCalls.has(msg.id);
+                              const COLLAPSE_THRESHOLD = 6;
+                              const shouldCollapse = allActions.length > COLLAPSE_THRESHOLD && !isExpanded;
+                              const visibleActions = shouldCollapse
+                                ? allActions.slice(-COLLAPSE_THRESHOLD)
+                                : allActions;
+                              const hiddenCount = allActions.length - COLLAPSE_THRESHOLD;
+
                               return (
-                              <div data-testid="streaming-orb-card" className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-md p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
-                                <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
-                                <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
-                                
-                                <div className="flex flex-col items-center relative z-10 w-full text-center">
-                                  <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-400/20 via-purple-500/20 to-transparent border border-border shadow-[0_0_30px_rgba(168,85,247,0.3)]">
-                                    {msg.isStreaming ? (
-                                      <>
-                                        <Sparkles className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-pulse" />
-                                        <div className="absolute inset-0 rounded-full border border-dashed border-border animate-[spin_10s_linear_infinite]" />
-                                      </>
-                                    ) : (
-                                      <Check className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
-                                    )}
-                                  </div>
-                                  <h3 className="mt-4 mb-3 text-sm font-semibold text-foreground tracking-wide">
-                                    {msg.isStreaming
-                                      ? (liveStatus || "Building...")
-                                      : `${allActions.length} ${(allActions.length === 1) ? "change" : "changes"} applied`}
-                                  </h3>
-                                  
-                                  {allActions.length > 0 && (() => {
-                                    const isExpanded = expandedToolCalls.has(msg.id);
-                                    const COLLAPSE_THRESHOLD = 4;
-                                    const shouldCollapse = allActions.length > COLLAPSE_THRESHOLD && !isExpanded;
-                                    const visibleActions = shouldCollapse ? allActions.slice(-COLLAPSE_THRESHOLD) : allActions;
-                                    const hiddenCount = allActions.length - COLLAPSE_THRESHOLD;
-                                    return (
-                                    <div className="w-full flex flex-col gap-2 relative mt-1">
-                                      {allActions.length > COLLAPSE_THRESHOLD && (
-                                        <button
-                                          type="button"
-                                          data-testid="toolcalls-collapse-toggle"
-                                          onClick={() => {
-                                            setExpandedToolCalls((prev) => {
-                                              const next = new Set(prev);
-                                              if (next.has(msg.id)) next.delete(msg.id);
-                                              else next.add(msg.id);
-                                              return next;
-                                            });
-                                          }}
-                                          className="self-center inline-flex items-center gap-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-border px-2.5 py-1 text-[10px] font-medium text-foreground/80 hover:text-foreground transition-colors"
-                                        >
-                                          {isExpanded ? (
-                                            <>
-                                              <ChevronUp className="h-3 w-3" />
-                                              Hide earlier steps
-                                            </>
-                                          ) : (
-                                            <>
-                                              <ChevronDown className="h-3 w-3" />
-                                              Show {hiddenCount} earlier {hiddenCount === 1 ? "step" : "steps"}
-                                            </>
-                                          )}
-                                        </button>
+                                <div data-testid="streaming-orb-card" className="mt-3 mb-2 max-w-lg">
+                                  {allActions.length > COLLAPSE_THRESHOLD && (
+                                    <button
+                                      type="button"
+                                      data-testid="toolcalls-collapse-toggle"
+                                      onClick={() => {
+                                        setExpandedToolCalls((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(msg.id)) next.delete(msg.id);
+                                          else next.add(msg.id);
+                                          return next;
+                                        });
+                                      }}
+                                      className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                      {isExpanded ? (
+                                        <>
+                                          <ChevronUp className="h-3 w-3" />
+                                          Hide earlier steps
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronDown className="h-3 w-3" />
+                                          Show {hiddenCount} earlier {hiddenCount === 1 ? "step" : "steps"}
+                                        </>
                                       )}
-                                      {visibleActions.map((action, idx) => (
-                                        <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-accent rounded-md p-1.5 border border-border text-left">
-                                          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
-                                             {action.status === "running" ? (
-                                               <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
-                                             ) : action.status === "failed" ? (
-                                               <XCircle className="h-3 w-3 text-red-400" />
-                                             ) : (
-                                               <Check className="h-3 w-3 text-brand-400" />
-                                             )}
-                                          </div>
-                                          <span className="text-[11px] font-medium truncate text-foreground flex-1">
-                                            {formatDescription(action)}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                    );
-                                  })()}
+                                    </button>
+                                  )}
+                                  <ToolActivitySummary
+                                    isStreaming={msg.isStreaming}
+                                    liveStatus={liveStatus || msg.liveStatus}
+                                    actions={visibleActions.map((a) => ({
+                                      ...a,
+                                      description: formatDescription(a),
+                                    }))}
+                                  />
                                 </div>
-                              </div>
                               );
                             })()}
                           </div>
@@ -6340,6 +6401,19 @@ function EditorPageInner() {
 
               <div ref={chatEndRef} />
             </div>
+            {showScrollBtn && (
+              <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+                <button
+                  type="button"
+                  onClick={() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+                  className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/95 text-muted-foreground shadow-lg backdrop-blur-sm transition-all hover:bg-accent hover:text-foreground hover:shadow-xl"
+                  title="Scroll to bottom"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            </div>
 
             {/* "Back to Chat" link when viewing a panel */}
             {isPanelView && (
@@ -6354,13 +6428,13 @@ function EditorPageInner() {
 
             {/* ── Stop Generation Button (floating above input) ── */}
             {isStreaming && (
-              <div className="flex justify-center px-4 -mb-1">
+              <div className="flex justify-center px-4 pb-1">
                 <button
                   onClick={handleStopStreaming}
-                  className="flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-[13px] font-medium text-foreground shadow-lg shadow-md hover:bg-accent hover:border-border transition-all backdrop-blur-sm"
+                  className="flex items-center gap-2 rounded-full border border-border/80 bg-background/95 px-4 py-2 text-[13px] font-medium text-foreground shadow-lg backdrop-blur-sm transition-all hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
                 >
                   <Square className="h-3 w-3 fill-current" />
-                  Stop Doable
+                  Stop Appbrics
                 </button>
               </div>
             )}
@@ -6369,7 +6443,7 @@ function EditorPageInner() {
             <CollabChatTyping keystrokeSignal={keystrokeSignal} />
 
             {/* Input area */}
-            <div className="border-t border-border">
+            <div className="border-t border-border/60 bg-gradient-to-t from-background via-background to-transparent">
               {/* Credits bar */}
               {showCreditsBar && (
                 <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
@@ -6396,17 +6470,16 @@ function EditorPageInner() {
               )}
 
               {/* Chat input toolbar */}
-              <div className="px-2 py-2">
-                <div className="pt-2 pb-4 px-4 bg-gradient-to-t from-background via-background to-transparent shrink-0">
-                  <div
-                    className={`relative flex flex-col rounded-3xl border shadow-lg backdrop-blur-xl transition-all duration-300 ease-out ${
-                      isDragging
-                        ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500 scale-[1.01]"
-                        : "border-border bg-muted"
-                    }`}
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onDrop={fileAttachments.handleDrop}
-                  >
+              <div className="px-3 py-3">
+                <div
+                  className={`relative flex flex-col rounded-2xl border shadow-sm backdrop-blur-xl transition-all duration-200 ${
+                    isDragging
+                      ? "border-brand-500 bg-brand-500/10 ring-2 ring-brand-500/30 scale-[1.01]"
+                      : "border-border/80 bg-muted/40 focus-within:border-brand-500/50 focus-within:ring-2 focus-within:ring-brand-500/15 focus-within:bg-background"
+                  }`}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={fileAttachments.handleDrop}
+                >
                     {/* Attachment preview thumbnails */}
                     {fileAttachments.attachments.length > 0 && (
                       <div className="flex items-center gap-2 px-3 pt-3 pb-2 overflow-x-auto">
@@ -6458,7 +6531,7 @@ function EditorPageInner() {
                         }
                       }}
                       onPaste={fileAttachments.handlePaste}
-                      placeholder={inputValue.length > 0 ? "" : "Ask Doable..."}
+                      placeholder={inputValue.length > 0 ? "" : "Ask Appbrics..."}
                       rows={1}
                       disabled={isStreaming}
                       className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:opacity-50"
@@ -6492,13 +6565,13 @@ function EditorPageInner() {
                         <div className="shrink-0 h-4 w-px bg-accent mx-0.5" />
 
                         {/* ── Strategize / Work Mode Toggle ── */}
-                        <div className="shrink-0 flex items-center rounded-full bg-muted border border-border p-0.5">
+                        <div className="shrink-0 flex items-center gap-0.5 rounded-lg p-0.5">
                           <button
                             onClick={() => setChatMode("plan")}
-                            className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
+                            className={`flex items-center gap-1 px-2.5 h-7 rounded-lg text-[10px] sm:text-[11px] font-medium transition-all ${
                               chatMode === "plan"
-                                ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
-                                : "text-muted-foreground hover:text-foreground"
+                                ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                                : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
                             }`}
                             title="Strategize mode — creates plans only"
                           >
@@ -6507,10 +6580,10 @@ function EditorPageInner() {
                           </button>
                           <button
                             onClick={() => setChatMode("agent")}
-                            className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
+                            className={`flex items-center gap-1 px-2.5 h-7 rounded-lg text-[10px] sm:text-[11px] font-medium transition-all ${
                               chatMode === "agent"
-                                ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
-                                : "text-muted-foreground hover:text-foreground"
+                                ? "bg-brand-500/15 text-brand-700 dark:text-brand-300"
+                                : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
                             }`}
                             title="Work mode — generates code"
                           >
@@ -6608,7 +6681,6 @@ function EditorPageInner() {
                   </button>
                 </div>
               )}
-            </div>
             </>
             )}
           </div>
@@ -7005,6 +7077,9 @@ function EditorPageInner() {
             )}
             {activeTab === "build" && (
               <BuildPanel projectId={resolvedProjectId} />
+            )}
+            {activeTab === "backend" && (
+              <BackendPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
             )}
           </div>
         )}

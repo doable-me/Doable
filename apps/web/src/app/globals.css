@@ -2,8 +2,22 @@
 @config "../../tailwind.config.ts";
 
 @layer base {
-  /* ─── Brand color palettes ─────────────────────────── */
+  /* ─── Brand color palettes (default = ocean) ───────── */
   :root,
+  [data-brand="ocean"] {
+    --brand-50: 204 100% 97%;
+    --brand-100: 204 94% 94%;
+    --brand-200: 201 94% 86%;
+    --brand-300: 199 95% 74%;
+    --brand-400: 198 93% 60%;
+    --brand-500: 199 89% 48%;
+    --brand-600: 200 98% 39%;
+    --brand-700: 201 96% 32%;
+    --brand-800: 201 90% 27%;
+    --brand-900: 202 80% 24%;
+    --brand-950: 204 80% 16%;
+  }
+
   [data-brand="purple"] {
     --brand-50: 250 100% 98%;
     --brand-100: 251 91% 95%;
@@ -30,20 +44,6 @@
     --brand-800: 15 79% 34%;
     --brand-900: 15 75% 28%;
     --brand-950: 13 81% 15%;
-  }
-
-  [data-brand="ocean"] {
-    --brand-50: 204 100% 97%;
-    --brand-100: 204 94% 94%;
-    --brand-200: 201 94% 86%;
-    --brand-300: 199 95% 74%;
-    --brand-400: 198 93% 60%;
-    --brand-500: 199 89% 48%;
-    --brand-600: 200 98% 39%;
-    --brand-700: 201 96% 32%;
-    --brand-800: 201 90% 27%;
-    --brand-900: 202 80% 24%;
-    --brand-950: 204 80% 16%;
   }
 
   [data-brand="emerald"] {

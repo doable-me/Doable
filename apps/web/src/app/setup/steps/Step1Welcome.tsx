@@ -36,7 +36,7 @@ export function Step1Welcome({ workspaceName, onWorkspaceNameChange, onNext }: P
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
         <h1 className="text-3xl font-semibold text-foreground tracking-tight">
-          Welcome to your Doable
+          Welcome to Appbrics
         </h1>
         <p className="text-base text-muted-foreground leading-relaxed max-w-prose">
           You are the platform owner on this install. This short setup walks you through

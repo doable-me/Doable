@@ -16,9 +16,9 @@ import { TracingInit } from "@/components/tracing-init";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Doable | Dream it. Do it. Done.",
+  title: "Appbrics | Build apps with AI",
   description:
-    "Tell AI what you want to do and Doable gets it done. From idea to deployed app in minutes.",
+    "Describe what you want and Appbrics builds it. From idea to deployed app in minutes.",
   keywords: ["AI", "app builder", "code generation", "full-stack", "no-code"],
   icons: {
     icon: [
@@ -38,7 +38,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var b=localStorage.getItem("doable_brand_theme");if(b)document.documentElement.setAttribute("data-brand",b);var t=localStorage.getItem("doable_theme")||"dark";var resolved=t==="system"?(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;var cl=document.documentElement.classList;cl.remove("dark","light");cl.add(resolved);document.documentElement.style.colorScheme=resolved;}catch(e){document.documentElement.classList.add("dark");}})()`,
+            __html: `(function(){try{var b=localStorage.getItem("doable_brand_theme")||"ocean";document.documentElement.setAttribute("data-brand",b);var t=localStorage.getItem("doable_theme")||"dark";var resolved=t==="system"?(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;var cl=document.documentElement.classList;cl.remove("dark","light");cl.add(resolved);document.documentElement.style.colorScheme=resolved;}catch(e){document.documentElement.setAttribute("data-brand","ocean");document.documentElement.classList.add("dark");}})()`,
           }}
         />
       </head>

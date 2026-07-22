@@ -186,6 +186,11 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
               `File was NOT created. Fix the syntax and call create_file again.`,
           };
         }
+        const { runtimeWriteGuardError } = await import("../../app-runtime/enforce.js");
+        const runtimeBlock = runtimeWriteGuardError(filePath, content);
+        if (runtimeBlock) {
+          return { success: false, error: runtimeBlock };
+        }
         emitToolEvent(projectId, "create_file", "start", { path: filePath });
         await writeFile(projectId, filePath, content);
         emitToolEvent(projectId, "create_file", "end", { path: filePath });
@@ -234,6 +239,11 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
               `Syntax error in ${filePath} after edit: ${syntaxCheck.message}\n` +
               `File was NOT modified. Re-read the file and try a different edit.`,
           };
+        }
+        const { runtimeWriteGuardError } = await import("../../app-runtime/enforce.js");
+        const runtimeBlock = runtimeWriteGuardError(filePath, content);
+        if (runtimeBlock) {
+          return { success: false, error: runtimeBlock };
         }
         emitToolEvent(projectId, "edit_file", "start", { path: filePath });
         await writeFile(projectId, filePath, content);

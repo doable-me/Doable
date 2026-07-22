@@ -516,7 +516,7 @@ function SubscriptionsList({ items }: { items: SubscriptionRow[] }) {
                       GitHub&apos;s terms restrict Copilot Individual licenses to a single person — licenses are tied to one GitHub account and are not shareable. Sharing can cause GitHub to throttle or revoke Copilot access for that account.
                     </div>
                     <div className="text-amber-100/70">
-                      <span className="font-medium">What to do:</span> use one Copilot subscription per user, or move everyone to a Copilot Business / Enterprise plan with per-seat assignments. Consider adding each user&apos;s own GitHub Copilot account to Doable instead of reusing one.
+                      <span className="font-medium">What to do:</span> use one Copilot subscription per user, or move everyone to a Copilot Business / Enterprise plan with per-seat assignments. Consider adding each user&apos;s own GitHub Copilot account to Appbrics instead of reusing one.
                     </div>
                   </div>
                 </div>

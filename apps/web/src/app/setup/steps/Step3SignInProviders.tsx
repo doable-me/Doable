@@ -65,7 +65,7 @@ const OAUTH_PROVIDERS: {
     id: "supabase",
     label: "Supabase",
     description:
-      "Lets users authorize Doable to provision Supabase projects on their behalf when the AI builds a backend-enabled app. Without this, users see a sign-in prompt mid-build.",
+      "Lets users authorize Appbrics to provision Supabase projects on their behalf when the AI builds a backend-enabled app. Without this, users see a sign-in prompt mid-build.",
     callbackPath: "/integrations/enhanced-auth/callback",
     consoleUrl: "https://supabase.com/dashboard/account/tokens",
     consoleLabel: "Open Supabase OAuth Apps",

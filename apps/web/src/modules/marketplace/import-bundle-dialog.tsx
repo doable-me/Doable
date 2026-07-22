@@ -132,7 +132,7 @@ export function ImportBundleDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5 text-brand-400" />
-            Import from outside Doable
+            Import from outside Appbrics
           </DialogTitle>
           <DialogDescription>
             Bring in an environment from a JSON manifest, Standards Zip, or public GitHub repo.

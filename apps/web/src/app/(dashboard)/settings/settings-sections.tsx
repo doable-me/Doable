@@ -244,7 +244,7 @@ export function AppearanceSection({
   onBrandThemeChange: (v: BrandTheme) => void;
 }) {
   return (
-    <SettingsSection icon={Palette} title="Appearance" description="Customize how Doable looks">
+    <SettingsSection icon={Palette} title="Appearance" description="Customize how Appbrics looks">
       <div className="space-y-5">
         <div className="space-y-3">
           <Label className="text-foreground">Theme</Label>

@@ -443,7 +443,7 @@ UI generation remains production-grade. The **platform app runtime** is implemen
 | `@doable/runtime` client + `_ext` skills + `builtin:runtime` | **Shipped** |
 | Data templates (waitlist, saas-leads, todo-multi-tenant) | **Shipped** |
 
-Enable with `DOABLE_APP_RUNTIME_ENABLED=1`. Spec: [`FULLSTACK_RUNTIME.md`](./FULLSTACK_RUNTIME.md). Hooks: [`FORK_EXTENSIONS.md`](./FORK_EXTENSIONS.md).
+Enable by default (`DOABLE_APP_RUNTIME_ENABLED` unset or any value other than `0`). Spec: [`FULLSTACK_RUNTIME.md`](./FULLSTACK_RUNTIME.md). Hooks: [`FORK_EXTENSIONS.md`](./FORK_EXTENSIONS.md). While enabled, `create_file` / `edit_file` **reject** raw `db.query` / Express in app source — named queries via `@doable/runtime` are required.
 
 ---
 

@@ -109,7 +109,7 @@ export function WizardShell() {
       <header className="flex items-center justify-between px-8 py-5 border-b border-border/60">
         <div className="flex items-center gap-2.5">
           {/* Simple wordmark — matches the app's existing brand pattern */}
-          <span className="text-lg font-semibold tracking-tight text-foreground">Doable</span>
+          <span className="text-lg font-semibold tracking-tight text-foreground">Appbrics</span>
           <span className="text-xs text-muted-foreground font-medium">Setup</span>
         </div>
         <div className="flex items-center gap-3">

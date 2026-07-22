@@ -53,7 +53,7 @@ export function useTypingPlaceholder(): string {
     return () => clearTimeout(timeout);
   }, [displayText, phase, index]);
 
-  return displayText || "Ask Doable to create...";
+  return displayText || "Ask Appbrics to create...";
 }
 
 // ─── Context Menu Hook ──────────────────────────────────────

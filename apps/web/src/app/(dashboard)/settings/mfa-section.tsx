@@ -204,7 +204,7 @@ function EnrollDialog({
   function handleDownload() {
     if (!recoveryCodes) return;
     const text = [
-      "Doable recovery codes",
+      "Appbrics recovery codes",
       "",
       "Keep these somewhere safe. Each code can be used once if you lose access to your authenticator app.",
       "",

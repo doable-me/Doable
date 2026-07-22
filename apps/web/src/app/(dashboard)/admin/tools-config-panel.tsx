@@ -217,9 +217,9 @@ export function ToolsConfigPanel() {
                       className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500" />
                   </div>
 
-                  {/* Doable tools */}
+                  {/* Appbrics tools */}
                   <div>
-                    <h4 className="text-xs font-medium text-foreground mb-2">Doable Tools</h4>
+                    <h4 className="text-xs font-medium text-foreground mb-2">Appbrics Tools</h4>
                     <div className="grid grid-cols-2 gap-1.5">
                       {doableTools.map(tool => (
                         <label key={tool.name}

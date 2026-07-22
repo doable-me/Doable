@@ -124,7 +124,7 @@ export function DoableAiTab({ projectId, workspaceId, addToast }: Props) {
           chatModelOverride: pendingChatModel,
         }),
       });
-      addToast("success", "Doable AI settings saved.");
+      addToast("success", "Appbrics AI settings saved.");
       refreshSettings();
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Save failed.");
@@ -197,7 +197,7 @@ export function DoableAiTab({ projectId, workspaceId, addToast }: Props) {
     <div className="space-y-6" data-doable-ai-tab>
       {/* ── Master toggle ── */}
       <SectionCard
-        title="Doable AI for this project"
+        title="Appbrics AI for this project"
         description="When disabled, /__doable/ai/* returns 503 AI_DISABLED_FOR_PROJECT. Useful for paused projects or quota lockouts."
       >
         <div className="flex items-center gap-3">

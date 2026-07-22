@@ -123,7 +123,7 @@ export function VisualEditToolbar({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={hasPendingChanges ? "Save first" : "Ask Doable..."}
+          placeholder={hasPendingChanges ? "Save first" : "Ask Appbrics..."}
           disabled={hasPendingChanges}
           className="h-7 w-full rounded-lg bg-secondary px-2.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         />

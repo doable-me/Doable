@@ -7,7 +7,7 @@ import { apiFetch } from "@/lib/api";
 /**
  * Platform-default embedding provider panel.
  *
- * The Doable admin configures this once (during /setup or here). All
+ * The Appbrics admin configures this once (during /setup or here). All
  * workspaces inherit it silently. End users never see this — they just
  * ask the AI to build a chatbot and the runtime picks the embedding
  * provider via resolveEmbeddingEngine() which walks

@@ -240,7 +240,7 @@ export function ImportGitHubProjectDialog({
             Import from GitHub
           </DialogTitle>
           <DialogDescription>
-            Import an existing repository to continue working on it in Doable.
+            Import an existing repository to continue working on it in Appbrics.
           </DialogDescription>
         </DialogHeader>
 
@@ -267,7 +267,7 @@ export function ImportGitHubProjectDialog({
                 Connect your GitHub account
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
-                Authorize Doable to access your repositories.
+                Authorize Appbrics to access your repositories.
               </p>
               <Button
                 className="mt-4 bg-secondary text-secondary-foreground hover:bg-accent border border-border"

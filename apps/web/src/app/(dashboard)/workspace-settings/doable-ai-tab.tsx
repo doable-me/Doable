@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Workspace Settings → Doable AI tab.
+ * Workspace Settings → Appbrics AI tab.
  *
  * Workspace-wide defaults for the runtime AI plane. Projects in this
  * workspace inherit these silently unless they have a per-project override
- * configured in their own Project Settings → Doable AI tab.
+ * configured in their own Project Settings → Appbrics AI tab.
  *
  * Surface:
  *   - Default system prompt (applies to every project that doesn't pin one)
@@ -197,11 +197,11 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
               <Sparkles className="h-5 w-5 text-brand-400" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold text-foreground">Doable AI defaults</h2>
+              <h2 className="text-lg font-semibold text-foreground">Appbrics AI defaults</h2>
               <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
                 Workspace-wide runtime AI defaults for apps generated in this workspace.
                 Projects inherit these unless they pin their own values in
-                <span className="px-1">Project&nbsp;Settings → Doable AI</span>.
+                <span className="px-1">Project&nbsp;Settings → Appbrics AI</span>.
               </p>
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                 <Link href="/ai-settings?tab=connections" className="text-brand-400 hover:text-brand-300 inline-flex items-center gap-1">

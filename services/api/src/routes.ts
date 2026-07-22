@@ -57,6 +57,7 @@ import { setupRoutes } from "./routes/setup.js";
 import { appDataRoutes } from "./routes/app-data.js";
 import { appAuthRoutes } from "./routes/app-auth.js";
 import { dataTokenRoutes } from "./routes/projects/data-token.js";
+import { projectBackendRoutes } from "./routes/projects/backend-routes.js";
 import { mcpAppsDataRoutes } from "./routes/mcp-apps-data.js";
 import { DOABLE_APP_DB_ENABLED } from "./data-worker/config.js";
 // Runtime AI data-plane (PRD ChatBotInfra). Mounted only when the feature flag is on.
@@ -144,6 +145,11 @@ app.route("/", editorRoutes);
 // 180s with no output). Same ordering rationale as projectRoutes below.
 if (DOABLE_APP_DB_ENABLED) {
   app.route("/projects", dataTokenRoutes);
+}
+// App-runtime backend tooling proxy (named queries / workflows / templates).
+// AFTER chatRoutes — same RLS-deadlock reason as dataTokenRoutes.
+if (DOABLE_APP_RUNTIME_ENABLED) {
+  app.route("/projects", projectBackendRoutes);
 }
 // Per-project Doable AI settings (CRUD + usage readout). Mounted AFTER
 // chatRoutes for the same RLS-deadlock reason documented above for

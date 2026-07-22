@@ -234,7 +234,7 @@ export function registerSendHandler(app: Hono<AuthEnv>) {
                 console.error("[builtin-data] Failed to provision data connector:", err);
               });
             }
-            if (process.env.DOABLE_APP_RUNTIME_ENABLED === "1") {
+            if (process.env.DOABLE_APP_RUNTIME_ENABLED !== "0") {
               import("../../mcp/builtin/runtime/register.js")
                 .then(({ ensureRuntimeConnectorForProject }) =>
                   ensureRuntimeConnectorForProject(projectId, wsId, userId),

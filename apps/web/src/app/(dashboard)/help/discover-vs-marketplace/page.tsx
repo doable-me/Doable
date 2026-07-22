@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 export const metadata = {
-  title: "Discover vs Marketplace — Doable",
+  title: "Discover vs Marketplace — Appbrics",
   description: "Understand the difference between Discover, Marketplace, and Deploy.",
 };
 
@@ -25,7 +25,7 @@ export default function DiscoverVsMarketplacePage() {
             Discover vs Marketplace
           </h1>
           <p className="text-muted-foreground">
-            Doable has three places to share things with the world. Here's how they're different.
+            Appbrics has three places to share things with the world. Here's how they're different.
           </p>
         </div>
 
@@ -153,7 +153,7 @@ export default function DiscoverVsMarketplacePage() {
         <section className="mb-12">
           <h2 className="text-xl font-semibold text-foreground mb-4">Standards we follow</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Marketplace bundles are interoperable. The same bundle installs in Doable and works
+            Marketplace bundles are interoperable. The same bundle installs in Appbrics and works
             in tools that follow these standards.
           </p>
           <ul className="text-sm text-muted-foreground space-y-2">

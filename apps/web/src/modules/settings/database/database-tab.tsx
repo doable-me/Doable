@@ -9,14 +9,29 @@ import { RowsPane } from "./panes/rows-pane";
 import { QueriesPane } from "./panes/queries-pane";
 import { MigrationsPane } from "./panes/migrations-pane";
 import { DangerPane } from "./panes/danger-pane";
+import { NamedQueriesPane } from "./panes/named-queries-pane";
+import { WorkflowsPane } from "./panes/workflows-pane";
+import { DataTemplatesPane } from "./panes/data-templates-pane";
 
-type Pane = "overview" | "schema" | "rows" | "queries" | "migrations" | "danger";
+type Pane =
+  | "overview"
+  | "schema"
+  | "rows"
+  | "queries"
+  | "named-queries"
+  | "workflows"
+  | "templates"
+  | "migrations"
+  | "danger";
 
 const PANES: { id: Pane; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "schema", label: "Schema" },
   { id: "rows", label: "Rows" },
-  { id: "queries", label: "Queries" },
+  { id: "queries", label: "SQL" },
+  { id: "named-queries", label: "Named Queries" },
+  { id: "workflows", label: "Workflows" },
+  { id: "templates", label: "Templates" },
   { id: "migrations", label: "Migrations" },
   { id: "danger", label: "Danger Zone" },
 ];
@@ -38,7 +53,6 @@ export function DatabaseTab({ projectId }: DatabaseTabProps) {
     const valid = PANES.some((x) => x.id === pane);
     if (!valid) return;
     setActivePane(pane as Pane);
-    // Update URL without pushing history
     const url = new URL(window.location.href);
     url.searchParams.set("pane", pane);
     window.history.replaceState(null, "", url.toString());
@@ -46,7 +60,6 @@ export function DatabaseTab({ projectId }: DatabaseTabProps) {
 
   return (
     <div className="space-y-4">
-      {/* Sub-pane navigation */}
       <nav
         role="tablist"
         aria-label="Database panes"
@@ -70,7 +83,6 @@ export function DatabaseTab({ projectId }: DatabaseTabProps) {
         ))}
       </nav>
 
-      {/* Pane content */}
       <div role="tabpanel">
         {activePane === "overview" && (
           <OverviewPane projectId={projectId} tokenState={tokenState} onNavigate={navigate} />
@@ -78,6 +90,9 @@ export function DatabaseTab({ projectId }: DatabaseTabProps) {
         {activePane === "schema" && <SchemaPane projectId={projectId} tokenState={tokenState} />}
         {activePane === "rows" && <RowsPane tokenState={tokenState} />}
         {activePane === "queries" && <QueriesPane tokenState={tokenState} />}
+        {activePane === "named-queries" && <NamedQueriesPane projectId={projectId} />}
+        {activePane === "workflows" && <WorkflowsPane projectId={projectId} />}
+        {activePane === "templates" && <DataTemplatesPane projectId={projectId} />}
         {activePane === "migrations" && <MigrationsPane projectId={projectId} />}
         {activePane === "danger" && <DangerPane projectId={projectId} tokenState={tokenState} />}
       </div>

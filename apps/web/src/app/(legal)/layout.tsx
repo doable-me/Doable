@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 export default function LegalLayout({
   children,
@@ -7,19 +8,10 @@ export default function LegalLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-gray-200">
-      {/* Top nav */}
-      <nav className="sticky top-0 z-50 border-b border-gray-800/50 bg-[#0a0a0a]/80 backdrop-blur">
+    <div className="min-h-screen bg-[#060b12] text-gray-200">
+      <nav className="sticky top-0 z-50 border-b border-white/5 bg-[#060b12]/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-300">
-              <span className="text-sm font-bold text-white self-end mb-1">D</span>
-              <span className="h-2 w-2 rounded-full bg-violet-700 self-end mb-2 ml-0.5 shrink-0" />
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-white">
-              Doable
-            </span>
-          </Link>
+          <BrandLogo variant="inverse" />
           <Link
             href="/"
             className="flex items-center gap-1 text-sm text-gray-400 transition-colors hover:text-white"
@@ -30,8 +22,7 @@ export default function LegalLayout({
         </div>
       </nav>
 
-      {/* Sub-nav: legal pages */}
-      <div className="border-b border-gray-800/50">
+      <div className="border-b border-white/5">
         <div className="mx-auto flex max-w-5xl gap-6 overflow-x-auto px-4 py-3 text-sm sm:px-6 lg:px-8">
           <Link
             href="/terms"
@@ -72,17 +63,19 @@ export default function LegalLayout({
         </div>
       </div>
 
-      {/* Article body */}
-      <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
-        <article className="legal-article">{children}</article>
+      <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+        <article className="prose prose-invert max-w-none prose-headings:text-white prose-p:text-gray-300 prose-li:text-gray-300 prose-strong:text-white prose-a:text-brand-400">
+          {children}
+        </article>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-800/50">
-        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-          <p className="text-xs text-gray-600">
-            &copy; {new Date().getFullYear()} Doable Works LLC. All rights reserved.
-            Doable is a registered service of Doable Works LLC.
+      <footer className="border-t border-white/5 py-8">
+        <div className="mx-auto max-w-5xl px-4 text-center text-xs text-gray-600 sm:px-6 lg:px-8">
+          <p>
+            &copy; {new Date().getFullYear()} Appbrics. All rights reserved.
+          </p>
+          <p className="mt-1">
+            Built with Appbrics.
           </p>
         </div>
       </footer>

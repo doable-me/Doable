@@ -54,11 +54,11 @@ export function useChat(
   useEffect(() => {
     const store = useEditorStore.getState();
     if (!isStreaming) {
-      document.title = "Doable";
+      document.title = "Appbrics";
       return;
     }
     const progress = store.activeAgentProgress;
-    document.title = `⚡ ${progress?.message ?? "Building…"} — Doable`;
+    document.title = `⚡ ${progress?.message ?? "Building…"} — Appbrics`;
   }, [isStreaming]);
 
   // ─── sendMessage ─────────────────────────────────────────────────
@@ -147,12 +147,12 @@ export function useChat(
             setActiveAgentProgress(null);
             return;
           }
-          // Doable AI disabled for this project — surface a clear message in the
+          // Appbrics AI disabled for this project — surface a clear message in the
           // chat instead of a generic failure. See doableinfo/doable_ai.md.
           if (status === 503) {
             const body = await response.json().catch(() => ({} as { code?: string; error?: string; hint?: string }));
             if (body.code === "AI_DISABLED_FOR_PROJECT") {
-              const message = body.error ?? "Doable AI is disabled for this project.";
+              const message = body.error ?? "Appbrics AI is disabled for this project.";
               updateMessageFields(assistantId, {
                 content: body.hint ? `${message} ${body.hint}` : message,
                 agentProgress: { phase: "failed", message },

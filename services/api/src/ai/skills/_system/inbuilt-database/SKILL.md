@@ -9,12 +9,13 @@ Every Doable project has a built-in PGlite (PostgreSQL-compatible) database that
 
 ## Core rules
 
-1. **The inbuilt DB is the ONLY persistence layer.** Whenever the user wants to store, save, persist, or retrieve data, you MUST use the inbuilt database: create the schema with `data.migrate` at build time, and read/write it from app code via `import { db } from "@doable/data"`.
+1. **The inbuilt DB is the ONLY persistence layer.** Whenever the user wants to store, save, persist, or retrieve data, you MUST use the inbuilt database: create the schema with `data.migrate` at build time, then **named Mustache queries** under `.doable/backend/queries/*.sql` called from the UI via `import { runtime } from "@doable/runtime"` → `runtime.queries.run("name", params)`.
 2. **🚫 localStorage / sessionStorage / IndexedDB / in-memory arrays are FORBIDDEN as the data store.** Never fall back to them to persist user records (tasks, leads, posts, notes, etc.). They are acceptable ONLY for trivial ephemeral UI state (e.g. "dark mode on", "sidebar collapsed", a draft being typed) — never as the place real data lives.
-3. **`@doable/data` is PRE-LINKED, not missing.** It is deliberately absent from `package.json` yet fully resolvable — the platform links it into `node_modules` of every project. Just `import { db } from "@doable/data"`. NEVER add it to `package.json` and NEVER run install_package for it. Its absence from the dependency list does NOT mean it is unavailable, and is NOT a reason to fall back to localStorage.
-4. **Never suggest an external database.** You do not need Supabase or any third-party DB — the inbuilt one is already there.
-5. **Always check `data.schema` first** before writing app code that references a table. Never invent table or column names without verification.
-6. **⛔ SCHEMA-FIRST HARD GATE.** Create every table with `data.migrate` (use `CREATE TABLE IF NOT EXISTS`) BEFORE writing the app code that queries it. The runtime `db.query` path only accepts `SELECT/INSERT/UPDATE/DELETE` — it rejects `CREATE TABLE`, and `db.exec` throws in app code. A table you reference from `db.query` but never migrated does not exist, so every query fails silently and the app shows no data. Order: (1) `data.migrate` → (2) `data.schema` to verify → (3) write app code.
+3. **`@doable/data` and `@doable/runtime` are PRE-LINKED, not missing.** They are deliberately absent from `package.json` yet fully resolvable. Use `@doable/runtime` for app data; use `@doable/data` **only for `db.auth.*`**. NEVER add them to `package.json` and NEVER run install_package for them.
+4. **Never suggest an external database.** You do not need Supabase or any third-party DB — the inbuilt one is already there (unless the user explicitly connected Supabase).
+5. **Always check `data.schema` first** before writing queries that reference a table. Never invent table or column names without verification.
+6. **⛔ SCHEMA-FIRST HARD GATE.** Create every table with `data.migrate` (use `CREATE TABLE IF NOT EXISTS`) BEFORE writing named queries / app code. Order: (1) `data.migrate` → (2) `data.schema` → (3) `.doable/backend/queries/*.sql` → (4) UI via `runtime.queries.run`.
+7. **⛔ NO raw SQL in React.** Never call `db.query` / `db.admin.query` / `db.exec` from app components — the platform **rejects** those file writes when the app runtime is enabled (default). Put SQL only in named query files.
 
 ---
 
@@ -69,64 +70,37 @@ Add `workspace_id uuid NOT NULL` and a second RLS policy that joins through a wo
 
 ## Runtime: generated app code
 
-In generated TypeScript/React code, import the pre-linked `@doable/data` package (do NOT add it to package.json, do NOT install_package it — it is already resolvable):
+**Primary data path — named queries (ENFORCED):**
 
 ```ts
-import { db } from "@doable/data";
-```
+import { runtime } from "@doable/runtime";
 
-The user's identity token is injected automatically by the preview runtime (`globalThis.__DOABLE_DATA_TOKEN`) — you do not need to pass it manually.
-
-Every call returns a `{ ok, rows, rowCount, error }` result — it does NOT throw on a SQL error. Always check `ok` before using `rows`:
-
-```ts
-import { db } from "@doable/data";
-
-const r = await db.query<{ id: string; title: string }>(
-  "SELECT id, title FROM tasks ORDER BY created_at DESC LIMIT $1",
-  [50],
-);
+const r = await runtime.queries.run<{ id: string; title: string }>("list_tasks", {
+  limit: 50,
+});
 if (!r.ok) {
   console.error(r.error?.message);
   return;
 }
-const tasks = r.rows; // typed rows
+const tasks = r.rows;
 ```
 
-### Query pattern (always parameterised)
+Corresponding SQL lives in `.doable/backend/queries/list_tasks.sql` (Mustache `{{param}}` binds). See skills `named-queries` and `inbuilt-runtime`.
+
+**Auth only — `@doable/data`:**
 
 ```ts
 import { db } from "@doable/data";
 
-// SELECT
-const result = await db.query<{ id: string; title: string }>(
-  "SELECT id, title FROM tasks ORDER BY created_at DESC LIMIT $1",
-  [50],
-);
-const rows = result.ok ? result.rows : [];
-
-// INSERT
-await db.query(
-  "INSERT INTO tasks (title) VALUES ($1)",
-  [title],
-);
-
-// UPDATE
-await db.query(
-  "UPDATE tasks SET title = $1 WHERE id = $2",
-  [newTitle, id],
-);
-
-// DELETE
-await db.query(
-  "DELETE FROM tasks WHERE id = $1",
-  [id],
-);
+await db.auth.signup({ email, password, name });
+await db.auth.login({ email, password });
+const { user } = await db.auth.getUser();
+await db.auth.logout();
 ```
 
-**Never interpolate user input into SQL strings.** Always use `$1`, `$2`, … placeholders.
+The identity token is injected automatically (`globalThis.__DOABLE_DATA_TOKEN`).
 
-**Never call `db.exec`** from app code — schema changes belong in `data.migrate` calls from this chat session.
+**⛔ Forbidden in app UI:** `db.query(...)`, `db.admin.query(...)`, `db.exec(...)` with SQL strings — create_file/edit_file reject them. **Never call `db.exec`** from app code — schema changes belong in `data.migrate` from this chat session.
 
 ---
 

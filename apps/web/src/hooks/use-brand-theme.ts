@@ -5,14 +5,15 @@ import { useState, useEffect, useCallback } from "react";
 export type BrandTheme = "purple" | "sunset" | "ocean" | "emerald" | "rose";
 
 export const BRAND_THEMES: { value: BrandTheme; label: string; preview: string }[] = [
-  { value: "purple", label: "Purple", preview: "#7C3AED" },
-  { value: "sunset", label: "Sunset", preview: "#EA580C" },
   { value: "ocean", label: "Ocean", preview: "#0284C7" },
   { value: "emerald", label: "Emerald", preview: "#059669" },
+  { value: "purple", label: "Purple", preview: "#7C3AED" },
+  { value: "sunset", label: "Sunset", preview: "#EA580C" },
   { value: "rose", label: "Rose", preview: "#E11D48" },
 ];
 
 const STORAGE_KEY = "doable_brand_theme";
+const DEFAULT_BRAND: BrandTheme = "ocean";
 
 function applyBrandTheme(theme: BrandTheme) {
   document.documentElement.setAttribute("data-brand", theme);
@@ -20,8 +21,8 @@ function applyBrandTheme(theme: BrandTheme) {
 
 export function useBrandTheme() {
   const [brandTheme, setBrandTheme] = useState<BrandTheme>(() => {
-    if (typeof window === "undefined") return "purple";
-    return (localStorage.getItem(STORAGE_KEY) as BrandTheme) ?? "purple";
+    if (typeof window === "undefined") return DEFAULT_BRAND;
+    return (localStorage.getItem(STORAGE_KEY) as BrandTheme) ?? DEFAULT_BRAND;
   });
 
   useEffect(() => {

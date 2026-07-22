@@ -35,13 +35,17 @@ When you add a registration call in a file that upstream also owns, list it here
 | `services/api/src/services/caddy-domains.ts` | Carve `/__doable/*` + `/hooks/*` | Done |
 | `services/api/src/runtime/caddy-admin.ts` | Process apps: `/hooks/*` carve-out | Done |
 | `services/api/package.json` | `@doable/runtime` workspace dep | Done |
-| `.env.example` | `DOABLE_APP_RUNTIME_ENABLED=1` | Done |
+| `.env.example` | `DOABLE_APP_RUNTIME_ENABLED` documented (default ON; `=0` to disable) | Done |
+| `services/api/src/app-runtime/enforce.ts` | Hard-reject `db.query` / Express in create_file/edit_file | Done |
+| `services/api/src/ai/providers/copilot-tools.ts` | Call `runtimeWriteGuardError` before write | Done |
+| `services/api/src/ai/app-db-prompt.ts` | Runtime prompt variant by default | Done |
+| `services/api/src/ai/skills/_system/inbuilt-database/SKILL.md` | Named queries primary; auth-only `@doable/data` | Done |
 
 ## Feature flags
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `DOABLE_APP_RUNTIME_ENABLED` | `0` in code (`=== "1"` to enable); `1` in `.env.example` | Master switch for app runtime |
+| `DOABLE_APP_RUNTIME_ENABLED` | ON unless `0` (same as `DOABLE_APP_DB_ENABLED`) | Master switch for app runtime + named-query write gate |
 
 ## Merge policy
 

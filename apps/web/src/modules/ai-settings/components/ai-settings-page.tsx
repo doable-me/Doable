@@ -73,7 +73,7 @@ export function AiSettingsPage() {
   const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
     { key: "connections", label: "Connections", icon: Link2 },
     { key: "models", label: "Configure Model", icon: Bot },
-    { key: "doable-ai", label: "Doable AI", icon: Sparkles },
+    { key: "doable-ai", label: "Appbrics AI", icon: Sparkles },
     { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
   ];
   const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);

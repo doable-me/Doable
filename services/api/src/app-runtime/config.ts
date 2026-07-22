@@ -2,8 +2,11 @@
  * App runtime feature flags and limits (FULLSTACK_RUNTIME.md §13).
  */
 
-/** Master switch — off unless explicitly `1` (enable in .env for local/dev). */
-export const DOABLE_APP_RUNTIME_ENABLED = process.env.DOABLE_APP_RUNTIME_ENABLED === "1";
+/**
+ * Master switch — ON by default (named queries, workflows, CRUD, schedules).
+ * Set `DOABLE_APP_RUNTIME_ENABLED=0` to opt out (same pattern as DOABLE_APP_DB_ENABLED).
+ */
+export const DOABLE_APP_RUNTIME_ENABLED = process.env.DOABLE_APP_RUNTIME_ENABLED !== "0";
 
 export const DOABLE_APP_WF_TIMEOUT_MS = Number(process.env.DOABLE_APP_WF_TIMEOUT_MS ?? 30_000);
 export const DOABLE_APP_WF_MEMORY_MB = Number(process.env.DOABLE_APP_WF_MEMORY_MB ?? 128);

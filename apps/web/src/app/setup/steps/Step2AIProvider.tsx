@@ -689,7 +689,7 @@ export function Step2AIProvider({ onNext, onBack, onSkip }: StepProps) {
           at <code className="text-foreground">http://localhost:&lt;port&gt;/v1</code>.
         </p>
         <p>
-          Doable does <span className="text-foreground font-medium">not</span> bundle, ship, or
+          Appbrics does <span className="text-foreground font-medium">not</span> bundle, ship, or
           proxy any third-party AI keys — every key is BYOK (bring-your-own).
         </p>
       </div>
@@ -933,7 +933,7 @@ function CopilotForm({
         <>
           <p className="text-xs text-muted-foreground">
             GitHub Copilot uses OAuth — no API key is needed. Click below to
-            authorize Doable against your existing Copilot subscription.
+            authorize Appbrics against your existing Copilot subscription.
             A popup window opens; once you authorize on github.com, it closes
             automatically and we return here to pick the default model.
           </p>

@@ -420,7 +420,7 @@ export function EmailPanel() {
                   <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">From Address</label>
                   <input
                     type="text" value={formFromAddress} onChange={(e) => setFormFromAddress(e.target.value)}
-                    placeholder="Doable <noreply@yourdomain.com>"
+                    placeholder="Appbrics <noreply@yourdomain.com>"
                     className="w-full rounded-md bg-background border border-input text-sm text-foreground px-3 py-2 outline-none focus:border-brand-500 placeholder:text-muted-foreground"
                   />
                 </div>

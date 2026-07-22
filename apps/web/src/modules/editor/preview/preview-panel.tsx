@@ -55,8 +55,8 @@ export function PreviewPanel() {
     return () => window.removeEventListener("message", handleMessage);
   }, [iframeRef]);
 
-  // ─── Sync Doable theme into preview iframe ─────────────────
-  // Always push `light` — the editor's dark theme is Doable chrome, not the
+  // ─── Sync Appbrics theme into preview iframe ─────────────────
+  // Always push `light` — the editor's dark theme is Appbrics chrome, not the
   // user's app. AI-scaffolded `.dark` rules typically only flip `--foreground`
   // while leaving `--background` light, so forcing dark on the iframe yields
   // invisible (white-on-white) text. The user's preview shows their app's

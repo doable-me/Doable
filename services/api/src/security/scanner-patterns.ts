@@ -175,9 +175,10 @@ export const CODE_QUALITY_PATTERNS: CodeQualityPattern[] = [
   },
   {
     name: "Raw db.query SQL in UI",
-    regex: /db\.query\s*\(\s*[`'"]\s*(?:SELECT|INSERT|UPDATE|DELETE)/gi,
-    severity: "medium",
-    description: "Inline SQL via db.query in app code. Prefer named queries via runtime.queries.run when the app runtime is enabled.",
-    fix: "Move SQL to .doable/backend/queries/<name>.sql and call runtime.queries.run(\"name\", params).",
+    regex: /\bdb\.(?:admin\.)?(?:query|exec)\s*\(/g,
+    severity: "high",
+    description:
+      "Inline SQL via db.query/db.admin.query/db.exec in app code is forbidden when the app runtime is enabled (default).",
+    fix: "Move SQL to .doable/backend/queries/<name>.sql and call runtime.queries.run(\"name\", params). Use @doable/data only for db.auth.*.",
   },
 ];

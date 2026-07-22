@@ -27,7 +27,7 @@ export function OAuthRequiredSection({
       <div className="flex items-start gap-2">
         <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
         <p className="text-sm">
-          Sign in with Supabase so Doable can create projects on your behalf.
+          Sign in with Supabase so Appbrics can create projects on your behalf.
           You&apos;ll be redirected briefly to Supabase to authorize, then come
           right back here.
         </p>
@@ -68,7 +68,7 @@ export function ExistingProjectsSection({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Pick a project — Doable will fetch its API keys and wire them into this
+        Pick a project — Appbrics will fetch its API keys and wire them into this
         app automatically.
       </p>
       <div className="flex max-h-80 flex-col gap-1.5 overflow-y-auto">
