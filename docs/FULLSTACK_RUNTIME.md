@@ -9,7 +9,7 @@
 
 ## 0. One-sentence summary
 
-Add a **platform-hosted app runtime** (`/__doable/*` + jailed JS workflows) so generated apps get auto-CRUD APIs, schedules, topics, webhooks, CDC, secrets, and data templates — taught to the coding agent via **overlay skills + validate tools + a typed SDK**, without rewriting the Copilot chat path.
+Add a **platform-hosted app runtime** (`/__doable/*` + jailed JS workflows) so generated apps get **named Mustache SQL queries**, auto-CRUD APIs, schedules, topics, webhooks, CDC, secrets, and data templates — taught to the coding agent via **overlay skills + validate tools + a typed SDK**, without rewriting the Copilot chat path.
 
 ---
 
@@ -19,11 +19,13 @@ Add a **platform-hosted app runtime** (`/__doable/*` + jailed JS workflows) so g
 
 Doable already generates excellent Vite/Next UIs and can persist via per-project PGlite (`@doable/data` + `builtin:data`). But “backend” for generated apps stops at:
 
-- ad-hoc SQL from the browser (`db.query`)
+- **ad-hoc SQL embedded in frontend** (`db.query("SELECT …", […])` against the inbuilt DB)
 - connector-proxy for third-party actions
 - optional Supabase
 
-There is no first-class way for the AI to generate **server-side automation**: REST APIs, cron jobs, inbound webhooks, pub/sub, change-driven workflows, or secret-safe server logic.
+That frontend-SQL pattern works for demos but is weak for real apps: queries are duplicated, hard to reuse from workflows, easy to drift, and the “API surface” is whatever the browser decides to send.
+
+There is no first-class way for the AI to generate **named server-side queries** or **server-side automation**: REST APIs, cron jobs, inbound webhooks, pub/sub, change-driven workflows, or secret-safe server logic.
 
 ### Why not “just generate a Node server in the project”
 
@@ -47,8 +49,9 @@ There is no first-class way for the AI to generate **server-side automation**: R
 
 | Capability | User-facing meaning |
 |------------|---------------------|
-| **Auto CRUD REST** | Schema → authenticated REST under `/__doable/api/...` with RLS |
-| **Workflows (JS)** | Small jailed JS modules with SDK (`http`, `db`, `secrets`, `topics`, `files`, `log`, integrations, `callWorkflow`) |
+| **Named queries (Mustache SQL)** | AI writes `.doable/backend/queries/<name>.sql` with `{{param}}` placeholders; frontend + workflows call by `query_name` + params — **primary** data access (replaces inline frontend SQL) |
+| **Auto CRUD REST** | Schema → authenticated REST under `/__doable/api/...` with RLS (scaffold / admin; named queries win for custom reads/writes) |
+| **Workflows (JS)** | Small jailed JS modules with SDK (`queries`, `http`, `db`, `secrets`, `topics`, `files`, `log`, integrations, `callWorkflow`) |
 | **Scheduling** | Cron → enqueue workflow run |
 | **Topics / pub-sub** | Per-project named topics; workflows + live clients subscribe |
 | **Incoming webhooks** | `POST /hooks/:projectId/:name` → verify → workflow |
@@ -79,14 +82,16 @@ There is no first-class way for the AI to generate **server-side automation**: R
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Generated app (Vite/Next)                                   │
-│  @doable/data  → SQL + auth                                 │
-│  @doable/runtime → api.*, workflows.call, topics, secrets   │
+│  @doable/data     → auth only (+ rare admin/debug SQL)      │
+│  @doable/runtime  → queries.run(name, params)  ← PRIMARY    │
+│                   → api.*, workflows, topics, secrets       │
 └──────────────────────────┬──────────────────────────────────┘
                            │ /__doable/*
 ┌──────────────────────────▼──────────────────────────────────┐
 │ services/api — App Runtime (NEW overlay)                    │
-│  routes: api / hooks / topics / runtime-admin               │
-│  runner: jailed workflow VM                                 │
+│  query engine: Mustache SQL → $N binds → PGlite            │
+│  routes: queries / api / hooks / topics / runtime-admin     │
+│  runner: jailed workflow VM (reuses same named queries)     │
 │  scheduler: cron tick → run queue                           │
 │  bus: in-process + optional Redis                           │
 │  outbox: data-worker mutation → CDC                         │
@@ -95,6 +100,90 @@ There is no first-class way for the AI to generate **server-side automation**: R
    PGlite pool         credential vault    sandbox/jailedSpawn
    (existing)          (existing)          (existing)
 ```
+
+### 3.1a Named queries (Mustache) — primary data access
+
+**Problem today:** Generated UIs call `db.query` with raw SQL in the browser. That SQL never lives in one place workflows can share, and the browser is an unconstrained SQL client (bounded only by RLS + classifier).
+
+**v1 rule:** App reads/writes go through **named queries** stored under `.doable/backend/queries/`. Frontend and workflows call the same names.
+
+```
+.doable/backend/queries/
+  list_leads.sql
+  create_lead.sql
+  lead_by_email.sql
+```
+
+**Mustache syntax (values → bind params, never string-spliced into SQL):**
+
+```sql
+-- list_leads.sql
+SELECT id, email, status, created_at
+FROM leads
+WHERE 1=1
+{{#status}}
+  AND status = {{status}}
+{{/status}}
+{{#search}}
+  AND email ILIKE {{search_pattern}}
+{{/search}}
+ORDER BY created_at DESC
+LIMIT {{limit}}
+```
+
+**Compile rules (security-critical):**
+
+| Syntax | Meaning |
+|--------|---------|
+| `{{name}}` | Replace with next `$N` placeholder; push `params.name` as bind value |
+| `{{#name}}…{{/name}}` | Include block only if `params.name` is present / truthy |
+| `{{^name}}…{{/name}}` | Include block only if `params.name` is absent / falsy |
+| `{{{ident}}}` or `{{@ident}}` | **Forbidden in v1** (no raw identifier interpolation). Tables/columns are fixed in the `.sql` file. |
+
+After compile: `sqlText` + `values[]` → existing data-worker `query` path (RLS `app.user_id` still applied).
+
+**Call sites (same query_name everywhere):**
+
+```ts
+// Frontend
+import { runtime } from "@doable/runtime";
+const r = await runtime.queries.run("list_leads", { status: "new", limit: 50 });
+
+// Workflow
+export async function run(ctx) {
+  const r = await ctx.queries.run("list_leads", { status: "new", limit: 50 });
+  // …
+}
+```
+
+**HTTP:**
+
+```
+POST /__doable/queries/:queryName
+{ "params": { "status": "new", "limit": 50 } }
+```
+
+**Optional meta** (`.doable/backend/queries/list_leads.meta.json`):
+
+```json
+{
+  "description": "List leads for the current user",
+  "params": {
+    "status": { "type": "string", "required": false },
+    "limit": { "type": "number", "required": false, "default": 50, "max": 200 }
+  },
+  "allow": ["end_user", "workflow", "api_key"]
+}
+```
+
+**Relationship to `@doable/data`:**
+
+| API | When to use (v1+) |
+|-----|-------------------|
+| `runtime.queries.run` | **Default** for all app screens and shared logic |
+| `runtime.api.*` (auto CRUD) | Simple table admin / quick scaffolds |
+| `db.query` (`@doable/data`) | Auth helpers stay; **discourage** ad-hoc SQL in UI — skill says ⛔ prefer named queries |
+| `ctx.db.query` in workflows | Escape hatch only; prefer `ctx.queries.run` so UI + automation share SQL |
 
 ### 3.2 Keep PGlite multi-tenant as-is
 
@@ -192,12 +281,14 @@ Marketplace: extend `@doable/marketplace-bundle` codec later to include `dataTem
 
 ## 4. Package & dependency choices
 
+> **Implementers:** this is the canonical package list. Prefer these; do not invent alternate stacks without updating this section.
+
 ### 4.1 New first-party packages
 
 | Package | Role |
 |---------|------|
-| **`packages/doable-runtime/`** (`@doable/runtime`) | Client SDK for generated apps + shared types (triggers, run results, API helpers). Mirror `@doable/data` style: zero/few deps, pre-linked into projects. |
-| **`services/api/src/app-runtime/`** | Server implementation (not a separate deployable in v1). |
+| **`packages/doable-runtime/`** (`@doable/runtime`) | Client SDK for generated apps: `queries.run`, `api.*`, topics, workflows invoke + shared types. Mirror `@doable/data` style: zero/few deps, pre-linked into projects. |
+| **`services/api/src/app-runtime/`** | Server implementation (query engine, CRUD, workflows, bus, hooks — not a separate deployable in v1). |
 
 Do **not** create a new microservice until multi-node bus forces it.
 
@@ -205,15 +296,15 @@ Do **not** create a new microservice until multi-node bus forces it.
 
 | Existing | Reuse for |
 |----------|-----------|
-| `services/api/src/data-worker/*` | SQL, RLS, pool, acquire-on-demand |
-| `packages/doable-data` | App data client; keep as SQL/auth — runtime complements it |
+| `services/api/src/data-worker/*` | SQL execution, RLS, pool, acquire-on-demand (named queries compile then call this) |
+| `packages/doable-data` | End-user **auth** client; keep available but **not** the primary query path once runtime is on |
 | `integrations/credential-vault.ts` + `env/vault-bridge.ts` | Secrets |
 | `sandbox/orchestrator.ts` + profiles | Workflow jail |
-| `packages/dovault` | Lock `.doable/backend/**` policy files if needed; allow AI writes to workflow JS via ConfigGuard rules |
+| `packages/dovault` | Lock policy files if needed; allow AI writes to `queries/*.sql` + workflow JS |
 | `packages/docore` PolicyStore | Gate new AI tools |
 | `builtin:data` MCP | Keep for migrate/schema; add sibling `builtin:runtime` |
 | `ai/skills` + materializer | Teach the model |
-| `@doable/marketplace-bundle` | Future packaging of templates/workflows |
+| `@doable/marketplace-bundle` | Future packaging of query packs / templates / workflows |
 | Preview `/__doable/*` injection (`injected-scripts.ts`, Caddy carve-out) | Same path for runtime client |
 
 ### 4.3 Third-party libraries (recommended)
@@ -222,20 +313,21 @@ Prefer small, boring deps already aligned with the stack (Hono, Zod, Node).
 
 | Need | Package | Why |
 |------|---------|-----|
-| Schema validation | **`zod`** (already in api) | Manifests, tool args, webhook bodies |
+| Schema validation | **`zod`** (already in api) | Manifests, query `.meta.json`, tool args, webhook bodies |
+| Mustache SQL compile | **Custom compiler in `app-runtime/queries/compile.ts`** (preferred) *or* **`mustache`** only if we keep a strict token allowlist | Full Mustache HTML-escaping is the wrong model for SQL; we need `{{x}}` → `$N` binds. A ~100-line compiler is clearer and safer than depending on Mustache’s escape semantics |
 | Cron parsing | **`croner`** or **`cron-parser`** | Lightweight; avoid `node-cron` daemon assumptions |
-| Job queue (phase 2) | **`pg-boss`** on platform Postgres | Uses existing PG; durable schedules/runs; no Redis required for single-node SaaS |
-| Job queue (phase 3 multi-node) | **`bullmq` + Redis** *or* stay on pg-boss | Only if horizontal API replicas |
-| Workflow sandbox | **`isolated-vm`** *or* child-process + existing `jailedSpawn` | Prefer **jailedSpawn child process** first (already proven); isolated-vm later if spawn cost hurts |
+| Job queue (phase 2+) | **`pg-boss`** on platform Postgres | Uses existing PG; durable schedules/runs; no Redis required for single-node |
+| Job queue (multi-node later) | **`bullmq` + Redis** *or* stay on pg-boss | Only if horizontal API replicas |
+| Workflow sandbox | Existing **`jailedSpawn`** first; **`isolated-vm`** later if spawn cost hurts | Already proven in sandbox profiles |
 | HTTP inside workflows | Node **`fetch`** (Node 22) | No axios |
-| SSE live queries | Hono streaming (existing SSE chat patterns) | Consistency |
+| SSE live / topics | Hono streaming (existing SSE chat patterns) | Consistency |
 | ID generation | `crypto.randomUUID()` | Already used |
 
-**Avoid for v1:** Temporal, Inngest Cloud, Kafka, custom Postgres logical replication into PGlite, Deno as second runtime.
+**Avoid for v1:** Temporal, Inngest Cloud, Kafka, custom Postgres logical replication into PGlite, Deno as second runtime, string-interpolating Mustache into SQL, ORMs (Prisma/Drizzle) inside generated apps.
 
 ### 4.4 Why not ActivePieces flows / Zapier
 
-ActivePieces pieces remain the **integration action library**. We are not embedding their flow engine — we need first-party triggers tied to PGlite CDC, project sandbox, and AI-authored JS with our SDK.
+ActivePieces pieces remain the **integration action library**. We are not embedding their flow engine — we need first-party triggers tied to PGlite CDC, project sandbox, named queries, and AI-authored JS with our SDK.
 
 ---
 
@@ -247,8 +339,13 @@ AI and tools write only under:
 .doable/
   backend/
     README.md                 # short human/AI pointer (optional)
+    queries/                  # ★ named Mustache SQL (primary data access)
+      list_leads.sql
+      list_leads.meta.json    # optional param schema / allow
+      create_lead.sql
+      create_lead.meta.json
     api/
-      tables.json             # optional ACL / expose list
+      tables.json             # optional ACL / expose list (auto CRUD)
     workflows/
       lead-intake.workflow.js
       nightly-digest.workflow.js
@@ -264,7 +361,15 @@ AI and tools write only under:
     data-templates.lock.json  # applied template ids
 ```
 
-**Example workflow module** (contract the skill must teach):
+**Example named query** (`queries/create_lead.sql`):
+
+```sql
+INSERT INTO leads (email, source)
+VALUES ({{email}}, {{source}})
+RETURNING id, email, created_at
+```
+
+**Example workflow reusing named queries** (preferred over raw `db.query`):
 
 ```js
 /** @typedef {import("@doable/runtime").WorkflowContext} WorkflowContext */
@@ -273,22 +378,34 @@ AI and tools write only under:
  * @param {WorkflowContext} ctx
  */
 export async function run(ctx) {
-  const { db, http, secrets, topics, log, trigger } = ctx;
+  const { queries, topics, log, trigger } = ctx;
 
   log.info("lead webhook", { type: trigger.type });
 
   const email = trigger.payload?.email;
   if (!email) throw new Error("email required");
 
-  const r = await db.query(
-    `INSERT INTO leads (email, source) VALUES ($1, $2) RETURNING id`,
-    [email, "webhook"],
-  );
+  const r = await queries.run("create_lead", {
+    email,
+    source: "webhook",
+  });
   if (!r.ok) throw new Error(r.error?.message ?? "insert failed");
 
   await topics.publish("leads.created", { id: r.rows[0].id, email });
   return { ok: true, id: r.rows[0].id };
 }
+```
+
+**Example frontend** (same query name):
+
+```ts
+import { runtime } from "@doable/runtime";
+
+const created = await runtime.queries.run("create_lead", {
+  email: form.email,
+  source: "web",
+});
+const list = await runtime.queries.run("list_leads", { status: "new", limit: 50 });
 ```
 
 **Example schedule:**
@@ -386,9 +503,10 @@ Create these with rich `description` trigger keywords (SDK matches on descriptio
 
 | Slug | Teaches |
 |------|---------|
-| `inbuilt-runtime` | Overview: when to use API vs workflow vs cron vs webhook; layout under `.doable/backend` |
-| `auto-crud-api` | Schema-first → tables.json → never hand-roll REST |
-| `workflows-js` | `run(ctx)` contract, SDK methods, error handling, idempotency |
+| `inbuilt-runtime` | Overview: named queries first; when to use API vs workflow vs cron vs webhook; layout under `.doable/backend` |
+| `named-queries` | Mustache SQL files, `runtime.queries.run` / `ctx.queries.run`, meta.json, ⛔ no inline `db.query` in UI |
+| `auto-crud-api` | Schema-first → tables.json → never hand-roll REST (secondary to named queries) |
+| `workflows-js` | `run(ctx)` contract, prefer `ctx.queries.run`, SDK methods, error handling, idempotency |
 | `webhooks-and-schedules` | Manifests, secrets refs, cron timezone |
 | `topics-and-cdc` | Outbox mental model, bindings, no PGlite LISTEN |
 | `secrets-and-refs` | Names only in repo; vault UX |
@@ -397,21 +515,25 @@ Create these with rich `description` trigger keywords (SDK matches on descriptio
 Each skill must include:
 
 1. Hard rules (⛔ / MUST) like `inbuilt-database`
-2. Ordered checklist (migrate → bind → workflow → verify)
+2. Ordered checklist (migrate → **named queries** → bind → workflow → verify)
 3. Copy-paste correct examples
-4. Anti-patterns (“do not create Express”, “do not put secrets in `.env` committed files”, “do not use localStorage for server state”)
+4. Anti-patterns (“do not create Express”, “do not put secrets in source”, “do not embed raw SQL in React components”, “do not use localStorage for server state”)
+
+**Amend `inbuilt-database` (or `_ext` overlay note):** when `DOABLE_APP_RUNTIME_ENABLED=1`, after migrate/schema the AI MUST write `.doable/backend/queries/*.sql` and call them from the UI — not `db.query` with string SQL in components.
 
 ### 7.3 New build-time tools / MCP (`builtin:runtime`)
 
 | Tool | Purpose |
 |------|---------|
-| `runtime.validate` | Parse all `.doable/backend/**` manifests + workflow syntax |
+| `runtime.validate` | Parse all `.doable/backend/**` manifests + query Mustache + workflow syntax |
+| `runtime.upsert_query` | Write/update a named query `.sql` (+ optional `.meta.json`) and validate compile |
+| `runtime.test_query` | Run a named query with fixture params (RLS identity optional) |
 | `runtime.apply_data_template` | Run template migrations |
 | `runtime.upsert_schedule` | Register schedule (DB + file) |
 | `runtime.upsert_webhook` | Register webhook + ensure secret ref exists |
 | `runtime.upsert_cdc_binding` | Write bindings + validate table exists |
 | `runtime.test_workflow` | Dry-run with fixture payload (sandbox) |
-| `runtime.openapi` | Return generated OpenAPI for exposed tables |
+| `runtime.openapi` | Return generated OpenAPI for exposed tables (+ list query names) |
 
 Wire through existing MCP tool-bridge naming: `mcp_runtime_*` or native Copilot custom tools — **prefer MCP builtin** for consistency with `builtin:data`.
 
@@ -421,12 +543,16 @@ Add a short **Backend contract** section to `framework-prompts/vite-react.ts` an
 
 ```
 ## Backend (platform runtime)
-- Persistence: @doable/data + inbuilt-database skill (unchanged).
-- REST: use auto CRUD (/__doable/api) — do not create Express/Fastify servers.
+- Persistence schema: data.migrate + inbuilt-database (unchanged).
+- App data access: named Mustache queries in .doable/backend/queries/*.sql
+  — call via runtime.queries.run("query_name", params) from the UI.
+  — ⛔ Do NOT put raw SQL strings in React/components via db.query.
+- Workflows reuse the SAME query names via ctx.queries.run(...).
+- REST: auto CRUD (/__doable/api) for simple table admin — do not create Express.
 - Automation: .doable/backend/workflows/*.workflow.js with @doable/runtime SDK.
 - Triggers: schedules/, webhooks/, cdc/ manifests — never invent custom listeners.
 - Secrets: names in secrets.refs.json only; values via platform vault.
-- Before claiming done: call runtime.validate and runtime.test_workflow for new workflows.
+- Before claiming done: runtime.validate + runtime.test_query / runtime.test_workflow.
 ```
 
 ### 7.5 Generation algorithm (what the agent should do)
@@ -436,24 +562,27 @@ When the user asks for a full-stack feature, the skill-enforced order is:
 1. **Clarify triggers** (webhook? cron? UI-only? table change?).
 2. **`data.schema`** — see existing tables.
 3. **Migrate** schema (`data.migrate`) or `runtime.apply_data_template`.
-4. **Expose API** if needed (`api/tables.json`).
-5. **Write workflow JS** + manifests (schedule/webhook/cdc/topics).
-6. **`secrets.refs.json`** + `request_integration` / vault hint if values needed.
-7. **`runtime.validate` + `runtime.test_workflow`**.
-8. **UI** wired to `@doable/data` and/or `@doable/runtime` client.
-9. Only then mark complete.
+4. **Write named queries** (`.doable/backend/queries/*.sql` + meta) — one query per use-case; `runtime.test_query`.
+5. **Expose auto CRUD** only if needed (`api/tables.json`).
+6. **Write workflow JS** that calls `ctx.queries.run` + manifests (schedule/webhook/cdc/topics).
+7. **`secrets.refs.json`** + `request_integration` / vault hint if values needed.
+8. **`runtime.validate`** (+ `runtime.test_workflow` when workflows exist).
+9. **UI** wired to `runtime.queries.run` (not inline SQL).
+10. Only then mark complete.
 
 ### 7.6 Quality gates (must implement)
 
 | Gate | Enforcement |
 |------|-------------|
 | No Express/Fastify/Koa in AI output for backends | Skill + optional scanner pattern in `security/scanner-patterns.ts` |
-| Workflows export `run` | `runtime.validate` |
+| No raw `db.query("SELECT…")` in `src/**` app UI when runtime enabled | Skill + scanner |
+| Named queries compile (Mustache → `$N`) | `runtime.validate` / `runtime.upsert_query` |
+| Workflows export `run`; prefer `queries.run` | `runtime.validate` |
 | Secret values never in files | scanner + validate |
 | CDC tables exist | validate against schema |
 | Cron valid | zod + croner |
 | RLS on new tables | existing inbuilt-database rules |
-| Workflow can run once | `runtime.test_workflow` in session before “done” |
+| Query + workflow smoke | `runtime.test_query` / `runtime.test_workflow` before “done” |
 
 ### 7.7 Do we need extra agents?
 
@@ -517,6 +646,8 @@ CREATE TABLE IF NOT EXISTS _doable_outbox (
 
 | Method | Path | Auth |
 |--------|------|------|
+| `POST` | `/__doable/queries/:queryName` | data token + app session |
+| `GET` | `/__doable/queries` | data token (list names + meta, no SQL body to end users if locked) |
 | `*` | `/__doable/api/v1/:table[/:id]` | data token + app session |
 | `POST` | `/hooks/:projectId/:name` | webhook secret |
 | `GET` | `/__doable/topics/:name/subscribe` | data token (SSE) |
@@ -530,7 +661,11 @@ CREATE TABLE IF NOT EXISTS _doable_outbox (
 ```ts
 import { runtime } from "@doable/runtime";
 
-await runtime.api.list("leads", { limit: 50 });
+// ★ Primary data access — named queries (Mustache SQL on the server)
+const list = await runtime.queries.run("list_leads", { status: "new", limit: 50 });
+const created = await runtime.queries.run("create_lead", { email: "a@b.com", source: "web" });
+
+await runtime.api.list("leads", { limit: 50 }); // auto CRUD (optional)
 await runtime.api.create("leads", { email: "a@b.com" });
 await runtime.topics.subscribe("leads.created", (ev) => { ... });
 await runtime.workflows.invoke("nightly-digest", { dryRun: false });
@@ -542,7 +677,8 @@ Workflow context type exported for JSDoc in workflow files.
 
 | API | Behavior |
 |-----|----------|
-| `ctx.db.query/exec` | Same semantics as `@doable/data` / worker (service identity or trigger user) |
+| **`ctx.queries.run(name, params)`** | **Preferred** — same named queries as the frontend |
+| `ctx.db.query/exec` | Escape hatch only (ad-hoc SQL); discourage in skills |
 | `ctx.http.fetch(url, init)` | Allowlist: https only; block link-local/metadata IPs |
 | `ctx.secrets.get(name)` | From refs only |
 | `ctx.topics.publish/subscribe` | Project-scoped |
@@ -560,7 +696,7 @@ Workflow context type exported for JSDoc in workflow files.
 2. **Secret isolation** — decrypt only inside runner; never echo to logs (redact patterns from tracing).
 3. **Webhook auth** — constant-time compare; rotate via vault.
 4. **CDC privilege** — bindings only for tables that exist; payload size cap.
-5. **CRUD** — RLS always on; admin elevated path mirrors existing `db.admin` rules.
+5. **CRUD / named queries** — RLS always on; only registered query names are executable from the client; param values are binds only (no SQL injection via Mustache).
 6. **SSR F/deploy** — Caddy already carves `/__doable/*` to API; extend for `/hooks/*` public route.
 7. **AI** — PolicyStore allow new tools; dovault may lock `secrets.refs.json` shape.
 
@@ -592,17 +728,25 @@ Workflow context type exported for JSDoc in workflow files.
 
 **Done when:** inserting a row via `/__doable/data/query` publishes an in-process event observed by a test subscriber.
 
-### Phase 2 — Auto CRUD REST
+### Phase 2 — Named queries + Auto CRUD REST
 
 **Do:**
 
-- Route module + schema cache per project.
-- `tables.json` ACL.
-- OpenAPI tool.
-- Skill `auto-crud-api` + `inbuilt-runtime`.
+- Mustache → `$N` compiler (`app-runtime/queries/compile.ts`) + unit tests (injection attempts must fail / stay bound).
+- Load `.doable/backend/queries/*.sql` (+ optional `.meta.json`).
+- Route `POST /__doable/queries/:queryName`.
+- `@doable/runtime` client: `queries.run(name, params)`.
+- Auto CRUD route module + `tables.json` ACL + OpenAPI tool.
+- Skills: `named-queries`, `auto-crud-api`, `inbuilt-runtime`.
+- Tools: `runtime.upsert_query`, `runtime.test_query`.
 - Link `@doable/runtime` into project node_modules like `@doable/data`.
+- Scanner: flag raw `db.query("` in app `src/` when runtime enabled.
 
-**Done when:** AI (or test) migrates `tasks`, exposes it, `GET/POST /__doable/api/v1/tasks` works with RLS.
+**Done when:**
+
+1. AI (or test) migrates `tasks`, writes `list_tasks.sql` / `create_task.sql`, frontend lists/creates via `runtime.queries.run` only.
+2. Workflow (stub) can call the same `list_tasks` name.
+3. Optional: `GET/POST /__doable/api/v1/tasks` still works for CRUD scaffold.
 
 ### Phase 3 — Workflows + secrets
 
@@ -610,12 +754,12 @@ Workflow context type exported for JSDoc in workflow files.
 
 - Runner via `jailedSpawn` profile `app-workflow`.
 - Manifest load from `.doable/backend/workflows`.
-- `ctx` SDK implementation.
+- `ctx` SDK with **`ctx.queries.run`** wired to the same engine as HTTP.
 - `runtime.validate` + `runtime.test_workflow`.
 - Skill `workflows-js` + `secrets-and-refs`.
 - Runs/logs tables.
 
-**Done when:** manual `POST .../workflows/demo/run` executes JS that inserts via `ctx.db` and writes logs.
+**Done when:** manual `POST .../workflows/demo/run` executes JS that uses `ctx.queries.run("create_lead", …)` and writes logs.
 
 ### Phase 4 — Webhooks + schedules + topics
 
@@ -650,13 +794,14 @@ Agents must not ship a phase without running these prompts in a real project ses
 
 | # | Prompt | Expect |
 |---|--------|--------|
-| G1 | “Build a waitlist with email signup and admin table” | migrate + UI + `@doable/data`; RLS; no localStorage |
+| G1 | “Build a waitlist with email signup and admin table” | migrate + **named queries** + UI via `runtime.queries.run`; RLS; no localStorage; no raw SQL in components |
 | G2 | “Add a public REST API for waitlist entries” | `tables.json` + `/__doable/api`; no Express |
-| G3 | “Add an inbound webhook that creates a lead and publishes topic `leads.created`” | webhook manifest + workflow + secret ref + validate/test |
-| G4 | “Every night at 09:00 UTC email a count of new leads” | schedule + workflow using integration/http; no always-on server |
+| G3 | “Add an inbound webhook that creates a lead and publishes topic `leads.created`” | webhook + workflow calling **`ctx.queries.run("create_lead")`** + secret ref + validate/test |
+| G4 | “Every night at 09:00 UTC email a count of new leads” | schedule + workflow using named query for count + integration/http |
 | G5 | “When a lead is inserted, run workflow `notify-slack`” | cdc binding; no LISTEN hacks |
+| G6 | “Reuse the same list query from the dashboard and a nightly workflow” | one `list_*.sql`; both UI and workflow call same `query_name` |
 
-Failure modes to watch: inventing Supabase without ask, putting secrets in source, skipping `runtime.validate`, creating `server.js`.
+Failure modes to watch: inventing Supabase without ask, putting secrets in source, skipping `runtime.validate`, creating `server.js`, **embedding SQL in React**, Mustache string-splicing instead of binds.
 
 ---
 
@@ -681,11 +826,11 @@ DOABLE_APP_SCHEDULER_TICK_MS=15000
 
 | Layer | What |
 |-------|------|
-| Unit | zod manifests, cron parse, ACL, secret redaction |
-| Integration | worker DML → bus event; CRUD RLS; webhook verify; workflow run |
+| Unit | Mustache compile → `$N`; injection attempts; zod manifests; cron parse; ACL; secret redaction |
+| Integration | named query HTTP; worker DML → bus; CRUD RLS; webhook; workflow `queries.run` |
 | Pool | warm-pin prevents idle kill while SSE subscribed |
 | Contract | `@doable/runtime` types match server |
-| AI eval | golden prompts G1–G5 |
+| AI eval | golden prompts G1–G6 |
 
 Follow existing `tsx --test` patterns under `app-runtime/__tests__/`.
 
@@ -712,8 +857,10 @@ Copy this into the implementing agent’s task list:
 |----------|--------|-----------|
 | Backend hosting | Platform `/__doable` + jail | Matches data/AI/connectors |
 | DB | Keep per-project PGlite | Already multi-tenant + RLS |
+| **App SQL** | **Named Mustache queries on server** | Move SQL out of frontend; share with workflows |
+| Mustache compile | Custom `{{x}}` → `$N` binds | Prevent SQL injection / bad Mustache HTML escape |
 | Live/CDC | Platform bus, not PG LISTEN | Pool idle/recycle breaks LISTEN |
-| Workflows | JS `run(ctx)` modules | AI-native; sandboxable |
+| Workflows | JS `run(ctx)` + `ctx.queries.run` | AI-native; sandboxable; shared SQL |
 | Queue v1 | DB table + in-process worker | Simple; pg-boss later |
 | Skills | `_ext/` overlay | Sync-safe vs upstream `_system` |
 | Extra Copilot agent | Not in v1 | Skills+tools sufficient |

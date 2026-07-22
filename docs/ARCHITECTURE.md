@@ -432,9 +432,10 @@ packages/doable-ai/src/index.ts                # runMcpAgent
 
 ## 15. Full-stack runtime extension (planned)
 
-UI generation is production-grade; **workflows, auto-CRUD REST, schedules, topics, webhooks, CDC, secrets refs, and data templates** are specified as a sync-safe overlay — not yet implemented.
+UI generation is production-grade; **named Mustache SQL queries, workflows, auto-CRUD REST, schedules, topics, webhooks, CDC, secrets refs, and data templates** are specified as a sync-safe overlay — not yet implemented.
 
 **Authoritative implementation spec:** [`FULLSTACK_RUNTIME.md`](./FULLSTACK_RUNTIME.md)  
+**(Packages / deps:** see §4 of that doc.)  
 **Fork hook index (when work starts):** [`FORK_EXTENSIONS.md`](./FORK_EXTENSIONS.md)
 
 ---
