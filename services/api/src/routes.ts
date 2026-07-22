@@ -66,6 +66,10 @@ import { embeddingsRoutes as projectEmbeddingsRoutes } from "./routes/projects/e
 import { workspaceAiExtrasRoutes } from "./routes/workspaces/ai-extras.js";
 import { DOABLE_APP_AI_ENABLED } from "./ai/runtime-config.js";
 import { geminiProxyRoutes } from "./routes/gemini-proxy.js";
+import {
+  appRuntimeRoutes,
+  DOABLE_APP_RUNTIME_ENABLED,
+} from "./app-runtime/index.js";
 
 export function mountRoutes(app: Hono): void {
 // Gemini OpenAI-compat proxy — strips unsupported params from copilot SDK
@@ -88,6 +92,10 @@ app.route("/", notebooklmRoutes);
 // Lets static-kind generated apps reach connected integrations server-side
 // without ever holding the raw secret. JWT-protected, allowlist-gated, audited.
 app.route("/", connectorProxyRoutes);
+// Full-stack app runtime (/__doable/queries, /api, topics, workflows + /hooks/*).
+if (DOABLE_APP_RUNTIME_ENABLED) {
+  app.route("/", appRuntimeRoutes);
+}
 // Per-app DB data plane (/__doable/data/*), settings data-token minter, and the
 // MCP Apps inspector resources — gated behind DOABLE_APP_DB_ENABLED. With the
 // flag off there is no /__doable/data/* surface at all (PRD 08 §6 kill switch).

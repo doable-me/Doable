@@ -547,6 +547,7 @@
     "@doable/ai": "workspace:*",
     "@doable/db": "workspace:*",
     "@doable/marketplace-bundle": "workspace:*",
+    "@doable/runtime": "workspace:*",
     "@doable/shared": "workspace:*",
     "@e965/xlsx": "^0.20.3",
     "@electric-sql/pglite": "0.4.5",

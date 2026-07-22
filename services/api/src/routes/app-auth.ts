@@ -219,3 +219,46 @@ appAuthRoutes.post("/__doable/auth/logout", async (c) => {
   clearSessionCookie(c);
   return c.json({ ok: true });
 });
+
+// ─── Admin user list (app end-users) ─────────────────────────────────────────
+appAuthRoutes.get("/__doable/auth/users", async (c) => {
+  const pid = await projectIdFromAuth(c);
+  if (pid instanceof Response) return pid;
+  const token = readAppSessionToken(c);
+  const claims = token ? await verifyAppSession(token, pid) : null;
+  if (!claims?.adm) {
+    return c.json({ ok: false, error: "Admin required" }, 403);
+  }
+  const { listAppUsers } = await import("../app-runtime/users/admin.js");
+  const users = await listAppUsers(pid, {
+    limit: Number(c.req.query("limit") ?? 50),
+    offset: Number(c.req.query("offset") ?? 0),
+  });
+  return c.json({ ok: true, users });
+});
+
+appAuthRoutes.patch("/__doable/auth/users/:id", async (c) => {
+  const pid = await projectIdFromAuth(c);
+  if (pid instanceof Response) return pid;
+  const token = readAppSessionToken(c);
+  const claims = token ? await verifyAppSession(token, pid) : null;
+  if (!claims?.adm) {
+    return c.json({ ok: false, error: "Admin required" }, 403);
+  }
+  const body = (await c.req.json()) as {
+    name?: string;
+    email?: string;
+    isAdmin?: boolean;
+    disabled?: boolean;
+  };
+  const { updateAppUser, setAppUserAdmin, setAppUserDisabled, getAppUser } =
+    await import("../app-runtime/users/admin.js");
+  const id = c.req.param("id");
+  if (body.name !== undefined || body.email !== undefined) {
+    await updateAppUser(pid, id, { name: body.name, email: body.email });
+  }
+  if (body.isAdmin !== undefined) await setAppUserAdmin(pid, id, body.isAdmin);
+  if (body.disabled !== undefined) await setAppUserDisabled(pid, id, body.disabled);
+  const user = await getAppUser(pid, id);
+  return c.json({ ok: true, user });
+});

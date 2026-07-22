@@ -34,6 +34,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // dist/ai/_system/ (compiled). In Docker the entire src tree is copied to
 // /app/src so the relative path still holds.
 const SYSTEM_SKILLS_DIR = join(__dirname, "skills", "_system");
+/** Fork overlay skills (FULLSTACK_RUNTIME) — scanned after `_system`. */
+const EXT_SKILLS_DIR = join(__dirname, "skills", "_ext");
 
 // ── Drop-in absorption helpers ────────────────────────────
 
@@ -148,21 +150,14 @@ export function absorbDropinSkills(baseDir: string): void {
  * discovers skills by scanning these directories. Any raw drop-in `*.md` files
  * are absorbed into proper skill folders first (see absorbDropinSkills).
  */
-export function getSystemSkillDirs(): string[] {
-  // Convert any freshly-pasted raw drop-in files before scanning, so a skill
-  // dropped between sessions is picked up on the next build (no restart).
-  absorbDropinSkills(SYSTEM_SKILLS_DIR);
-
-  if (!existsSync(SYSTEM_SKILLS_DIR)) {
-    return [];
-  }
-
+function scanSkillDirs(baseDir: string): string[] {
+  if (!existsSync(baseDir)) return [];
   try {
-    const entries = readdirSync(SYSTEM_SKILLS_DIR, { withFileTypes: true });
+    const entries = readdirSync(baseDir, { withFileTypes: true });
     const dirs: string[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const skillDir = join(SYSTEM_SKILLS_DIR, entry.name);
+      const skillDir = join(baseDir, entry.name);
       const skillMd = join(skillDir, "SKILL.md");
       if (existsSync(skillMd)) {
         dirs.push(skillDir);
@@ -172,4 +167,14 @@ export function getSystemSkillDirs(): string[] {
   } catch {
     return [];
   }
+}
+
+export function getSystemSkillDirs(): string[] {
+  // Convert any freshly-pasted raw drop-in files before scanning, so a skill
+  // dropped between sessions is picked up on the next build (no restart).
+  absorbDropinSkills(SYSTEM_SKILLS_DIR);
+  absorbDropinSkills(EXT_SKILLS_DIR);
+
+  // Upstream `_system` first, then fork `_ext` overlay (FULLSTACK_RUNTIME).
+  return [...scanSkillDirs(SYSTEM_SKILLS_DIR), ...scanSkillDirs(EXT_SKILLS_DIR)];
 }

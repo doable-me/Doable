@@ -273,6 +273,19 @@ async function handle(c: Context, op: DataOp): Promise<Response> {
       rowsReturned: op === "query" ? (okResp.rowCount ?? 0) : null,
       status: "ok", durationMs: Date.now() - started,
     });
+    // CDC hook for full-stack runtime (named queries / workflows share this path).
+    if (op === "query" || op === "exec") {
+      try {
+        const { emitCdcIfMutation } = await import("../app-runtime/cdc/emit.js");
+        await emitCdcIfMutation({
+          projectId: auth.projectId,
+          sql: parsed.sql,
+          payload: { rowCount: okResp.rowCount ?? 0 },
+        });
+      } catch {
+        /* runtime optional */
+      }
+    }
     return c.json({
       ok: true,
       rows: okResp.rows ?? [],

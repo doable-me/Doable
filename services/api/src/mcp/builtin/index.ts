@@ -6,6 +6,7 @@
  */
 import type { McpTransport } from "../transport-http.js";
 import { dataBuiltinTransport } from "./data/transport.js";
+import { runtimeBuiltinTransport } from "./runtime/transport.js";
 
 export interface BuiltinTransportOpts {
   serverArgs?: string[];
@@ -17,6 +18,7 @@ type BuiltinFactory = (opts: BuiltinTransportOpts) => McpTransport;
 
 const REGISTRY: Record<string, BuiltinFactory> = {
   "builtin:data": dataBuiltinTransport,
+  "builtin:runtime": runtimeBuiltinTransport,
 };
 
 export function createBuiltinTransport(command: string, opts: BuiltinTransportOpts): McpTransport {

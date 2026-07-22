@@ -12,11 +12,13 @@ import { aiBashProfile } from "./ai-bash.js";
 import { vitePreviewProfile } from "./vite-preview.js";
 import { installProfile } from "./install.js";
 import { buildProfile } from "./build.js";
+import { appWorkflowProfile } from "./app-workflow.js";
 
 export { aiBashProfile } from "./ai-bash.js";
 export { vitePreviewProfile } from "./vite-preview.js";
 export { installProfile } from "./install.js";
 export { buildProfile } from "./build.js";
+export { appWorkflowProfile } from "./app-workflow.js";
 export * from "./constants.js";
 
 export type ProfileFactory = (ctx: SpawnContext, sys: SystemRules) => SandboxProfile;
@@ -31,4 +33,5 @@ export const profileCatalog: Record<ProfileKey, ProfileFactory> = {
   "vite-preview": vitePreviewProfile,
   "install": installProfile,
   "build": buildProfile,
+  "app-workflow": appWorkflowProfile,
 };

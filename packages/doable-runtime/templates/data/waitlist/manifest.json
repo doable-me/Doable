@@ -1,0 +1,5 @@
+{
+  "id": "waitlist",
+  "name": "Waitlist",
+  "description": "Email waitlist with RLS and named queries"
+}

@@ -107,6 +107,18 @@ export function buildProcessRoute(input: AddProcessRouteInput): CaddyRoute {
             terminal: true,
           },
           {
+            match: [{ path: ["/hooks/*"] }],
+            handle: [
+              {
+                handler: "reverse_proxy",
+                upstreams: [{ dial: apiAddr }],
+                transport: { protocol: "http" },
+                headers: fwdHeaders,
+              },
+            ],
+            terminal: true,
+          },
+          {
             handle: [
               {
                 handler: "reverse_proxy",

@@ -329,6 +329,14 @@ projectListRoutes.post("/", async (c) => {
       console.error("[builtin-data] connector provision failed (project create):", err);
     });
   }
+  if (process.env.DOABLE_APP_RUNTIME_ENABLED === "1") {
+    const { ensureRuntimeConnectorForProject } = await import(
+      "../../mcp/builtin/runtime/register.js"
+    );
+    ensureRuntimeConnectorForProject(project.id, workspaceId, userId).catch((err) => {
+      console.error("[builtin-runtime] connector provision failed (project create):", err);
+    });
+  }
 
   return c.json({ data: project }, 201);
 });

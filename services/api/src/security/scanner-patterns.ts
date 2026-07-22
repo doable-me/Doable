@@ -166,4 +166,18 @@ export const CODE_QUALITY_PATTERNS: CodeQualityPattern[] = [
     description: "Dynamic regex construction could be vulnerable to ReDoS (Regular Expression Denial of Service).",
     fix: "Validate and sanitize user input before using it in regular expressions, or use static regex patterns.",
   },
+  {
+    name: "Custom Express/Fastify backend",
+    regex: /(?:from\s+['"]express['"]|require\s*\(\s*['"]express['"]|from\s+['"]fastify['"]|from\s+['"]koa['"]|createServer\s*\()/g,
+    severity: "high",
+    description: "Custom Node HTTP server detected. Use the platform @doable/runtime instead of Express/Fastify/Koa.",
+    fix: "Use named Mustache queries (.doable/backend/queries), auto CRUD (/__doable/api), and workflows — not a custom server.",
+  },
+  {
+    name: "Raw db.query SQL in UI",
+    regex: /db\.query\s*\(\s*[`'"]\s*(?:SELECT|INSERT|UPDATE|DELETE)/gi,
+    severity: "medium",
+    description: "Inline SQL via db.query in app code. Prefer named queries via runtime.queries.run when the app runtime is enabled.",
+    fix: "Move SQL to .doable/backend/queries/<name>.sql and call runtime.queries.run(\"name\", params).",
+  },
 ];

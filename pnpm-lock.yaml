@@ -318,6 +318,18 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
+  packages/doable-runtime:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.15
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/doable-sdk:
     devDependencies:
       '@types/node':
@@ -1982,6 +1994,9 @@ importers:
       '@doable/marketplace-bundle':
         specifier: workspace:*
         version: link:../../packages/marketplace-bundle
+      '@doable/runtime':
+        specifier: workspace:*
+        version: link:../../packages/doable-runtime
       '@doable/shared':
         specifier: workspace:*
         version: link:../../packages/shared

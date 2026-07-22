@@ -1,0 +1,5 @@
+{
+  "id": "todo-multi-tenant",
+  "name": "Todo Multi-tenant",
+  "description": "Tasks with workspace_id multi-tenant pattern"
+}

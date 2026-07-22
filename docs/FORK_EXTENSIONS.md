@@ -19,13 +19,29 @@ When you add a registration call in a file that upstream also owns, list it here
 
 | File | Hook | Status |
 |------|------|--------|
-| *(none yet)* | — | Phase 0 not started |
+| `services/api/src/ai/system-skills.ts` | Scan `_ext/` after `_system/` | Done |
+| `services/api/src/projects/link-sdk.ts` | Link `@doable/runtime` | Done |
+| `services/api/src/routes.ts` | Mount `appRuntimeRoutes` when flag on | Done |
+| `services/api/src/index.ts` | `startAppRuntime()` scheduler boot | Done |
+| `services/api/src/mcp/builtin/index.ts` | Register `builtin:runtime` | Done |
+| `services/api/src/routes/chat/send-handler.ts` | `ensureRuntimeConnectorForProject` | Done |
+| `services/api/src/routes/projects/list-routes.ts` | Same on project create | Done |
+| `services/api/src/routes/app-data.ts` | `emitCdcIfMutation` after DML | Done |
+| `services/api/src/data-worker/pool.ts` | Skip idle sweep when `isProjectPinned` | Done |
+| `services/api/src/routes/app-auth.ts` | Admin `/__doable/auth/users` CRUD | Done |
+| `services/api/src/sandbox/profiles/index.ts` | `app-workflow` profile | Done |
+| `services/api/src/ai/framework-prompts/index.ts` | Backend contract snippet | Done |
+| `services/api/src/security/scanner-patterns.ts` | Express + raw `db.query` patterns | Done |
+| `services/api/src/services/caddy-domains.ts` | Carve `/__doable/*` + `/hooks/*` | Done |
+| `services/api/src/runtime/caddy-admin.ts` | Process apps: `/hooks/*` carve-out | Done |
+| `services/api/package.json` | `@doable/runtime` workspace dep | Done |
+| `.env.example` | `DOABLE_APP_RUNTIME_ENABLED=1` | Done |
 
 ## Feature flags
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `DOABLE_APP_RUNTIME_ENABLED` | `0` (until Phase 2+) | Master switch for app runtime |
+| `DOABLE_APP_RUNTIME_ENABLED` | `0` in code (`=== "1"` to enable); `1` in `.env.example` | Master switch for app runtime |
 
 ## Merge policy
 

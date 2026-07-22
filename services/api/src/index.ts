@@ -34,9 +34,11 @@ import { initFrameworks } from "./frameworks/init.js";
 import { startIdleEvictionSweeper } from "./projects/dev-server.js";
 import { startDataPoolSweeper } from "./data-worker/pool.js";
 import { DOABLE_APP_DB_ENABLED } from "./data-worker/config.js";
+import { startAppRuntime } from "./app-runtime/index.js";
 initFrameworks();
 // Per-app DB worker pool idle reaper (PRD per-app-db 07). No-op unless enabled.
 if (DOABLE_APP_DB_ENABLED) startDataPoolSweeper();
+startAppRuntime();
 // Idle dev servers eat ~666 MB each (next-server + launcher). Start a
 // 5-minute sweeper that kills sessions with no preview-proxy traffic in
 // the last DEV_SERVER_IDLE_MS (default 15 min). Safe to call once at boot;

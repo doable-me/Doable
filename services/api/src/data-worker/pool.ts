@@ -41,6 +41,7 @@ import {
   DOABLE_APP_DB_QUEUE_DEPTH,
 } from "./config.js";
 import type { WorkerRequest, WorkerResponse } from "./types.js";
+import { isProjectPinned } from "../app-runtime/pin.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -470,6 +471,8 @@ export function sweepIdleWorkers(now: number = Date.now()): string[] {
   const swept: string[] = [];
   for (const [projectId, handle] of workers) {
     if (handle.inflight.size > 0) continue;
+    // Warm-pin: skip idle eviction while live subscribers / pending runs.
+    if (isProjectPinned(projectId)) continue;
     if (now - handle.lastActivityAt.getTime() < DOABLE_APP_DB_IDLE_MS) continue;
     if (handle.process.exitCode !== null) continue;
     killWorker(handle, "idle");

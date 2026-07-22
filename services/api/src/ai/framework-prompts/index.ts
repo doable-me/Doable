@@ -15,6 +15,7 @@ export interface FrameworkPrompt {
 
 import { viteReactPrompt } from "./vite-react.js";
 import { nextjsAppPrompt } from "./nextjs-app.js";
+import { BACKEND_RUNTIME_SNIPPET } from "./backend-runtime.js";
 // Prompt files for the 6 disabled frameworks (sveltekit, nuxt, astro,
 // hono, fastapi, django) were removed alongside their adapters and
 // templates. Backups: ~/Documents/doable-disabled-frameworks-backup-<date>/
@@ -31,6 +32,8 @@ export function getFrameworkPrompt(frameworkId: string): FrameworkPrompt {
 /** Concatenate the prompt sections in canonical order. */
 export function renderFrameworkPrompt(frameworkId: string): string {
   const p = getFrameworkPrompt(frameworkId);
-  return [p.systemIntro, p.envConventions, p.routing, p.styling, p.fileShape, p.pwa]
+  return [p.systemIntro, p.envConventions, p.routing, p.styling, p.fileShape, p.pwa, BACKEND_RUNTIME_SNIPPET]
     .filter(Boolean).join("\n\n");
 }
+
+export { BACKEND_RUNTIME_SNIPPET };

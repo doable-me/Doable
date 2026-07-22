@@ -119,4 +119,6 @@ export async function linkDoableSdk(projectPath: string): Promise<void> {
   // resolve that re-export and the WHOLE module errors with "does not provide
   // an export named 'ai'", white-screening any generated app that imports it.
   await linkWorkspacePackage(projectPath, "doable-ai", ["index.ts", "thinking.ts"]);
+  // @doable/runtime — named queries, auto CRUD, topics, workflow invoke.
+  await linkWorkspacePackage(projectPath, "doable-runtime", ["index.ts", "types.ts"]);
 }

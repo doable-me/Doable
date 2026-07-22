@@ -430,13 +430,20 @@ packages/doable-ai/src/index.ts                # runMcpAgent
 
 ---
 
-## 15. Full-stack runtime extension (planned)
+## 15. Full-stack runtime extension
 
-UI generation is production-grade; **named Mustache SQL queries, workflows, auto-CRUD REST, schedules, topics, webhooks, CDC, secrets refs, and data templates** are specified as a sync-safe overlay — not yet implemented.
+UI generation remains production-grade. The **platform app runtime** is implemented as a sync-safe overlay:
 
-**Authoritative implementation spec:** [`FULLSTACK_RUNTIME.md`](./FULLSTACK_RUNTIME.md)  
-**(Packages / deps:** see §4 of that doc.)  
-**Fork hook index (when work starts):** [`FORK_EXTENSIONS.md`](./FORK_EXTENSIONS.md)
+| Capability | Status |
+|------------|--------|
+| Named Mustache SQL queries (`/__doable/queries`) | **Shipped** (`app-runtime/`) |
+| Auto CRUD REST (`/__doable/api/v1`) | **Shipped** |
+| Workflows + expanded SDK (`ctx.queries`, messages, users, rbac, …) | **Shipped** |
+| Schedules / webhooks / topics / CDC | **Shipped** |
+| `@doable/runtime` client + `_ext` skills + `builtin:runtime` | **Shipped** |
+| Data templates (waitlist, saas-leads, todo-multi-tenant) | **Shipped** |
+
+Enable with `DOABLE_APP_RUNTIME_ENABLED=1`. Spec: [`FULLSTACK_RUNTIME.md`](./FULLSTACK_RUNTIME.md). Hooks: [`FORK_EXTENSIONS.md`](./FORK_EXTENSIONS.md).
 
 ---
 
