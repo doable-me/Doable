@@ -51,6 +51,16 @@ describe("findRuntimeWriteViolation", () => {
     assert.equal(v!.rule, "custom_server");
   });
 
+  it("does not ban SEED_ constants (taught via skills, not write gates)", () => {
+    assert.equal(
+      findRuntimeWriteViolation(
+        "src/context/SalonContext.tsx",
+        `const SEED_SERVICES = [{ id: "1", name: "Cut" }];\n`,
+      ),
+      null,
+    );
+  });
+
   it("does nothing when explicitly disabled", () => {
     assert.equal(
       findRuntimeWriteViolation(

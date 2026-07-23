@@ -1,6 +1,10 @@
 /**
  * Hard gates for generated-app writes when the app runtime is enabled.
  * create_file / edit_file call this before writing to disk.
+ *
+ * Intentionally narrow: block architectural escape hatches only
+ * (raw SQL in UI, custom HTTP servers). Seed-in-DB / wiring is taught
+ * via skills + prompts + runtime.validate — not content regex bans.
  */
 
 import { DOABLE_APP_RUNTIME_ENABLED } from "./config.js";

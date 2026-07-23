@@ -143,3 +143,12 @@ POST /__doable/queries/:queryName
 - ⛔ Referencing tables that were never migrated.
 - ⛔ Skipping `runtime.test_query` after writing a new query.
 - ⛔ Putting secret values or API keys inside `.sql` files.
+- ⛔ Writing `.doable/backend/queries/*.sql` and never calling them from `src/` — every query name MUST appear in a `runtime.queries.run("name", …)` call.
+- ⛔ Replacing query results with `SEED_*` / `DEMO_*` arrays in Context — seed via `data.query`, read via named queries.
+
+## Wire-check (mandatory before done)
+
+1. List every basename under `.doable/backend/queries/*.sql`.
+2. Grep `src/` for `runtime.queries.run("<name>"` for each.
+3. Call `runtime.test_query` on key queries and `runtime.validate`.
+4. Only then summarize the build.

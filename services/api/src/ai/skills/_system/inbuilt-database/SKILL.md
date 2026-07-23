@@ -1,6 +1,6 @@
 ---
 name: "inbuilt-database"
-description: "Built-in per-project PGlite database — no external DB needed. Triggers on: database, persist data, store data, save records, PGlite, data.query, data.migrate, data.schema, CRUD, tables, rows, SQL, relational data, user data storage, backend storage."
+description: "Built-in per-project PGlite database — no external DB needed. Triggers on: database, persist data, store data, save records, PGlite, data.query, data.migrate, data.schema, CRUD, tables, rows, SQL, relational data, user data storage, backend storage, seed data, demo accounts, bookings, services catalog, admin dashboard, signup, login, management app."
 ---
 
 # Inbuilt Database
@@ -10,7 +10,7 @@ Every Doable project has a built-in PGlite (PostgreSQL-compatible) database that
 ## Core rules
 
 1. **The inbuilt DB is the ONLY persistence layer.** Whenever the user wants to store, save, persist, or retrieve data, you MUST use the inbuilt database: create the schema with `data.migrate` at build time, then **named Mustache queries** under `.doable/backend/queries/*.sql` called from the UI via `import { runtime } from "@doable/runtime"` → `runtime.queries.run("name", params)`.
-2. **🚫 localStorage / sessionStorage / IndexedDB / in-memory arrays are FORBIDDEN as the data store.** Never fall back to them to persist user records (tasks, leads, posts, notes, etc.). They are acceptable ONLY for trivial ephemeral UI state (e.g. "dark mode on", "sidebar collapsed", a draft being typed) — never as the place real data lives.
+2. **🚫 localStorage / sessionStorage / IndexedDB / in-memory arrays / React Context entity lists are FORBIDDEN as the data store.** Never fall back to them to persist user records (tasks, leads, posts, notes, services, bookings, etc.). **⛔ Never invent `SEED_*` / `DEMO_*` / `INITIAL_*` / `DEMO_USERS` constants in app source** — seed with `data.query` INSERTs during the build, then load via `runtime.queries.run`. They are acceptable ONLY for trivial ephemeral UI state (e.g. "dark mode on", "sidebar collapsed", a draft being typed) — never as the place real data lives.
 3. **`@doable/data` and `@doable/runtime` are PRE-LINKED, not missing.** They are deliberately absent from `package.json` yet fully resolvable. Use `@doable/runtime` for app data; use `@doable/data` **only for `db.auth.*`**. NEVER add them to `package.json` and NEVER run install_package for them.
 4. **Never suggest an external database.** You do not need Supabase or any third-party DB — the inbuilt one is already there (unless the user explicitly connected Supabase).
 5. **Always check `data.schema` first** before writing queries that reference a table. Never invent table or column names without verification.

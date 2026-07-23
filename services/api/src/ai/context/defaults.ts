@@ -43,9 +43,9 @@ export const CONTEXT_DEFAULTS: Partial<Record<DoableContextFile, string>> = {
 - Use \`cn()\` utility for conditional class merging
 
 ## State Management
-- Local state with \`useState\` for UI-only state
-- React Context for shared component state
-- Server state patterns for API data
+- Local state with \`useState\` for UI-only chrome (modals open, form drafts, theme)
+- React Context ONLY for auth session (\`db.auth.getUser\`) and ephemeral UI chrome — NEVER for entity lists
+- Server/app records via \`runtime.queries.run\` after seeding with \`data.query\` — never \`SEED_*\` / \`DEMO_*\` arrays in Context
 
 ## Error Handling
 - Always handle loading and error states in UI

@@ -561,7 +561,8 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
     }),
 
     defineTool("mark_step_complete", {
-      description: "Mark a plan step as completed during build execution.",
+      description:
+        "Mark a Plan Mode step as completed while building. Use when .doable/plan.md lists step IDs — call after finishing each step so the Plan Progress UI updates.",
       parameters: {
         type: "object" as const,
         properties: {

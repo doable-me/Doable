@@ -129,9 +129,10 @@ export const DEFAULT_CONTEXT_FILES: ContextFileDefinition[] = [
 - Use \`cn()\` utility for conditional class merging
 
 ## State Management
-- Local state with \`useState\` for UI-only state
-- React Context for shared component state
-- Server state patterns for API data
+- Local state with \`useState\` for UI-only chrome (modals open, form drafts, theme)
+- React Context ONLY for auth session (\`db.auth.getUser\`) and ephemeral UI chrome — NEVER for entity lists (services, bookings, products, etc.)
+- Server/app records: load and mutate via \`import { runtime } from "@doable/runtime"\` → \`runtime.queries.run("query_name", params)\` after seeding with \`data.query\` during the build
+- Do NOT put \`SEED_*\` / \`DEMO_*\` arrays in Context or components
 
 ## Error Handling
 - Always handle loading and error states in UI

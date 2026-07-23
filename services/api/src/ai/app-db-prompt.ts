@@ -73,7 +73,8 @@ export const APP_DB_PROMPT_BLOCK: string = `## Per-app database
      const r = await db.admin.query("SELECT * FROM orders ORDER BY created_at DESC"); // ALL users' rows
    }
    \`\`\`
-   The FIRST account to sign up for the app is automatically the admin (\`user.isAdmin === true\`) — that's the owner who sets it up; everyone after is a normal user. \`db.admin.query\` is READ-ONLY (SELECT only) and the server REJECTS it for non-admins, so gate admin UI on \`user.isAdmin\` and let the server enforce the rest. Use plain \`db.query\` for a user's own data and \`db.admin.query\` only for genuine cross-user admin views.`;
+   The FIRST account to sign up for the app is automatically the admin (\`user.isAdmin === true\`) — that's the owner who sets it up; everyone after is a normal user. \`db.admin.query\` is READ-ONLY (SELECT only) and the server REJECTS it for non-admins, so gate admin UI on \`user.isAdmin\` and let the server enforce the rest. Use plain \`db.query\` for a user's own data and \`db.admin.query\` only for genuine cross-user admin views.
+9. **🌱 Seed demo data with \`data.query\` INSERTs — never \`SEED_*\` / \`DEMO_*\` arrays in React Context.** When the user asks for sample accounts/catalog, create them via auth + DB inserts during the build.`;
 
 /**
  * Same schema/RLS/auth rules as APP_DB_PROMPT_BLOCK, but app data access MUST use
@@ -129,7 +130,7 @@ export const APP_DB_PROMPT_BLOCK_RUNTIME: string = `## Per-app database
    \`\`\`
    Use Mustache \`{{param}}\` binds — never string-splice user input into SQL files.
 6. **Never call \`db.query\` / \`db.admin.query\` / \`db.exec\` from app UI** — rejected by the platform. Schema changes only via \`data.migrate\` in chat.
-7. **🔐 USER ACCOUNTS / LOGIN — \`db.auth\` only** (still on \`@doable/data\`):
+7. **🔐 USER ACCOUNTS — signup AND login by default.** When the app has roles, private user data, bookings, dashboards per user, or the user named demo accounts: ship BOTH \`db.auth.signup\` and \`db.auth.login\` (+ \`getUser\` on mount + logout). Do NOT ship login-only. Do NOT invent password tables or \`DEMO_USERS\` maps.
    \`\`\`ts
    import { db } from "@doable/data";
    await db.auth.signup({ email, password, name });
@@ -137,8 +138,10 @@ export const APP_DB_PROMPT_BLOCK_RUNTIME: string = `## Per-app database
    const { user } = await db.auth.getUser();
    await db.auth.logout();
    \`\`\`
-   After sign-in, RLS applies to named-query runs automatically. Do NOT invent password tables.
-8. **🛡️ ADMIN DASHBOARDS** — gate UI on \`user?.isAdmin\` from \`db.auth.getUser()\`. For cross-user reads, use named queries against tables with public-read (or admin-appropriate) RLS — **never** \`db.admin.query\` SQL strings in components. Prefer \`runtime.queries.run\` / auto CRUD.`;
+   After sign-in, RLS applies to named-query runs automatically. First signup is admin (\`user.isAdmin\`). Create named demo accounts during the build with \`db.auth.signup\` (same emails/passwords the user requested).
+8. **🛡️ ADMIN DASHBOARDS** — gate UI on \`user?.isAdmin\` from \`db.auth.getUser()\`. For cross-user reads, use named queries against tables with public-read (or admin-appropriate) RLS — **never** \`db.admin.query\` SQL strings in components. Prefer \`runtime.queries.run\` / auto CRUD.
+9. **🌱 DEMO / CATALOG DATA — seed in the DB, never in the UI.** After migrate, use \`data.query\` INSERT statements in THIS chat to populate services, products, sample bookings, settings, etc. ⛔ FORBIDDEN: \`const SEED_*\` / \`DEMO_*\` / \`INITIAL_*\` arrays in React Context or components; ⛔ FORBIDDEN: fake async that only \`setState\`s mock rows. UI must \`runtime.queries.run\` to read and mutate. Marketing-only copy on a landing page (static headlines) is fine; entity records are not.
+10. **🔌 WIRE EVERY QUERY.** Every \`.doable/backend/queries/<name>.sql\` you write MUST be called from \`src/\` via \`runtime.queries.run("name", …)\`. Orphan SQL files are a failed build. Call \`runtime.validate\` + \`runtime.test_query\` before claiming done.`;
 
 /**
  * Returns the per-app database prompt block unless DOABLE_APP_DB_ENABLED==="0"

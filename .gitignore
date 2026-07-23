@@ -2,7 +2,7 @@
 node_modules/
 .pnpm-store/
 package-lock.json
-
+generations/
 # Build
 dist/
 .next/

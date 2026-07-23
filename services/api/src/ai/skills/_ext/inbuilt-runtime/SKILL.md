@@ -68,16 +68,19 @@ Write only under:
 
 ## Ordered checklist (full-stack feature)
 
-1. Clarify triggers (UI-only? webhook? cron? CDC?).
+1. Clarify triggers (UI-only? webhook? cron? CDC?). Expand feature scope: every role + every entity gets real CRUD/workflows, not UI shells.
 2. `data.schema` — inspect existing tables.
 3. Migrate schema (`data.migrate`) **or** `runtime.apply_data_template`.
 4. Write named queries (`.sql` + optional `.meta.json`); `runtime.test_query`.
-5. Expose auto CRUD only if needed (`api/tables.json`).
-6. Write workflow JS that prefers `ctx.queries.run` + manifests.
-7. Add secret **names** to `secrets.refs.json` (values via vault).
-8. `runtime.validate` (+ `runtime.test_workflow` when workflows exist).
-9. Wire UI to `runtime.queries.run` (not inline SQL).
-10. Only then mark complete.
+5. **Seed demo/catalog data with `data.query` INSERTs** (and `db.auth.signup` for named demo accounts). Never `SEED_*` in React.
+6. Expose auto CRUD only if needed (`api/tables.json`).
+7. Write workflow JS that prefers `ctx.queries.run` + manifests (when needed).
+8. Add secret **names** to `secrets.refs.json` (values via vault).
+9. Wire UI to `runtime.queries.run` (not inline SQL / not Context mocks). Include signup + login when roles/accounts exist.
+10. `runtime.validate` (+ `runtime.test_workflow` when workflows exist).
+11. Only then mark complete.
+
+**Multi-turn:** Large apps may span several Agent turns. Keep this order within and across turns — never ship `src/` screens before steps 3–5 for that feature. If `.doable/plan.md` exists, follow its steps and call `mark_step_complete` after each.
 
 ## Copy-paste: UI + same query in workflow
 

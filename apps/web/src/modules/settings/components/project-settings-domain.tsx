@@ -21,6 +21,7 @@ import {
   apiAddCustomDomain,
   apiRemoveCustomDomain,
   apiVerifyCustomDomain,
+  apiGetWorkspace,
   type ApiProject,
   type ApiCustomDomain,
 } from "@/lib/api";
@@ -44,8 +45,24 @@ export function DomainTab({
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isPro, setIsPro] = useState(false);
 
-  const isPro = true;
+  useEffect(() => {
+    let cancelled = false;
+    apiGetWorkspace(project.workspace_id)
+      .then((res) => {
+        if (!cancelled) {
+          const plan = res.data.plan ?? "free";
+          setIsPro(plan !== "free");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsPro(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.workspace_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -206,7 +223,13 @@ export function DomainTab({
               Custom domains are available on the Pro plan and above. Upgrade
               your workspace to connect your own domain.
             </p>
-            <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/billing";
+              }}
+              className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
               <Crown className="h-4 w-4" />
               Upgrade to Pro
             </button>

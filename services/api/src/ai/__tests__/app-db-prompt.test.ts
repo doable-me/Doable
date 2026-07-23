@@ -67,6 +67,12 @@ describe("buildAppDbContext env gating", () => {
     assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("named queries"));
     assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("Never call `db.query`"));
   });
+
+  it("runtime prompt forbids UI seed mocks and requires signup + wire-every-query", () => {
+    assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("SEED_*"));
+    assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("signup AND login"));
+    assert.ok(APP_DB_PROMPT_BLOCK_RUNTIME.includes("WIRE EVERY QUERY"));
+  });
 });
 
 describe("CI fixture db-aware-app.json", () => {

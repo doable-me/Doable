@@ -20,6 +20,7 @@
 
 import net from "node:net";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, rm, chmod } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -131,12 +132,34 @@ async function defaultProjectDataDir(projectId: string): Promise<string> {
   return path.join(getProjectPath(projectId), ".doable", "app.db");
 }
 
+/**
+ * Linux/macOS sockaddr_un.sun_path is typically 108 bytes (incl. NUL) → 107
+ * usable chars. Paths under a deep home checkout (…/services/api/projects/<uuid>/.doable/db.sock)
+ * often exceed that; Node truncates the bind path onto the `.doable` directory
+ * and surfaces a spurious EADDRINUSE. Prefer the project-local path when it
+ * fits (prod `/srv/doable/projects/…` and the bwrap bind-mount expect it);
+ * otherwise fall back to a short path under the OS temp dir (plain/dev only).
+ */
+const UNIX_SOCK_MAX_PATH = 107;
+
 function defaultEndpoint(projectId: string, dataDir: string): string {
   if (process.platform === "win32") {
     return `\\\\.\\pipe\\doable-db-${projectId}`;
   }
-  // unix domain socket alongside the data dir's parent (.doable/db.sock)
-  return path.join(path.dirname(dataDir), "db.sock");
+  // Prefer alongside the data dir's parent (.doable/db.sock) when short enough.
+  const alongside = path.join(path.dirname(dataDir), "db.sock");
+  if (alongside.length <= UNIX_SOCK_MAX_PATH) return alongside;
+  // Dist/bwrap workers connect via /work/.doable/db.sock which is the bind-mount
+  // of this path — a tmpdir fallback would leave the worker talking to a
+  // different inode. Fail loud so operators shorten the projects root.
+  const isDist = __dirname.split(path.sep).includes("dist");
+  if (process.platform === "linux" && isDist) {
+    throw new DataPoolError(
+      "WORKER_CRASHED",
+      `project db socket path exceeds AF_UNIX limit (${alongside.length}>${UNIX_SOCK_MAX_PATH}): ${alongside}`,
+    );
+  }
+  return path.join(tmpdir(), "doable-db", `${projectId}.sock`);
 }
 
 /**
@@ -231,6 +254,10 @@ async function spawnWorker(projectId: string, opts: AcquireOpts): Promise<Worker
   const dataDir = opts.dataDir ?? (await defaultProjectDataDir(projectId));
   await mkdir(dataDir, { recursive: true });
   const endpoint = opts.endpoint ?? defaultEndpoint(projectId, dataDir);
+  // Socket may live under tmpdir/doable-db when the project-local path is too long.
+  if (process.platform !== "win32") {
+    await mkdir(path.dirname(endpoint), { recursive: true });
+  }
 
   // Per-project uid (same identity as vite-jail). null off-Linux/dev.
   // Resolved BEFORE the data-dir/socket permission setup because the worker

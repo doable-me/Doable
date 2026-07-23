@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, memo, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, apiListCollaborators, apiRemoveCollaborator, type ApiEffectiveAiConfig, type ApiAiProvider, type ApiCollaborator } from "@/lib/api";
+import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, apiListCollaborators, apiRemoveCollaborator, apiGetWorkspace, type ApiEffectiveAiConfig, type ApiAiProvider, type ApiCollaborator } from "@/lib/api";
 import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -1868,6 +1868,7 @@ function EditorPageInner() {
 
   // ─── Workspace / AI enforcement state ────────────────────
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [workspacePlan, setWorkspacePlan] = useState<string>("free");
   const [effectiveAiConfig, setEffectiveAiConfig] = useState<ApiEffectiveAiConfig | null>(null);
 
   // ─── File tree state ──────────────────────────────────────
@@ -2280,6 +2281,14 @@ function EditorPageInner() {
     // Record view for recently-viewed tracking (fire-and-forget)
     apiRecordProjectView(resolvedProjectId).catch(() => {});
   }, [resolvedProjectId]);
+
+  // ─── Workspace plan (gate Upgrade CTA to free only) ───────
+  useEffect(() => {
+    if (!workspaceId) return;
+    apiGetWorkspace(workspaceId)
+      .then((res) => setWorkspacePlan(res.data.plan ?? "free"))
+      .catch(() => setWorkspacePlan("free"));
+  }, [workspaceId]);
 
   // ─── Fetch share stats + collaborators when share dialog opens ─
   useEffect(() => {
@@ -5604,13 +5613,15 @@ function EditorPageInner() {
             error={github.error}
             onClearError={() => github.clearError()}
           />
-          {/* Upgrade */}
-          <button
-            onClick={() => router.push("/billing")}
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-accent border border-border px-2.5 text-sm text-foreground hover:bg-accent hover:text-foreground transition-all"
-          >
-            <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" /><span className="hidden md:inline">Upgrade</span>
-          </button>
+          {/* Upgrade — free workspaces only */}
+          {workspacePlan === "free" && (
+            <button
+              onClick={() => router.push("/billing")}
+              className="flex h-7 items-center gap-1.5 rounded-lg bg-accent border border-border px-2.5 text-sm text-foreground hover:bg-accent hover:text-foreground transition-all"
+            >
+              <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" /><span className="hidden md:inline">Upgrade</span>
+            </button>
+          )}
           {/* Deploy */}
           <button
             onClick={() => {

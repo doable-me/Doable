@@ -8,17 +8,22 @@ import {
   Plus,
   Mic,
   MonitorSmartphone,
-  Gauge,
-  Lock,
-  Earth,
-  Braces,
+  Database,
+  Shield,
+  Sparkles,
+  Layers,
+  Workflow,
+  Globe2,
   Lightbulb,
   Wand2,
   Send,
+  Code2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/brand-logo";
 import { HomeFooter } from "./home-footer";
+import { MarketingPricingSection } from "@/components/marketing/pricing-section";
+import { MarketingRoadmapSection } from "@/components/marketing/roadmap-section";
 
 export default function HomePage() {
   const [prompt, setPrompt] = useState("");
@@ -54,13 +59,13 @@ export default function HomePage() {
               href="#features"
               className="text-sm text-gray-400 transition-colors hover:text-white"
             >
-              Solutions
+              Features
             </Link>
             <Link
               href="#how-it-works"
               className="text-sm text-gray-400 transition-colors hover:text-white"
             >
-              Resources
+              How it works
             </Link>
             <Link
               href="#pricing"
@@ -69,10 +74,10 @@ export default function HomePage() {
               Pricing
             </Link>
             <Link
-              href="#community"
+              href="#roadmap"
               className="text-sm text-gray-400 transition-colors hover:text-white"
             >
-              Community
+              Docs & roadmap
             </Link>
           </div>
 
@@ -105,14 +110,15 @@ export default function HomePage() {
         </div>
 
         <div className="relative z-10 mx-auto w-full max-w-3xl text-center">
-          <p className="mb-4 text-sm font-medium tracking-wide text-brand-300">
+          <h1 className="mb-4 text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl">
             Appbrics
-          </p>
-          <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
-            Build apps with AI
           </h1>
+          <p className="mb-3 text-xl font-medium text-brand-200 sm:text-2xl">
+            Build full-stack apps with AI
+          </p>
           <p className="mb-12 text-base text-gray-400 sm:text-lg">
-            Describe your product. Appbrics designs, codes, and ships it.
+            Describe your product. Appbrics designs the UI, wires the database,
+            and ships a live preview — schema, queries, auth, and all.
           </p>
 
           <form onSubmit={handleSubmit} className="mx-auto w-full max-w-2xl">
@@ -169,24 +175,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="relative z-10 border-t border-white/5 bg-[#060b12] py-16">
-        <p className="mb-8 text-center text-sm text-gray-500">
-          Teams shipping faster with Appbrics
-        </p>
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-x-12 gap-y-6 px-4 opacity-40">
-          {["Zendesk", "Uber", "Microsoft", "ElevenLabs", "HubSpot"].map(
-            (name) => (
-              <span
-                key={name}
-                className="text-lg font-semibold tracking-wide text-gray-300"
-              >
-                {name}
-              </span>
-            )
-          )}
-        </div>
-      </section>
-
       <section id="how-it-works" className="relative z-10 py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="mb-4 text-center text-3xl font-bold sm:text-4xl">
@@ -198,19 +186,19 @@ export default function HomePage() {
                 icon: Lightbulb,
                 title: "Describe your app",
                 description:
-                  "Share goals, screenshots, or docs. Appbrics understands the product intent.",
+                  "Share goals, roles, and screens. Appbrics understands the product intent.",
               },
               {
                 icon: Wand2,
                 title: "Watch it build",
                 description:
-                  "AI writes the code, builds the UI, and wires the backend while you watch.",
+                  "AI creates schema, named queries, seed data, auth, and UI — live in preview.",
               },
               {
                 icon: Send,
                 title: "Ship it",
                 description:
-                  "One-click deploy with custom domains, SSL, and a global CDN.",
+                  "Deploy with one click. Custom domains and SSL when you upgrade.",
               },
             ].map((step) => (
               <div key={step.title} className="text-center">
@@ -233,30 +221,56 @@ export default function HomePage() {
             Everything you need to ship
           </h2>
           <p className="mx-auto mb-16 max-w-xl text-center text-gray-400">
-            Built-in tooling so you keep building — Appbrics handles the rest.
+            Not just a UI mock — Appbrics builds real full-stack apps on your
+            platform.
           </p>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {[
               {
-                icon: Gauge,
-                title: "Lightning fast",
-                desc: "Optimized builds and edge deployment for sub-second load times.",
+                icon: Sparkles,
+                title: "AI agent builder",
+                desc: "Agent, Plan, and Visual Edit modes that write production-ready code.",
               },
               {
-                icon: Lock,
-                title: "Secure by default",
-                desc: "Enterprise-grade security with automatic SSL and DDoS protection.",
+                icon: Database,
+                title: "Inbuilt database",
+                desc: "Per-project PGlite with RLS, migrations, and demo seeding.",
               },
               {
-                icon: Earth,
-                title: "Global CDN",
-                desc: "Your app served from 200+ edge locations worldwide.",
+                icon: Layers,
+                title: "Named queries",
+                desc: "Server-side SQL via @doable/runtime — shared by UI and workflows.",
               },
               {
-                icon: Braces,
+                icon: Shield,
+                title: "Auth built-in",
+                desc: "Signup, login, and session cookies via db.auth — no password tables.",
+              },
+              {
+                icon: Workflow,
+                title: "Automations",
+                desc: "Workflows, schedules, webhooks, and CDC on the app runtime.",
+              },
+              {
+                icon: Globe2,
+                title: "Deploy & domains",
+                desc: "One-click publish; custom domains on Pro and above.",
+              },
+              {
+                icon: Code2,
                 title: "Full code access",
-                desc: "Export your code anytime. No lock-in, ever.",
+                desc: "Edit every file. Export anytime. No lock-in.",
+              },
+              {
+                icon: MonitorSmartphone,
+                title: "Live preview",
+                desc: "See the app update as the agent builds — desktop and mobile.",
+              },
+              {
+                icon: Wand2,
+                title: "Plan mode",
+                desc: "Clarify, approve a step plan, then build with progress tracking.",
               },
             ].map((item) => (
               <div
@@ -276,7 +290,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section id="pricing" className="relative z-10 border-t border-white/5 py-24">
+      <MarketingPricingSection />
+      <MarketingRoadmapSection />
+
+      <section className="relative z-10 border-t border-white/5 py-24">
         <div className="relative mx-auto max-w-3xl px-4 text-center">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute left-1/2 top-1/2 h-[300px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-600/10 blur-[100px]" />
@@ -286,7 +303,8 @@ export default function HomePage() {
               Ready to build with Appbrics?
             </h2>
             <p className="mx-auto mb-8 max-w-xl text-gray-400">
-              Start free. Upgrade when you ship. No credit card required.
+              Start free. Upgrade when you ship. Stripe Checkout handles payments
+              securely.
             </p>
             <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Button
@@ -300,7 +318,7 @@ export default function HomePage() {
                 variant="ghost"
                 className="h-12 rounded-full px-8 text-sm text-gray-400 hover:text-white"
               >
-                <Link href="#how-it-works">Learn more</Link>
+                <Link href="#pricing">See pricing</Link>
               </Button>
             </div>
           </div>

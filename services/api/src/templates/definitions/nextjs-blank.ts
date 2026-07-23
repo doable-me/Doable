@@ -15,7 +15,7 @@ import type { TemplateDefinition } from "../registry.js";
 
 const PACKAGE_JSON = JSON.stringify(
   {
-    name: "doable-nextjs-project",
+    name: "appbrics-nextjs-project",
     version: "0.1.0",
     private: true,
     scripts: {
@@ -138,8 +138,8 @@ const APP_LAYOUT = `import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Doable App",
-  description: "Built with Next.js on Doable",
+  title: "Appbrics App",
+  description: "Built with Next.js on Appbrics",
 };
 
 export default function RootLayout({
@@ -179,14 +179,20 @@ const phrases = [
   "From zero to wow.",
 ];
 
-function DoableLogo({ className = "" }: { className?: string }) {
+function AppbricsLogo({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 40 40" fill="none" className={className}>
-      <rect width="40" height="40" rx="10" className="fill-[#F97316]">
+      <defs>
+        <linearGradient id="ab-grad" x1="0" y1="0" x2="40" y2="40">
+          <stop offset="0%" stopColor="#0ea5e9" />
+          <stop offset="100%" stopColor="#0284c7" />
+        </linearGradient>
+      </defs>
+      <rect width="40" height="40" rx="10" fill="url(#ab-grad)">
         <animate attributeName="rx" values="10;14;10" dur="3s" repeatCount="indefinite" />
       </rect>
       <text x="50%" y="54%" dominantBaseline="middle" textAnchor="middle" className="fill-white" style={{ fontSize: "22px", fontWeight: 700, fontFamily: "system-ui" }}>
-        D
+        A
       </text>
     </svg>
   );
@@ -208,17 +214,17 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-sky-50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="text-center space-y-6">
         <div className="flex justify-center">
-          <DoableLogo className="w-16 h-16 drop-shadow-lg" />
+          <AppbricsLogo className="w-16 h-16 drop-shadow-lg" />
         </div>
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white">
-            Doable
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Appbrics
           </h1>
           <p
-            className="text-lg text-[#F97316] font-medium transition-opacity duration-400"
+            className="text-lg text-sky-600 dark:text-sky-400 font-medium transition-opacity duration-400"
             style={{ opacity, transitionDuration: "400ms" }}
           >
             {phrases[phraseIndex]}
@@ -230,7 +236,7 @@ export default function Home() {
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="w-1.5 h-1.5 rounded-full bg-[#F97316]"
+                className="w-1.5 h-1.5 rounded-full bg-sky-500"
                 style={{
                   animation: \`pulse-dot 1.4s ease-in-out \${i * 0.2}s infinite\`,
                 }}

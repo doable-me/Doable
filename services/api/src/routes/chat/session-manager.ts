@@ -93,7 +93,7 @@ const PLAN_MODE_ALLOWED_DEFAULT = new Set([
   "ask_clarification", "create_plan", "mark_step_complete",
 ]);
 const PLAN_ONLY_TOOLS = new Set([
-  "ask_clarification", "create_plan", "mark_step_complete",
+  "ask_clarification", "create_plan",
 ]);
 
 // In-memory cache for DB tool configs (refreshed every 60s)

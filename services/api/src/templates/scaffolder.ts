@@ -179,6 +179,9 @@ async function writeCodeFiles(
     // Replace placeholder project name if provided
     if (projectName) {
       content = content.replace(/doable-project/g, slugify(projectName));
+      content = content.replace(/appbrics-project/g, slugify(projectName));
+      content = content.replace(/doable-nextjs-project/g, slugify(projectName));
+      content = content.replace(/appbrics-nextjs-project/g, slugify(projectName));
     }
 
     await sql`

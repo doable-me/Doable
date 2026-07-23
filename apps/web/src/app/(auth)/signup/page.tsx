@@ -17,15 +17,19 @@ export default function SignupPage() {
   const router = useRouter();
   const { register, isAuthenticated, isLoading: authLoading } = useAuth();
 
-  // Redirect after sign-up (honor returnTo, fall back to dashboard).
+  // Redirect after sign-up (honor returnTo / plan checkout, fall back to dashboard).
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       const params = new URLSearchParams(window.location.search);
       const returnTo = params.get("returnTo");
       const urlPrompt = params.get("prompt");
+      const plan = params.get("plan");
+      const interval = params.get("interval") ?? "monthly";
       let target: string;
       if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
         target = returnTo;
+      } else if (plan && plan !== "free") {
+        target = `/billing?plan=${encodeURIComponent(plan)}&interval=${encodeURIComponent(interval)}`;
       } else if (urlPrompt) {
         target = `/dashboard?prompt=${encodeURIComponent(urlPrompt)}`;
       } else {

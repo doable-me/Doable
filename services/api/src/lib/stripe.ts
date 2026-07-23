@@ -43,7 +43,7 @@ export const PLANS: PlanDefinition[] = [
       "3 projects",
       "5 daily AI credits",
       "Community support",
-      "Doable subdomain",
+      "Appbrics subdomain",
     ],
     dailyCredits: 5,
     monthlyCredits: 0,

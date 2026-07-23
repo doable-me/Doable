@@ -8,23 +8,21 @@ const linkColumns = [
     links: [
       { label: "Features", href: "/#features" },
       { label: "Pricing", href: "/#pricing" },
-      { label: "Templates", href: "/templates" },
-      { label: "Changelog", href: "/changelog" },
+      { label: "Docs & roadmap", href: "/docs" },
+      { label: "Changelog", href: "/#roadmap" },
     ],
   },
   {
     title: "Resources",
     links: [
-      { label: "Documentation", href: "/help" },
-      { label: "GitHub", href: "https://github.com/doable-me/doable" },
+      { label: "Documentation", href: "/docs" },
       { label: "Support", href: "/contact" },
-      { label: "Status", href: "https://status.doable.me" },
+      { label: "How it works", href: "/#how-it-works" },
     ],
   },
   {
     title: "Company",
     links: [
-      { label: "About", href: "/about" },
       { label: "Contact", href: "/contact" },
       { label: "Privacy", href: "/privacy" },
       { label: "Terms", href: "/terms" },

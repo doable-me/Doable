@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CreditCard, Zap, ExternalLink, Loader2, CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
@@ -92,6 +92,21 @@ function BillingPage() {
   const { subscribe, openPortal, topUp, loading: actionLoading, error: actionError, clearError } =
     useBillingActions(WORKSPACE_ID);
   const { plan: currentPlan } = useCurrentPlan(WORKSPACE_ID);
+  const checkoutStarted = useRef(false);
+
+  // Deep-link from landing/signup: /billing?plan=pro&interval=monthly → Stripe Checkout
+  useEffect(() => {
+    const planId = searchParams.get("plan");
+    const intervalParam = searchParams.get("interval");
+    if (checkoutStarted.current) return;
+    if (!WORKSPACE_ID || !planId || planId === "free" || planId === "enterprise") return;
+    if (success || canceled) return;
+    if (currentPlan && currentPlan !== "free" && currentPlan === planId) return;
+    checkoutStarted.current = true;
+    const interval = intervalParam === "yearly" ? "yearly" : "monthly";
+    void subscribe(planId, interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep-link checkout
+  }, [WORKSPACE_ID, searchParams, currentPlan]);
 
   // Show loading spinner while resolving workspace
   if (wsLoading) {
