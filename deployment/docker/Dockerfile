@@ -90,7 +90,17 @@ COPY . .
 # Build packages that compile cleanly (docore, dovault, web)
 RUN pnpm --filter=docore run build || true
 RUN pnpm --filter=dovault run build || true
-RUN pnpm --filter=@doable/web run build
+# Only the web image needs Next.js output. API/WS/migrate copy the shared
+# packages without recompiling the frontend on every backend source change.
+FROM build AS web-build
+
+# Optional budget for source builds on memory-constrained hosts.
+# Leave empty to retain the existing Node/Next.js defaults.
+ARG WEB_BUILD_MEMORY_MB=
+RUN if [ -n "$WEB_BUILD_MEMORY_MB" ]; then \
+      NODE_OPTIONS="--max-old-space-size=$WEB_BUILD_MEMORY_MB" \
+      DOABLE_BUILD_MEMORY_MB="$WEB_BUILD_MEMORY_MB" pnpm --filter=@doable/web run build; \
+    else pnpm --filter=@doable/web run build; fi
 
 # --- API service ---
 FROM base AS api
@@ -100,9 +110,7 @@ WORKDIR /app
 # libs Chrome crashes at first thumbnail attempt with
 # `libnspr4.so: cannot open shared object file`. Same dep list as
 # deployment/server-setup.sh:298-322 so docker + bare-metal stay in
-# lockstep. The bundled Chromium itself downloads in the next layer
-# (PUPPETEER_SKIP_CHROMIUM_DOWNLOAD is intentionally unset for the api
-# stage).
+# lockstep. The distro Chromium below is also the runtime executable.
 #
 # `chromium` is the distro-native browser we point Puppeteer at via
 # PUPPETEER_EXECUTABLE_PATH below. On Apple Silicon hosts running native
@@ -155,29 +163,14 @@ RUN mkdir -p /app/services/api/projects /app/services/api/thumbnails /data/sites
   && ln -sf services/api/thumbnails /app/thumbnails \
   && chown -h node:node /app/projects /app/thumbnails
 
-# Download the puppeteer-bundled Chrome into the image so first-thumbnail
-# capture doesn't need network. Cached layer; runs once per build.
-#
-# R14 BUG-DOCKER-PUPPETEER: PUPPETEER_CACHE_DIR was previously /app/.puppeteer-cache
-# but the WORKDIR /app dir itself is owned by root (only the COPY'd contents
-# get chowned to node via --chown=node:node). USER node then hit EACCES on
-# mkdir of the cache dir and the build logged "Chrome install/smoke test
-# failed — thumbnails will be unavailable" on every clean build. Move the
-# cache to node's home (/home/node/.cache/puppeteer), which the node:22-slim
-# base image already creates and owns. Runtime container inherits the same
-# path because the api service also runs as USER node.
+# Use the distro Chromium installed above, matching the runtime executable.
+# Avoid a redundant network download of Puppeteer's fallback browser on each
+# source update. Fail the build if the configured browser is not executable.
 USER node
 ENV PUPPETEER_CACHE_DIR=/home/node/.cache/puppeteer
-# Point Puppeteer at the apt-installed `chromium` so puppeteer.launch()
-# always uses a native-arch binary (see the chrome-arch comment above the
-# apt install block). The bundled `puppeteer browsers install chrome`
-# step below still runs as a fallback / cache-warmer — if PUPPETEER_EXECUTABLE_PATH
-# is ever unset at runtime, the bundled binary takes over.
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 RUN mkdir -p "$PUPPETEER_CACHE_DIR" \
-  && cd services/api && pnpm exec puppeteer browsers install chrome \
-  && /usr/bin/chromium --headless=new --no-sandbox --disable-gpu --version \
-  || (echo "[api-image] Chromium smoke test failed — thumbnails will be unavailable" && true)
+  && /usr/bin/chromium --headless=new --no-sandbox --disable-gpu --version
 
 EXPOSE 4000
 ENTRYPOINT ["tmux-entrypoint"]
@@ -202,8 +195,8 @@ CMD ["ws", "npx", "tsx", "services/ws/src/index.ts"]
 # --- Web (Next.js standalone) ---
 FROM base AS web
 WORKDIR /app
-COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
-COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=web-build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=web-build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
 # Runtime placeholder rewriter — replaces __DOABLE_*_URL__ placeholders
 # baked at build time with the operator's actual NEXT_PUBLIC_* values from
 # container env. Lets one image work for any deployment URL.

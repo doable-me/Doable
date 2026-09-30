@@ -397,3 +397,22 @@ rm -f deployment/docker/.env
 rm -rf deployment/docker/certs/*.pem
 ./deployment/docker/setup.sh
 ```
+
+### Source-build resource usage
+
+`WEB_BUILD_MEMORY_MB` is an optional Docker build argument that bounds both the
+Node.js heap and the Next.js Turbopack memory cache for the web compilation:
+
+```sh
+docker compose --env-file deployment/docker/.env -f deployment/docker/docker-compose.yml build --build-arg WEB_BUILD_MEMORY_MB=512 web
+```
+
+The default is unset, preserving the existing compiler defaults. A small budget
+can increase build time or be insufficient for a particular build; this is not a
+container memory limit. Provision build capacity separately from running apps.
+
+The API's npm download cache is kept in the `npm_cache` named volume so rebuilding
+the API does not discard cached project dependencies. Project source remains in
+`api_projects`. Caddy compresses supported preview/static asset responses; AI
+SSE endpoints are outside the compression path matcher and `text/event-stream`
+is excluded from its response MIME matcher.

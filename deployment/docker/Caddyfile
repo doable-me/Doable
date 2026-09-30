@@ -36,6 +36,19 @@
 {$DOABLE_SITE:localhost} {
         tls {$DOABLE_TLS:internal}
 
+        # Compress preview modules and static assets; leave SSE and API streams alone.
+        @compressible_assets path /_next/static/* /preview/* /api/preview/* /brand/* /sites/*
+        encode @compressible_assets zstd gzip {
+                match {
+                        header Content-Type text/javascript*
+                        header Content-Type application/javascript*
+                        header Content-Type text/css*
+                        header Content-Type text/html*
+                        header Content-Type application/json*
+                        header Content-Type image/svg+xml*
+                }
+        }
+
         # ─── OTLP browser tracing exporter → Next.js proxy (web container) ──
         # apps/web/src/app/api/otlp/[...path]/route.ts forwards to the api
         # container's /internal/otlp/* receiver. MUST come before the

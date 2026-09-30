@@ -32,6 +32,9 @@ const nextConfig: NextConfig = {
     return [host, host ? `*.${apex(host)}` : "", "localhost", "127.0.0.1"].filter(Boolean);
   })(),
   experimental: {
+    turbopackMemoryLimit: process.env.DOABLE_BUILD_MEMORY_MB
+      ? Number(process.env.DOABLE_BUILD_MEMORY_MB) * 1024 * 1024
+      : undefined,
     serverActions: {
       bodySizeLimit: "2mb",
     },

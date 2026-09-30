@@ -227,6 +227,8 @@ services:
     volumes:
       - api_projects:/app/services/api/projects
       - api_thumbnails:/app/services/api/thumbnails
+      # Preserve dependency downloads across API updates; never store project source here.
+      - npm_cache:/home/node/.npm
       # Published static sites — written here by the deploy adapters, served
       # read-only by caddy from /srv/sites (path topology).
       - doable_sites:/data/sites
@@ -378,6 +380,7 @@ volumes:
   postgres_data:
   api_projects:
   api_thumbnails:
+  npm_cache:
   ws_projects:
   caddy_data:
   caddy_config:
