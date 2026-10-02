@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback } from "react";
 import {
@@ -31,6 +32,8 @@ export function ConflictResolutionDialog({
   onAbort,
   repoName,
 }: ConflictResolutionDialogProps) {
+  const ui = useUiText();
+
   const [resolving, setResolving] = useState(false);
   const [aborting, setAborting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,13 +47,15 @@ export function ConflictResolutionDialog({
         onClose();
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to resolve conflicts";
+          err instanceof Error
+            ? err.message
+            : ui("Failed to resolve conflicts");
         setError(message);
       } finally {
         setResolving(false);
       }
     },
-    [onResolve, onClose]
+    [ui, onResolve, onClose],
   );
 
   const handleAbort = useCallback(async () => {
@@ -61,18 +66,18 @@ export function ConflictResolutionDialog({
       onClose();
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to abort merge";
+        err instanceof Error ? err.message : ui("Failed to abort merge");
       setError(message);
     } finally {
       setAborting(false);
     }
-  }, [onAbort, onClose]);
+  }, [ui, onAbort, onClose]);
 
   const handleOverlayClick = useCallback(
     (e: React.MouseEvent) => {
       if (e.target === e.currentTarget && !resolving && !aborting) onClose();
     },
-    [onClose, resolving, aborting]
+    [onClose, resolving, aborting],
   );
 
   if (!open) return null;
@@ -89,23 +94,26 @@ export function ConflictResolutionDialog({
         <div className="border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
-            <h2 className="text-lg font-semibold">Merge Conflicts</h2>
+            <h2 className="text-lg font-semibold">{ui("Merge Conflicts")}</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            There are conflicts between your local changes and{" "}
+            {" "}
+            {ui("There are conflicts between your local changes and")}{" "}
             {repoName ? (
               <span className="font-medium text-foreground">{repoName}</span>
             ) : (
-              "the remote repository"
-            )}
-            . Choose how to resolve them.
+              ui("the remote repository")
+            )}{" "}
+            {ui(". Choose how to resolve them.")}{" "}
           </p>
         </div>
 
         {/* Conflicted files list */}
         <div className="px-6 py-4">
           <h3 className="mb-2 text-sm font-medium text-muted-foreground">
-            Conflicted files ({conflictedFiles.length})
+            {" "}
+            {ui("Conflicted files (")}
+            {conflictedFiles.length})
           </h3>
           <div className="max-h-40 overflow-y-auto rounded-md border">
             {conflictedFiles.map((file) => (
@@ -128,9 +136,10 @@ export function ConflictResolutionDialog({
             disabled={isBusy}
           >
             <div>
-              <p className="text-sm font-medium">Keep my changes</p>
+              <p className="text-sm font-medium">{ui("Keep my changes")}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Discard remote changes and keep your local version
+                {" "}
+                {ui("Discard remote changes and keep your local version")}{" "}
               </p>
             </div>
             <ArrowRight className="h-4 w-4 flex-none text-primary" />
@@ -142,9 +151,12 @@ export function ConflictResolutionDialog({
             disabled={isBusy}
           >
             <div>
-              <p className="text-sm font-medium">Use remote changes</p>
+              <p className="text-sm font-medium">{ui("Use remote changes")}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Discard your local changes and use the GitHub version
+                {" "}
+                {ui(
+                  "Discard your local changes and use the GitHub version",
+                )}{" "}
               </p>
             </div>
             <ArrowRight className="h-4 w-4 flex-none text-muted-foreground" />
@@ -154,7 +166,7 @@ export function ConflictResolutionDialog({
         {/* Error */}
         {error && (
           <div className="mx-6 mb-4 rounded-md border border-red-200 bg-red-50 p-3">
-            <p className="text-sm text-red-800">{error}</p>
+            <p className="text-sm text-red-800">{ui(error)}</p>
           </div>
         )}
 
@@ -169,15 +181,16 @@ export function ConflictResolutionDialog({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <X className="h-3.5 w-3.5" />
-            )}
-            Cancel merge
+            )}{" "}
+            {ui("Cancel merge")}{" "}
           </button>
           <button
             className="rounded-md border px-4 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
             onClick={onClose}
             disabled={isBusy}
           >
-            Close
+            {" "}
+            {ui("Close")}{" "}
           </button>
         </div>
 
@@ -187,7 +200,8 @@ export function ConflictResolutionDialog({
             <div className="flex items-center gap-2">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
               <span className="text-sm font-medium">
-                Resolving conflicts...
+                {" "}
+                {ui("Resolving conflicts...")}{" "}
               </span>
             </div>
           </div>

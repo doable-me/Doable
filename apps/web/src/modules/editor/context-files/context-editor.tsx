@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { ArrowLeft, Save, Trash2, Eye, Pencil } from "lucide-react";
@@ -33,6 +34,8 @@ export const ContextEditor = ({
   onBack,
   onDelete,
 }: ContextEditorProps) => {
+  const ui = useUiText();
+
   const [content, setContent] = useState(file.content);
   const [viewMode, setViewMode] = useState<ViewMode>("edit");
   const [saving, setSaving] = useState(false);
@@ -64,8 +67,8 @@ export const ContextEditor = ({
         void doSave(newContent);
       }, AUTO_SAVE_DELAY);
     },
-     
-    [onSave]
+
+    [onSave],
   );
 
   const doSave = async (contentToSave: string) => {
@@ -122,13 +125,15 @@ export const ContextEditor = ({
           <button
             onClick={onBack}
             className="p-1.5 rounded-md hover:bg-muted transition-colors"
-            title="Back to file list"
+            title={ui("Back to file list")}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>
           <span className="text-sm font-medium">{file.filename}</span>
           {dirty && (
-            <span className="text-xs text-muted-foreground">(unsaved)</span>
+            <span className="text-xs text-muted-foreground">
+              {ui("(unsaved)")}
+            </span>
           )}
         </div>
 
@@ -141,9 +146,9 @@ export const ContextEditor = ({
                 "p-1 rounded-sm transition-colors",
                 viewMode === "edit"
                   ? "bg-background shadow-sm"
-                  : "hover:bg-background/50"
+                  : "hover:bg-background/50",
               )}
-              title="Edit"
+              title={ui("Edit")}
             >
               <Pencil className="h-3 w-3" />
             </button>
@@ -153,9 +158,9 @@ export const ContextEditor = ({
                 "p-1 rounded-sm transition-colors",
                 viewMode === "preview"
                   ? "bg-background shadow-sm"
-                  : "hover:bg-background/50"
+                  : "hover:bg-background/50",
               )}
-              title="Preview"
+              title={ui("Preview")}
             >
               <Eye className="h-3 w-3" />
             </button>
@@ -169,9 +174,9 @@ export const ContextEditor = ({
               "p-1.5 rounded-md transition-colors",
               dirty
                 ? "hover:bg-muted text-foreground"
-                : "text-muted-foreground"
+                : "text-muted-foreground",
             )}
-            title="Save (Ctrl+S)"
+            title={ui("Save (Ctrl+S)")}
           >
             <Save className={cn("h-3.5 w-3.5", saving && "animate-pulse")} />
           </button>
@@ -180,7 +185,7 @@ export const ContextEditor = ({
           <button
             onClick={onDelete}
             className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
-            title="Delete / Reset"
+            title={ui("Delete / Reset")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
@@ -189,11 +194,15 @@ export const ContextEditor = ({
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-3 py-1 border-b text-xs text-muted-foreground">
-        <span>{content.length} chars</span>
+        <span>
+          {content.length} {ui("chars")}
+        </span>
         {lastSaved && (
-          <span>Saved {formatTimeAgo(lastSaved)}</span>
+          <span>
+            {ui("Saved")} {formatTimeAgo(lastSaved)}
+          </span>
         )}
-        {saving && <span>Saving...</span>}
+        {saving && <span>{ui("Saving...")}</span>}
       </div>
 
       {/* Editor / Preview */}
@@ -204,7 +213,7 @@ export const ContextEditor = ({
             value={content}
             onChange={(e) => handleChange(e.target.value)}
             className="w-full h-full p-4 bg-background text-sm font-mono leading-relaxed resize-none focus:outline-none"
-            placeholder="Start writing..."
+            placeholder={ui("Start writing...")}
             spellCheck={false}
           />
         ) : (
@@ -223,12 +232,24 @@ const MarkdownPreview = ({ content }: { content: string }) => {
   // Lightweight markdown rendering — headings, bold, italic, code, lists
   const html = content
     // Code blocks
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
+    .replace(
+      /```(\w*)\n([\s\S]*?)```/g,
+      '<pre><code class="language-$1">$2</code></pre>',
+    )
     // Inline code
-    .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-xs">$1</code>')
+    .replace(
+      /`([^`]+)`/g,
+      '<code class="bg-muted px-1 py-0.5 rounded text-xs">$1</code>',
+    )
     // Headings
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-4 mb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold mt-6 mb-2">$1</h2>')
+    .replace(
+      /^### (.+)$/gm,
+      '<h3 class="text-base font-semibold mt-4 mb-2">$1</h3>',
+    )
+    .replace(
+      /^## (.+)$/gm,
+      '<h2 class="text-lg font-semibold mt-6 mb-2">$1</h2>',
+    )
     .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-6 mb-3">$1</h1>')
     // Bold and italic
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
@@ -238,7 +259,10 @@ const MarkdownPreview = ({ content }: { content: string }) => {
     // Ordered lists
     .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal text-sm">$1</li>')
     // Comments (HTML-style)
-    .replace(/<!--[\s\S]*?-->/g, '<span class="text-muted-foreground/50 italic text-xs">[placeholder]</span>')
+    .replace(
+      /<!--[\s\S]*?-->/g,
+      '<span class="text-muted-foreground/50 italic text-xs">[placeholder]</span>',
+    )
     // Paragraphs (double newline)
     .replace(/\n\n/g, '</p><p class="text-sm mb-3">')
     // Single newlines
@@ -247,7 +271,9 @@ const MarkdownPreview = ({ content }: { content: string }) => {
   return (
     <div
       className="text-sm"
-      dangerouslySetInnerHTML={{ __html: `<p class="text-sm mb-3">${html}</p>` }}
+      dangerouslySetInnerHTML={{
+        __html: `<p class="text-sm mb-3">${html}</p>`,
+      }}
     />
   );
 };

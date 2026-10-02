@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { memo, useState, useCallback } from "react";
 import { Check, ArrowRight } from "lucide-react";
@@ -18,6 +19,8 @@ export const ClarificationCard = memo(function ClarificationCard({
   disabled = false,
   answeredValue,
 }: ClarificationCardProps) {
+  const ui = useUiText();
+
   const [answered, setAnswered] = useState(answeredValue !== undefined);
   const [selectedAnswer, setSelectedAnswer] = useState(answeredValue ?? "");
   const [freeText, setFreeText] = useState("");
@@ -25,21 +28,27 @@ export const ClarificationCard = memo(function ClarificationCard({
   const handleSubmit = useCallback(() => {
     if (disabled || answered) return;
     const value =
-      question.type === "free_text"
-        ? freeText.trim()
-        : selectedAnswer;
+      question.type === "free_text" ? freeText.trim() : selectedAnswer;
     if (!value && question.type === "free_text") return;
     if (!value && question.type !== "free_text") return;
     setAnswered(true);
     onAnswer(question.id, value);
-  }, [disabled, answered, question.id, question.type, freeText, selectedAnswer, onAnswer]);
+  }, [
+    disabled,
+    answered,
+    question.id,
+    question.type,
+    freeText,
+    selectedAnswer,
+    onAnswer,
+  ]);
 
   const handleSelect = useCallback(
     (value: string) => {
       if (disabled || answered) return;
       setSelectedAnswer(value);
     },
-    [disabled, answered]
+    [disabled, answered],
   );
 
   const handleFreeTextKeyDown = useCallback(
@@ -49,7 +58,7 @@ export const ClarificationCard = memo(function ClarificationCard({
         handleSubmit();
       }
     },
-    [handleSubmit]
+    [handleSubmit],
   );
 
   const handleSkip = useCallback(() => {
@@ -70,7 +79,7 @@ export const ClarificationCard = memo(function ClarificationCard({
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground">{question.question}</p>
             <p className="mt-0.5 text-sm font-medium text-foreground">
-              {selectedAnswer || "(AI will decide)"}
+              {selectedAnswer || ui("(AI will decide)")}
             </p>
           </div>
         </div>
@@ -173,7 +182,7 @@ export const ClarificationCard = memo(function ClarificationCard({
               }}
               onFocus={() => setSelectedAnswer("")}
               onKeyDown={handleFreeTextKeyDown}
-              placeholder="Or type your own..."
+              placeholder={ui("Or type your own...")}
               disabled={disabled}
               className="w-full rounded-lg border border-dashed border-blue-500/20 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500/40 focus:outline-none disabled:opacity-50"
             />
@@ -188,7 +197,7 @@ export const ClarificationCard = memo(function ClarificationCard({
           value={freeText}
           onChange={(e) => setFreeText(e.target.value)}
           onKeyDown={handleFreeTextKeyDown}
-          placeholder={question.default ?? "Type your answer..."}
+          placeholder={question.default ?? ui("Type your answer...")}
           disabled={disabled}
           className="w-full rounded-lg border border-blue-500/20 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500/40 focus:outline-none disabled:opacity-50"
         />
@@ -201,13 +210,18 @@ export const ClarificationCard = memo(function ClarificationCard({
           disabled={disabled}
           className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
         >
-          Skip — let AI decide
+          {" "}
+          {ui("Skip — let AI decide")}{" "}
         </button>
 
         <button
           onClick={() => {
             // For multi-choice with free text override
-            if (question.type === "multi_choice" && freeText.trim() && !selectedAnswer) {
+            if (
+              question.type === "multi_choice" &&
+              freeText.trim() &&
+              !selectedAnswer
+            ) {
               setSelectedAnswer(freeText.trim());
               setAnswered(true);
               onAnswer(question.id, freeText.trim());
@@ -218,8 +232,8 @@ export const ClarificationCard = memo(function ClarificationCard({
           disabled={disabled || !hasSelection}
           className="flex items-center gap-1.5 rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Continue
-          <ArrowRight className="h-3 w-3" />
+          {" "}
+          {ui("Continue")} <ArrowRight className="h-3 w-3" />
         </button>
       </div>
     </div>

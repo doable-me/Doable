@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { memo, useState, useCallback } from "react";
 import { Check, HelpCircle, ChevronRight, Loader2 } from "lucide-react";
@@ -32,11 +33,15 @@ export const UserInputCard = memo(function UserInputCard({
   answerLabel,
   onAnswered,
 }: UserInputCardProps) {
+  const ui = useUiText();
+
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(answered);
   const [freeText, setFreeText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pickedLabel, setPickedLabel] = useState<string | null>(answerLabel ?? null);
+  const [pickedLabel, setPickedLabel] = useState<string | null>(
+    answerLabel ?? null,
+  );
 
   const submit = useCallback(
     async (value: string, label: string, freeform: boolean) => {
@@ -47,17 +52,25 @@ export const UserInputCard = memo(function UserInputCard({
       try {
         const { getStoredTokens } = await import("@/lib/api");
         const { accessToken } = getStoredTokens();
-        const res = await fetch(`${API_BASE}/projects/${projectId}/chat/user-input`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        const res = await fetch(
+          `${API_BASE}/projects/${projectId}/chat/user-input`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(accessToken
+                ? { Authorization: `Bearer ${accessToken}` }
+                : {}),
+            },
+            body: JSON.stringify({ requestId, value, freeform }),
           },
-          body: JSON.stringify({ requestId, value, freeform }),
-        });
+        );
         if (!res.ok) {
           // 409 = the prompt already expired / was answered elsewhere.
-          const msg = res.status === 409 ? "This prompt is no longer active." : `Failed to submit (${res.status}).`;
+          const msg =
+            res.status === 409
+              ? ui("This prompt is no longer active.")
+              : `Failed to submit (${res.status}).`;
           setError(msg);
           setSubmitting(false);
           setPickedLabel(null);
@@ -66,12 +79,12 @@ export const UserInputCard = memo(function UserInputCard({
         setSubmitted(true);
         onAnswered(label);
       } catch {
-        setError("Network error — please try again.");
+        setError(ui("Network error — please try again."));
         setSubmitting(false);
         setPickedLabel(null);
       }
     },
-    [submitting, submitted, projectId, requestId, onAnswered],
+    [ui, submitting, submitted, projectId, requestId, onAnswered],
   );
 
   const handleFreeSubmit = useCallback(() => {
@@ -88,7 +101,9 @@ export const UserInputCard = memo(function UserInputCard({
           <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-green-500/25 bg-green-500/15">
             <Check className="h-2.5 w-2.5 text-green-400" />
           </div>
-          <p className="flex-1 truncate text-xs text-muted-foreground">{prompt}</p>
+          <p className="flex-1 truncate text-xs text-muted-foreground">
+            {prompt}
+          </p>
           {pickedLabel && (
             <span className="shrink-0 rounded-full border border-brand-500/20 bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-300">
               {pickedLabel}
@@ -107,7 +122,9 @@ export const UserInputCard = memo(function UserInputCard({
         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-brand-500/25 bg-brand-500/15">
           <HelpCircle className="h-3 w-3 text-brand-400" />
         </div>
-        <p className="flex-1 text-xs font-semibold leading-snug text-foreground">{prompt}</p>
+        <p className="flex-1 text-xs font-semibold leading-snug text-foreground">
+          {prompt}
+        </p>
       </div>
 
       {/* Choice buttons */}
@@ -119,9 +136,10 @@ export const UserInputCard = memo(function UserInputCard({
               onClick={() => submit(c.value, c.label, false)}
               disabled={submitting}
               className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-all duration-200 disabled:pointer-events-none
-                ${pickedLabel === c.label
-                  ? "border-brand-500/60 bg-brand-500/15 font-medium text-brand-300"
-                  : "border-white/8 bg-white/[0.02] text-muted-foreground hover:border-brand-500/35 hover:bg-brand-500/8 hover:text-foreground"
+                ${
+                  pickedLabel === c.label
+                    ? "border-brand-500/60 bg-brand-500/15 font-medium text-brand-300"
+                    : "border-white/8 bg-white/[0.02] text-muted-foreground hover:border-brand-500/35 hover:bg-brand-500/8 hover:text-foreground"
                 }`}
             >
               {submitting && pickedLabel === c.label ? (
@@ -144,7 +162,11 @@ export const UserInputCard = memo(function UserInputCard({
             onChange={(e) => setFreeText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleFreeSubmit()}
             disabled={submitting}
-            placeholder={choices.length > 0 ? "Or type a custom answer…" : "Type your answer…"}
+            placeholder={
+              choices.length > 0
+                ? ui("Or type a custom answer…")
+                : ui("Type your answer…")
+            }
             className="min-w-0 flex-1 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1.5 text-xs text-foreground transition-all placeholder:text-muted-foreground/40 focus:border-brand-500/40 focus:outline-none focus:ring-1 focus:ring-brand-500/20 disabled:opacity-40"
           />
           {freeText.trim() && (
@@ -159,7 +181,7 @@ export const UserInputCard = memo(function UserInputCard({
         </div>
       )}
 
-      {error && <p className="mt-1 text-[10px] text-red-400">{error}</p>}
+      {error && <p className="mt-1 text-[10px] text-red-400">{ui(error)}</p>}
     </div>
   );
 });

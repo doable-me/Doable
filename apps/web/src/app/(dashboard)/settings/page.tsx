@@ -1,4 +1,8 @@
 "use client";
+import { translateUiData } from "@/i18n/text";
+
+import { LanguageSwitcher } from "@/i18n/locale-provider";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useMemo, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +19,8 @@ import {
 } from "./settings-sections";
 
 export default function SettingsPage() {
+  const ui = useUiText();
+
   const router = useRouter();
   const { user, logout, refreshUser } = useAuth();
 
@@ -34,7 +40,11 @@ export default function SettingsPage() {
 
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
     if (typeof window === "undefined") return "dark";
-    const stored = localStorage.getItem("doable_theme") as "dark" | "light" | "system" | null;
+    const stored = localStorage.getItem("doable_theme") as
+      | "dark"
+      | "light"
+      | "system"
+      | null;
     return stored ?? "dark";
   });
   const { brandTheme, changeBrandTheme } = useBrandTheme();
@@ -43,7 +53,10 @@ export default function SettingsPage() {
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const newPasswordStrength = useMemo(() => getPasswordStrength(newPassword), [newPassword]);
+  const newPasswordStrength = useMemo(
+    () => translateUiData(getPasswordStrength(newPassword), ui),
+    [ui, newPassword],
+  );
 
   const initials = (user?.displayName ?? "U")
     .split(" ")
@@ -59,15 +72,21 @@ export default function SettingsPage() {
     setProfileError(null);
     try {
       const token = localStorage.getItem("doable_access_token");
-      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
       const res = await fetch(`${API_URL}/auth/me`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ displayName }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Failed to save profile" }));
-        throw new Error(data.error ?? "Failed to save profile");
+        const data = await res
+          .json()
+          .catch(() => ({ error: "Failed to save profile" }));
+        throw new Error(data.error ?? ui("Failed to save profile"));
       }
       // Pull the saved value back into the auth context so the profile card
       // and dashboard user chip reflect the new name without a page reload.
@@ -75,8 +94,10 @@ export default function SettingsPage() {
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
     } catch (err) {
-      console.error("Failed to save profile:", err);
-      setProfileError(err instanceof Error ? err.message : "Failed to save profile.");
+      console.error(ui("Failed to save profile:"), err);
+      setProfileError(
+        err instanceof Error ? err.message : ui("Failed to save profile."),
+      );
     } finally {
       setProfileSaving(false);
     }
@@ -86,23 +107,34 @@ export default function SettingsPage() {
     e.preventDefault();
     setPasswordError(null);
     setPasswordSuccess(false);
-    if (newPassword !== confirmPassword) { setPasswordError("Passwords do not match."); return; }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
     if (newPasswordStrength.score < 2) {
-      setPasswordError("Password is too weak. Use at least 8 characters with uppercase, lowercase, and numbers.");
+      setPasswordError(
+        "Password is too weak. Use at least 8 characters with uppercase, lowercase, and numbers.",
+      );
       return;
     }
     setPasswordSaving(true);
     try {
       const token = localStorage.getItem("doable_access_token");
-      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
       const res = await fetch(`${API_URL}/auth/change-password`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Failed to change password" }));
-        setPasswordError(data.error ?? "Failed to change password");
+        const data = await res
+          .json()
+          .catch(() => ({ error: "Failed to change password" }));
+        setPasswordError(data.error ?? ui("Failed to change password"));
         return;
       }
       setPasswordSuccess(true);
@@ -111,7 +143,7 @@ export default function SettingsPage() {
       setConfirmPassword("");
       setTimeout(() => setPasswordSuccess(false), 3000);
     } catch {
-      setPasswordError("Failed to change password. Please try again.");
+      setPasswordError(ui("Failed to change password. Please try again."));
     } finally {
       setPasswordSaving(false);
     }
@@ -137,9 +169,15 @@ export default function SettingsPage() {
     setIsDeleting(true);
     try {
       const token = localStorage.getItem("doable_access_token");
-      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-      await fetch(`${API_URL}/auth/delete-account`, { method: "DELETE", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
-    } catch { /* proceed with logout */ }
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+      await fetch(`${API_URL}/auth/delete-account`, {
+        method: "DELETE",
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+    } catch {
+      /* proceed with logout */
+    }
     await logout();
     router.push("/");
   }
@@ -147,7 +185,11 @@ export default function SettingsPage() {
   const sessions = [
     {
       id: "current",
-      device: typeof navigator !== "undefined" ? navigator.userAgent.split("(")[1]?.split(")")[0] ?? "Unknown Device" : "Unknown Device",
+      device:
+        typeof navigator !== "undefined"
+          ? (navigator.userAgent.split("(")[1]?.split(")")[0] ??
+            "Unknown Device")
+          : "Unknown Device",
       icon: Monitor,
       location: "Current session",
       lastActive: "Now",
@@ -158,29 +200,85 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
       <div className="mb-8">
-        <button onClick={() => router.push("/dashboard")} className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" />Back to dashboard
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {ui("Back to dashboard")}{" "}
         </button>
-        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Manage your account preferences and security.</p>
+        <h1 className="text-2xl font-bold text-foreground">{ui("Settings")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {ui("Manage your account preferences and security.")}
+        </p>
       </div>
 
       <div className="space-y-6">
-        <ProfileSection user={user} displayName={displayName} setDisplayName={setDisplayName} initials={initials} profileSaving={profileSaving} profileSuccess={profileSuccess} profileError={profileError} onSave={handleProfileSave} />
-        <SecuritySection currentPassword={currentPassword} newPassword={newPassword} confirmPassword={confirmPassword} showCurrentPassword={showCurrentPassword} showNewPassword={showNewPassword} passwordSaving={passwordSaving} passwordSuccess={passwordSuccess} passwordError={passwordError} newPasswordStrength={newPasswordStrength} setCurrentPassword={setCurrentPassword} setNewPassword={setNewPassword} setConfirmPassword={setConfirmPassword} setShowCurrentPassword={setShowCurrentPassword} setShowNewPassword={setShowNewPassword} onPasswordChange={handlePasswordChange} />
+        <SettingsSection
+          icon={Monitor}
+          title={ui("General")}
+          description={ui("Personal interface preferences")}
+        >
+          <LanguageSwitcher id="settings-language" />
+          <p className="mt-2 text-xs text-muted-foreground">
+            {ui(
+              "Interface language does not change AI replies or generated apps.",
+            )}
+          </p>
+        </SettingsSection>
+        <ProfileSection
+          user={user}
+          displayName={displayName}
+          setDisplayName={setDisplayName}
+          initials={initials}
+          profileSaving={profileSaving}
+          profileSuccess={profileSuccess}
+          profileError={profileError}
+          onSave={handleProfileSave}
+        />
+        <SecuritySection
+          currentPassword={currentPassword}
+          newPassword={newPassword}
+          confirmPassword={confirmPassword}
+          showCurrentPassword={showCurrentPassword}
+          showNewPassword={showNewPassword}
+          passwordSaving={passwordSaving}
+          passwordSuccess={passwordSuccess}
+          passwordError={passwordError}
+          newPasswordStrength={newPasswordStrength}
+          setCurrentPassword={setCurrentPassword}
+          setNewPassword={setNewPassword}
+          setConfirmPassword={setConfirmPassword}
+          setShowCurrentPassword={setShowCurrentPassword}
+          setShowNewPassword={setShowNewPassword}
+          onPasswordChange={handlePasswordChange}
+        />
 
-        <SettingsSection icon={Monitor} title="Active Sessions" description="Devices where you are currently signed in">
+        <SettingsSection
+          icon={Monitor}
+          title={ui("Active Sessions")}
+          description={ui("Devices where you are currently signed in")}
+        >
           <div className="space-y-3">
             {sessions.map((session) => (
-              <div key={session.id} className="flex items-center justify-between rounded-lg border border-border bg-secondary px-4 py-3">
+              <div
+                key={session.id}
+                className="flex items-center justify-between rounded-lg border border-border bg-secondary px-4 py-3"
+              >
                 <div className="flex items-center gap-3">
                   <session.icon className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium text-foreground">
                       {session.device}
-                      {session.current && <span className="ml-2 inline-flex items-center rounded-full bg-green-900/30 px-2 py-0.5 text-[10px] font-medium text-green-400">Current</span>}
+                      {session.current && (
+                        <span className="ml-2 inline-flex items-center rounded-full bg-green-900/30 px-2 py-0.5 text-[10px] font-medium text-green-400">
+                          {ui("Current")}
+                        </span>
+                      )}
                     </p>
-                    <p className="text-xs text-muted-foreground">{session.location} &middot; {session.lastActive}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {session.location} &middot; {session.lastActive}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -188,11 +286,25 @@ export default function SettingsPage() {
           </div>
         </SettingsSection>
 
-        <AppearanceSection theme={theme} brandTheme={brandTheme} onThemeChange={handleThemeChange} onBrandThemeChange={changeBrandTheme} />
-        <DangerZoneSection onShowDeleteDialog={() => setShowDeleteDialog(true)} />
+        <AppearanceSection
+          theme={theme}
+          brandTheme={brandTheme}
+          onThemeChange={handleThemeChange}
+          onBrandThemeChange={changeBrandTheme}
+        />
+        <DangerZoneSection
+          onShowDeleteDialog={() => setShowDeleteDialog(true)}
+        />
       </div>
 
-      <DeleteAccountDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog} deleteConfirmation={deleteConfirmation} setDeleteConfirmation={setDeleteConfirmation} isDeleting={isDeleting} onDelete={handleDeleteAccount} />
+      <DeleteAccountDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        deleteConfirmation={deleteConfirmation}
+        setDeleteConfirmation={setDeleteConfirmation}
+        isDeleting={isDeleting}
+        onDelete={handleDeleteAccount}
+      />
     </div>
   );
 }

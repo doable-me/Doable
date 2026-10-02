@@ -1,3 +1,4 @@
+import {withDependencyLock} from "../../projects/dependency-lock.js";
 import { spawn } from "node:child_process";
 import type { Tool } from "./index.js";
 import { getProjectPath } from "../project-files.js";
@@ -140,7 +141,7 @@ export const installPackageTool: Tool = {
 
     if (sdkPackages.length > 0) {
       try {
-        await linkDoableSdk(cwd);
+        await withDependencyLock(ctx.projectId, () => linkDoableSdk(cwd));
       } catch (err) {
         return {
           success: false,
@@ -170,12 +171,12 @@ export const installPackageTool: Tool = {
 
     const args = buildArgs(pm, npmPackages, isDev);
 
-    const result = await runInstall(pm, args, cwd, {
+    const result = await withDependencyLock(ctx.projectId, () => runInstall(pm, args, cwd, {
       projectId: ctx.projectId,
       workspaceId: workspaceId,
       userId: ctx.userId,
       sessionId: ctx.sessionId,
-    });
+    }));
 
     if (!result.success) {
       return {

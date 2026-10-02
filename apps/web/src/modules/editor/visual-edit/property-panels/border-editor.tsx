@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useState } from "react";
 import { Square } from "lucide-react";
@@ -44,6 +46,10 @@ export function BorderEditor({
   onBorderStyleChange,
   onBorderRadiusChange,
 }: BorderEditorProps) {
+  const ui = useUiText();
+  const i18n_BORDER_WIDTH_OPTIONS = useUiData(BORDER_WIDTH_OPTIONS);
+  const i18n_BORDER_STYLE_OPTIONS = useUiData(BORDER_STYLE_OPTIONS);
+
   const [editingColor, setEditingColor] = useState(false);
   const [colorDraft, setColorDraft] = useState(borderColor);
 
@@ -69,21 +75,27 @@ export function BorderEditor({
   };
 
   // Match current width to one of our options
-  const matchedWidth = BORDER_WIDTH_OPTIONS.find((opt) => opt.value === borderWidth);
+  const matchedWidth = i18n_BORDER_WIDTH_OPTIONS.find(
+    (opt) => opt.value === borderWidth,
+  );
 
   return (
     <div className="rounded-lg border border-border bg-card">
       {/* Section Header */}
       <div className="flex items-center gap-2 px-3 py-2">
         <Square className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium text-foreground">Border</span>
+        <span className="text-xs font-medium text-foreground">
+          {ui("Border")}
+        </span>
       </div>
 
       {/* Content */}
       <div className="space-y-2.5 px-3 pb-3">
         {/* Border Width */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Width</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Width")}
+          </label>
           <select
             value={matchedWidth ? borderWidth : ""}
             onChange={(e) => onBorderWidthChange(e.target.value)}
@@ -94,7 +106,7 @@ export function BorderEditor({
                 {borderWidth}
               </option>
             )}
-            {BORDER_WIDTH_OPTIONS.map((opt) => (
+            {i18n_BORDER_WIDTH_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -104,7 +116,9 @@ export function BorderEditor({
 
         {/* Border Color */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Color</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Color")}
+          </label>
           <div className="flex flex-1 items-center gap-2">
             {/* Color swatch */}
             <div
@@ -131,7 +145,7 @@ export function BorderEditor({
                 onClick={handleColorStartEdit}
                 className="flex-1 truncate rounded-md border border-input bg-background px-2 py-1 text-left text-[11px] text-foreground font-mono transition-colors hover:border-border"
               >
-                {borderColor || "none"}
+                {borderColor || ui("none")}
               </button>
             )}
           </div>
@@ -139,18 +153,22 @@ export function BorderEditor({
 
         {/* Border Style */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Style</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Style")}
+          </label>
           <select
             value={borderStyle}
             onChange={(e) => onBorderStyleChange(e.target.value)}
             className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-brand-500/50 transition-colors"
           >
-            {!BORDER_STYLE_OPTIONS.find((o) => o.value === borderStyle) && (
+            {!i18n_BORDER_STYLE_OPTIONS.find(
+              (o) => o.value === borderStyle,
+            ) && (
               <option value={borderStyle} disabled>
                 {borderStyle}
               </option>
             )}
-            {BORDER_STYLE_OPTIONS.map((opt) => (
+            {i18n_BORDER_STYLE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -160,13 +178,15 @@ export function BorderEditor({
 
         {/* Border Radius */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Radius</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Radius")}
+          </label>
           <input
             type="text"
             value={borderRadius}
             onChange={(e) => onBorderRadiusChange(e.target.value)}
             className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none font-mono focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors"
-            placeholder="0px"
+            placeholder={ui("0px")}
           />
         </div>
       </div>

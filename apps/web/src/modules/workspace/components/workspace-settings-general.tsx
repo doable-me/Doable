@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState } from "react";
 import {
@@ -32,9 +33,7 @@ function SectionCard({
       <div className="mb-5">
         <h2 className="text-lg font-semibold">{title}</h2>
         {description && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            {description}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         )}
       </div>
       {children}
@@ -70,7 +69,7 @@ function InfoItem({
           <p
             className={cn(
               "mt-0.5 text-sm truncate",
-              mono && "font-mono text-xs"
+              mono && "font-mono text-xs",
             )}
             title={value}
           >
@@ -96,15 +95,14 @@ export function GeneralTab({
   onUpdate: (updated: Workspace) => void;
   addToast: (type: "success" | "error", msg: string) => void;
 }) {
+  const ui = useUiText();
+
   const [name, setName] = useState(workspace.name);
-  const [description, setDescription] = useState(
-    workspace.description ?? ""
-  );
+  const [description, setDescription] = useState(workspace.description ?? "");
   const [saving, setSaving] = useState(false);
 
   const hasChanges =
-    name !== workspace.name ||
-    description !== (workspace.description ?? "");
+    name !== workspace.name || description !== (workspace.description ?? "");
 
   const handleSave = async () => {
     if (!hasChanges || saving) return;
@@ -118,14 +116,14 @@ export function GeneralTab({
             name: name.trim(),
             description: description.trim() || undefined,
           }),
-        }
+        },
       );
       onUpdate(data);
-      addToast("success", "Workspace settings saved");
+      addToast("success", ui("Workspace settings saved"));
     } catch (err) {
       addToast(
         "error",
-        err instanceof Error ? err.message : "Failed to save"
+        err instanceof Error ? err.message : ui("Failed to save"),
       );
     } finally {
       setSaving(false);
@@ -134,42 +132,41 @@ export function GeneralTab({
 
   return (
     <div className="space-y-6">
-      <SectionCard title="Workspace Details">
+      <SectionCard title={ui("Workspace Details")}>
         <div className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="ws-name" className="text-sm font-medium">
-              Name
+              {" "}
+              {ui("Name")}{" "}
             </label>
             <input
               id="ws-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Workspace"
+              placeholder={ui("My Workspace")}
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
           <div className="space-y-2">
-            <label
-              htmlFor="ws-description"
-              className="text-sm font-medium"
-            >
-              Description
+            <label htmlFor="ws-description" className="text-sm font-medium">
+              {" "}
+              {ui("Description")}{" "}
             </label>
             <textarea
               id="ws-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              placeholder="A brief description of your workspace"
+              placeholder={ui("A brief description of your workspace")}
               className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
             />
           </div>
 
           <div className="flex items-center justify-between pt-2">
             <div className="text-sm text-muted-foreground">
-              {hasChanges && "You have unsaved changes"}
+              {hasChanges && ui("You have unsaved changes")}
             </div>
             <button
               onClick={() => void handleSave()}
@@ -178,7 +175,7 @@ export function GeneralTab({
                 "inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
                 hasChanges
                   ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground cursor-not-allowed"
+                  : "bg-muted text-muted-foreground cursor-not-allowed",
               )}
             >
               {saving ? (
@@ -186,55 +183,52 @@ export function GeneralTab({
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              {saving ? "Saving..." : "Save Changes"}
+              {saving ? ui("Saving...") : ui("Save Changes")}
             </button>
           </div>
         </div>
       </SectionCard>
 
       <SectionCard
-        title="Workspace Information"
-        description="Read-only metadata about your workspace."
+        title={ui("Workspace Information")}
+        description={ui("Read-only metadata about your workspace.")}
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <InfoItem
             icon={Hash}
-            label="Workspace ID"
+            label={ui("Workspace ID")}
             value={workspace.id}
             mono
           />
           <InfoItem
             icon={Hash}
-            label="Slug"
+            label={ui("Slug")}
             value={workspace.slug}
             mono
           />
           <InfoItem
             icon={Calendar}
-            label="Created"
-            value={new Date(workspace.createdAt).toLocaleDateString(
-              "en-US",
-              {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              }
-            )}
+            label={ui("Created")}
+            value={new Date(workspace.createdAt).toLocaleDateString(ui.locale, {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
           />
           <InfoItem
             icon={Crown}
-            label="Plan"
+            label={ui("Plan")}
             value={workspace.plan}
             badge
           />
           <InfoItem
             icon={Users}
-            label="Members"
+            label={ui("Members")}
             value={String(workspace.memberCount)}
           />
           <InfoItem
             icon={Shield}
-            label="Your Role"
+            label={ui("Your Role")}
             value={workspace.userRole}
             badge
           />

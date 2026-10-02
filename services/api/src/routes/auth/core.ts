@@ -7,14 +7,30 @@ import { userQueries } from "@doable/db/queries/users.js";
 import { securityQueries } from "@doable/db/queries/security.js";
 import { mfaQueries } from "@doable/db/queries/mfa.js";
 import { signupApprovalQueries } from "@doable/db/queries/signup-approval.js";
-import { verifyRefreshToken, signAccessToken, signRefreshToken } from "../../lib/jwt.js";
+import {
+  verifyRefreshToken,
+  signAccessToken,
+  signRefreshToken,
+} from "../../lib/jwt.js";
 import { authMiddleware } from "../../middleware/auth.js";
 import { sendTemplatedEmail } from "../../lib/email.js";
 import {
-  registerSchema, loginSchema, refreshSchema, resetPasswordSchema,
-  hashToken, sanitizeUser, ARGON2_OPTS, stripHtmlTags,
-  loginRateLimiter, registerRateLimiter, forgotPasswordRateLimiter, resetPasswordRateLimiter,
-  issueTokens, ensureWorkspace, FRONTEND_URL, ACCESS_TOKEN_TTL_SECONDS,
+  registerSchema,
+  loginSchema,
+  refreshSchema,
+  resetPasswordSchema,
+  hashToken,
+  sanitizeUser,
+  ARGON2_OPTS,
+  stripHtmlTags,
+  loginRateLimiter,
+  registerRateLimiter,
+  forgotPasswordRateLimiter,
+  resetPasswordRateLimiter,
+  issueTokens,
+  ensureWorkspace,
+  FRONTEND_URL,
+  ACCESS_TOKEN_TTL_SECONDS,
 } from "./helpers.js";
 import { firstUserBootstrap } from "../../auth/firstUserBootstrap.js";
 import { issueMfaChallenge } from "./mfa.js";
@@ -32,22 +48,36 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
   const body = await c.req.json();
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+    return c.json(
+      {
+        error: "Validation failed",
+        details: parsed.error.flatten().fieldErrors,
+      },
+      400,
+    );
   }
   const { email, password, displayName } = parsed.data;
   // Accept bootstrap token from request body or ?bootstrap= query param
   const bootstrapToken: string | undefined =
-    (body as Record<string, unknown>).bootstrap_token as string | undefined ??
-    c.req.query("bootstrap") ?? undefined;
+    ((body as Record<string, unknown>).bootstrap_token as string | undefined) ??
+    c.req.query("bootstrap") ??
+    undefined;
 
   // Sanitize displayName to prevent XSS
   const sanitizedName = displayName ? stripHtmlTags(displayName) : undefined;
   if (displayName && !sanitizedName) {
-    return c.json({ error: "Validation failed", details: { displayName: ["Display name must contain visible text"] } }, 400);
+    return c.json(
+      {
+        error: "Validation failed",
+        details: { displayName: ["Display name must contain visible text"] },
+      },
+      400,
+    );
   }
 
   const existing = await auth.findUserByEmail(email);
-  if (existing) return c.json({ error: "An account with this email already exists" }, 409);
+  if (existing)
+    return c.json({ error: "An account with this email already exists" }, 409);
 
   // Blocklist takes precedence over the approval toggle — a blocked email
   // can never sign up again, even if approvals are currently off.
@@ -61,7 +91,12 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
   const passwordHash = await argon2.hash(password, ARGON2_OPTS);
   let user;
   try {
-    user = await auth.createUser({ email, passwordHash, displayName: sanitizedName, approvalStatus });
+    user = await auth.createUser({
+      email,
+      passwordHash,
+      displayName: sanitizedName,
+      approvalStatus,
+    });
   } catch (err) {
     // Belt-and-suspenders: the line-43 pre-check races with concurrent
     // inserts (and with case-folding inside createUser's .toLowerCase()).
@@ -70,7 +105,10 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
     // client (which would otherwise leak `users_email_key` via the global
     // onError handler in dev mode).
     if ((err as { code?: string } | null)?.code === "23505") {
-      return c.json({ error: "An account with this email already exists" }, 409);
+      return c.json(
+        { error: "An account with this email already exists" },
+        409,
+      );
     }
     throw err;
   }
@@ -79,10 +117,13 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
     // Don't auto-create the workspace yet and don't issue tokens. The user
     // sees the custom pending message; admin must approve before they can
     // log in. Skip the welcome email — they'll get one on approval (future).
-    return c.json({
-      pending: true,
-      message: approvalConfig.pending_message,
-    }, 201);
+    return c.json(
+      {
+        pending: true,
+        message: approvalConfig.pending_message,
+      },
+      201,
+    );
   }
 
   // Auto-create personal workspace so the user isn't blocked on first login
@@ -116,22 +157,35 @@ coreAuthRoutes.post("/register", registerRateLimiter, async (c) => {
 coreAuthRoutes.post("/login", loginRateLimiter, async (c) => {
   const parsed = loginSchema.safeParse(await c.req.json());
   if (!parsed.success) {
-    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+    return c.json(
+      {
+        error: "Validation failed",
+        details: parsed.error.flatten().fieldErrors,
+      },
+      400,
+    );
   }
   const { email, password } = parsed.data;
 
   const user = await auth.findUserByEmail(email);
-  if (!user || !user.password_hash) return c.json({ error: "Invalid email or password" }, 401);
+  if (!user || !user.password_hash)
+    return c.json({ error: "Invalid email or password" }, 401);
 
   const valid = await argon2.verify(user.password_hash, password);
   if (!valid) return c.json({ error: "Invalid email or password" }, 401);
 
   if (user.approval_status === "pending") {
     const cfg = await signupApproval.getConfig();
-    return c.json({ error: "PENDING_APPROVAL", message: cfg.pending_message }, 403);
+    return c.json(
+      { error: "PENDING_APPROVAL", message: cfg.pending_message },
+      403,
+    );
   }
   if (user.approval_status === "rejected") {
-    return c.json({ error: "ACCOUNT_DENIED", message: "Your signup was not approved." }, 403);
+    return c.json(
+      { error: "ACCOUNT_DENIED", message: "Your signup was not approved." },
+      403,
+    );
   }
 
   // If the user opted into MFA, issue a short-lived challenge token
@@ -143,7 +197,10 @@ coreAuthRoutes.post("/login", loginRateLimiter, async (c) => {
       return c.json(challenge);
     }
   } catch (err) {
-    console.warn("[Auth] MFA check failed, falling through to plain login:", err);
+    console.warn(
+      "[Auth] MFA check failed, falling through to plain login:",
+      err,
+    );
   }
 
   const tokens = await issueTokens(user.id, user.email);
@@ -153,14 +210,16 @@ coreAuthRoutes.post("/login", loginRateLimiter, async (c) => {
 // ─── POST /auth/refresh ────────────────────────────────────
 coreAuthRoutes.post("/refresh", async (c) => {
   const parsed = refreshSchema.safeParse(await c.req.json());
-  if (!parsed.success) return c.json({ error: "Refresh token is required" }, 400);
+  if (!parsed.success)
+    return c.json({ error: "Refresh token is required" }, 400);
 
   const { refreshToken } = parsed.data;
   try {
     const payload = await verifyRefreshToken(refreshToken);
     const oldTokenHash = hashToken(refreshToken);
     const stored = await auth.findRefreshToken(oldTokenHash);
-    if (!stored) return c.json({ error: "Refresh token has been revoked" }, 401);
+    if (!stored)
+      return c.json({ error: "Refresh token has been revoked" }, 401);
 
     const user = await users.findById(payload.sub);
     if (!user) return c.json({ error: "User not found" }, 401);
@@ -181,7 +240,11 @@ coreAuthRoutes.post("/refresh", async (c) => {
       user: sanitizeUser(user),
       // BUG-011: `expiresIn` must match the JWT's actual lifetime so clients
       // can refresh on time. Use the env-derived TTL, not a hardcoded 900.
-      tokens: { accessToken, refreshToken: newRefreshToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS },
+      tokens: {
+        accessToken,
+        refreshToken: newRefreshToken,
+        expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      },
     });
   } catch {
     return c.json({ error: "Invalid or expired refresh token" }, 401);
@@ -199,7 +262,11 @@ coreAuthRoutes.post("/logout", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { refreshToken } = body as { refreshToken?: string };
   if (refreshToken) {
-    try { await auth.deleteRefreshToken(hashToken(refreshToken)); } catch { /* DB unavailable */ }
+    try {
+      await auth.deleteRefreshToken(hashToken(refreshToken));
+    } catch {
+      /* DB unavailable */
+    }
   }
   return c.json({ message: "Logged out successfully" });
 });
@@ -232,6 +299,19 @@ coreAuthRoutes.get("/me", authMiddleware, async (c) => {
       updatedAt: new Date().toISOString(),
     },
   });
+});
+
+// Interface language is a personal preference, independent of model/app output language.
+coreAuthRoutes.patch("/me/language", authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const language = body.interfaceLanguage;
+  if (language !== "en" && language !== "zh-CN")
+    return c.json({ error: "Unsupported interface language" }, 400);
+  const userId = c.get("userId" as never) as string;
+  const [updated] =
+    await sql`UPDATE users SET interface_language=${language},updated_at=now() WHERE id=${userId} RETURNING id`;
+  if (!updated) return c.json({ error: "User not found" }, 404);
+  return c.json({ interfaceLanguage: language });
 });
 
 // ─── PATCH /auth/me ────────────────────────────────────────
@@ -270,9 +350,12 @@ coreAuthRoutes.patch("/me", authMiddleware, async (c) => {
 //
 // Generic success message kept identical across success / not-found
 // / mailer-failed paths to preserve the enumeration guard.
-const FORGOT_PASSWORD_GENERIC_MESSAGE = "If an account with that email exists, a reset link has been sent.";
+const FORGOT_PASSWORD_GENERIC_MESSAGE =
+  "If an account with that email exists, a reset link has been sent.";
 
-async function processForgotPassword(emailInput: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+async function processForgotPassword(
+  emailInput: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   if (typeof emailInput !== "string" || emailInput.length === 0) {
     return { ok: false, error: "Email is required" };
   }
@@ -296,7 +379,8 @@ async function processForgotPassword(emailInput: unknown): Promise<{ ok: true } 
     });
 
     const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
-    const displayName = user.display_name ?? user.email.split("@")[0] ?? "there";
+    const displayName =
+      user.display_name ?? user.email.split("@")[0] ?? "there";
 
     // Never let a missing SMTP config / transient mailer failure turn
     // the response into a 5xx — that would leak whether the address is
@@ -337,12 +421,16 @@ async function processForgotPassword(emailInput: unknown): Promise<{ ok: true } 
 }
 
 // ─── POST /auth/forgot-password ────────────────────────────
-coreAuthRoutes.post("/forgot-password", forgotPasswordRateLimiter, async (c) => {
-  const { email } = (await c.req.json()) as { email?: unknown };
-  const result = await processForgotPassword(email);
-  if (!result.ok) return c.json({ error: result.error }, 400);
-  return c.json({ message: FORGOT_PASSWORD_GENERIC_MESSAGE });
-});
+coreAuthRoutes.post(
+  "/forgot-password",
+  forgotPasswordRateLimiter,
+  async (c) => {
+    const { email } = (await c.req.json()) as { email?: unknown };
+    const result = await processForgotPassword(email);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json({ message: FORGOT_PASSWORD_GENERIC_MESSAGE });
+  },
+);
 
 // ─── POST /auth/password-reset ─────────────────────────────
 // Alias for /auth/forgot-password using REST-style naming. Shares the
@@ -361,7 +449,13 @@ coreAuthRoutes.post("/password-reset", forgotPasswordRateLimiter, async (c) => {
 coreAuthRoutes.post("/reset-password", resetPasswordRateLimiter, async (c) => {
   const parsed = resetPasswordSchema.safeParse(await c.req.json());
   if (!parsed.success) {
-    return c.json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }, 400);
+    return c.json(
+      {
+        error: "Validation failed",
+        details: parsed.error.flatten().fieldErrors,
+      },
+      400,
+    );
   }
   const { token, password } = parsed.data;
 
@@ -376,7 +470,10 @@ coreAuthRoutes.post("/reset-password", resetPasswordRateLimiter, async (c) => {
 
     // Update the user's password
     const passwordHash = await argon2.hash(password, ARGON2_OPTS);
-    const user = await auth.updateUserPassword(resetToken.user_id, passwordHash);
+    const user = await auth.updateUserPassword(
+      resetToken.user_id,
+      passwordHash,
+    );
     if (!user) return c.json({ error: "User not found" }, 404);
 
     // Mark token as used and revoke all refresh tokens

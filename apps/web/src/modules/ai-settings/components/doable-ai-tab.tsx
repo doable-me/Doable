@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -28,14 +29,21 @@ interface PersonalExtras {
 interface Usage {
   period: string;
   totals: { tokens: number; requests: number; costUsd: number };
-  byMode: Record<string, {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
+  byMode: Record<
+    string,
+    {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+      requestCount: number;
+      costUsd: number;
+    }
+  >;
+  perProject: Array<{
+    projectId: string | null;
     requestCount: number;
-    costUsd: number;
+    totalTokens: number;
   }>;
-  perProject: Array<{ projectId: string | null; requestCount: number; totalTokens: number }>;
 }
 
 const MAX_PROMPT = 4_096;
@@ -46,6 +54,8 @@ interface Props {
 }
 
 export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
+  const ui = useUiText();
+
   const [ws, setWs] = useState<WorkspaceExtras | null>(null);
   const [personal, setPersonal] = useState<PersonalExtras | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,8 +75,12 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
     setLoading(true);
     try {
       const [w, p] = await Promise.all([
-        apiFetch<{ data: WorkspaceExtras }>(`/workspaces/${workspaceId}/ai-extras`),
-        apiFetch<{ data: PersonalExtras }>(`/workspaces/${workspaceId}/personal-ai-extras`),
+        apiFetch<{ data: WorkspaceExtras }>(
+          `/workspaces/${workspaceId}/ai-extras`,
+        ),
+        apiFetch<{ data: PersonalExtras }>(
+          `/workspaces/${workspaceId}/personal-ai-extras`,
+        ),
       ]);
       setWs(w.data);
       setPersonal(p.data);
@@ -82,7 +96,9 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
   const refreshUsage = useCallback(async () => {
     setUsageLoading(true);
     try {
-      const r = await apiFetch<{ data: Usage }>(`/workspaces/${workspaceId}/ai-usage?period=${period}`);
+      const r = await apiFetch<{ data: Usage }>(
+        `/workspaces/${workspaceId}/ai-usage?period=${period}`,
+      );
       setUsage(r.data);
     } catch {
       setUsage(null);
@@ -91,19 +107,27 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
     }
   }, [workspaceId, period]);
 
-  useEffect(() => { refresh(); }, [refresh]);
-  useEffect(() => { refreshUsage(); }, [refreshUsage]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+  useEffect(() => {
+    refreshUsage();
+  }, [refreshUsage]);
 
   const wsDirty = useMemo(() => {
     if (!ws) return false;
-    return wsDraftVis !== (ws.defaultThinkingVisibility ?? "auto") ||
-      wsDraftPrompt !== (ws.defaultSystemPrompt ?? "");
+    return (
+      wsDraftVis !== (ws.defaultThinkingVisibility ?? "auto") ||
+      wsDraftPrompt !== (ws.defaultSystemPrompt ?? "")
+    );
   }, [ws, wsDraftVis, wsDraftPrompt]);
 
   const persDirty = useMemo(() => {
     if (!personal) return false;
-    return persDraftVis !== (personal.thinkingVisibility ?? "auto") ||
-      persDraftPrompt !== (personal.systemPromptOverride ?? "");
+    return (
+      persDraftVis !== (personal.thinkingVisibility ?? "auto") ||
+      persDraftPrompt !== (personal.systemPromptOverride ?? "")
+    );
   }, [personal, persDraftVis, persDraftPrompt]);
 
   const saveWs = useCallback(async () => {
@@ -113,7 +137,8 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
         method: "PUT",
         body: JSON.stringify({
           defaultThinkingVisibility: wsDraftVis,
-          defaultSystemPrompt: wsDraftPrompt.trim().length === 0 ? null : wsDraftPrompt.trim(),
+          defaultSystemPrompt:
+            wsDraftPrompt.trim().length === 0 ? null : wsDraftPrompt.trim(),
         }),
       });
       await refresh();
@@ -129,7 +154,8 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
         method: "PUT",
         body: JSON.stringify({
           thinkingVisibility: persDraftVis,
-          systemPromptOverride: persDraftPrompt.trim().length === 0 ? null : persDraftPrompt.trim(),
+          systemPromptOverride:
+            persDraftPrompt.trim().length === 0 ? null : persDraftPrompt.trim(),
         }),
       });
       await refresh();
@@ -152,27 +178,34 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
       <section className="rounded-xl border bg-card p-6">
         <div className="mb-4 flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Workspace defaults</h2>
+          <h2 className="text-lg font-semibold">{ui("Workspace defaults")}</h2>
           {!isAdmin && (
             <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-              admin-only — read-only for you
+              {" "}
+              {ui("admin-only — read-only for you")}{" "}
             </span>
           )}
         </div>
         <p className="mb-4 text-sm text-muted-foreground">
-          Applied to new projects in this workspace. Each project can override these from the
-          per-project Doable AI tab.
+          {" "}
+          {ui(
+            "Applied to new projects in this workspace. Each project can override these from the per-project Doable tab.",
+          )}{" "}
         </p>
 
         <div className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium">Default thinking visibility</label>
+            <label className="mb-2 block text-sm font-medium">
+              {ui("Default thinking visibility")}
+            </label>
             <div className="grid gap-2 sm:grid-cols-3">
               {(["auto", "always-show", "hide"] as const).map((v) => (
                 <label
                   key={v}
                   className={`cursor-pointer rounded-lg border p-3 transition-colors ${
-                    wsDraftVis === v ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"
+                    wsDraftVis === v
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/30"
                   } ${!isAdmin ? "opacity-50 pointer-events-none" : ""}`}
                 >
                   <input
@@ -187,7 +220,11 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
                   />
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Brain className="h-4 w-4" />
-                    {v === "auto" ? "Auto" : v === "always-show" ? "Always show" : "Hide"}
+                    {v === "auto"
+                      ? ui("Auto")
+                      : v === "always-show"
+                        ? ui("Always show")
+                        : ui("Hide")}
                   </div>
                 </label>
               ))}
@@ -195,18 +232,22 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Default system prompt for new projects</label>
+            <label className="mb-2 block text-sm font-medium">
+              {ui("Default system prompt for new projects")}
+            </label>
             <textarea
               value={wsDraftPrompt}
-              onChange={(e) => setWsDraftPrompt(e.target.value.slice(0, MAX_PROMPT))}
+              onChange={(e) =>
+                setWsDraftPrompt(e.target.value.slice(0, MAX_PROMPT))
+              }
               rows={4}
               disabled={!isAdmin}
-              placeholder="(none — projects ship with no pinned prompt)"
+              placeholder={ui("(none — projects ship with no pinned prompt)")}
               className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm disabled:opacity-50"
               data-testid="ws-default-prompt"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              {wsDraftPrompt.length} / {MAX_PROMPT} chars
+              {wsDraftPrompt.length} / {MAX_PROMPT} {ui("chars")}{" "}
             </p>
           </div>
 
@@ -219,8 +260,12 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
                 className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
                 data-testid="ws-save-extras"
               >
-                {savingWs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save workspace defaults
+                {savingWs ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}{" "}
+                {ui("Save workspace defaults")}{" "}
               </button>
             </div>
           )}
@@ -231,22 +276,30 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
       <section className="rounded-xl border bg-card p-6">
         <div className="mb-4 flex items-center gap-2">
           <User className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Personal AI overrides</h2>
+          <h2 className="text-lg font-semibold">
+            {ui("Personal AI overrides")}
+          </h2>
         </div>
         <p className="mb-4 text-sm text-muted-foreground">
-          These apply to projects where you are the workspace owner. They override the workspace
-          defaults but lose to explicit per-project settings.
+          {" "}
+          {ui(
+            "These apply to projects where you are the workspace owner. They override the workspace defaults but lose to explicit per-project settings.",
+          )}{" "}
         </p>
 
         <div className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium">Thinking visibility</label>
+            <label className="mb-2 block text-sm font-medium">
+              {ui("Thinking visibility")}
+            </label>
             <div className="grid gap-2 sm:grid-cols-3">
               {(["auto", "always-show", "hide"] as const).map((v) => (
                 <label
                   key={v}
                   className={`cursor-pointer rounded-lg border p-3 transition-colors ${
-                    persDraftVis === v ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"
+                    persDraftVis === v
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/30"
                   }`}
                 >
                   <input
@@ -260,7 +313,11 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
                   />
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Brain className="h-4 w-4" />
-                    {v === "auto" ? "Auto" : v === "always-show" ? "Always show" : "Hide"}
+                    {v === "auto"
+                      ? ui("Auto")
+                      : v === "always-show"
+                        ? ui("Always show")
+                        : ui("Hide")}
                   </div>
                 </label>
               ))}
@@ -268,17 +325,21 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Personal system prompt (optional)</label>
+            <label className="mb-2 block text-sm font-medium">
+              {ui("Personal system prompt (optional)")}
+            </label>
             <textarea
               value={persDraftPrompt}
-              onChange={(e) => setPersDraftPrompt(e.target.value.slice(0, MAX_PROMPT))}
+              onChange={(e) =>
+                setPersDraftPrompt(e.target.value.slice(0, MAX_PROMPT))
+              }
               rows={3}
-              placeholder="(none — workspace default applies)"
+              placeholder={ui("(none — workspace default applies)")}
               className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
               data-testid="pers-default-prompt"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              {persDraftPrompt.length} / {MAX_PROMPT} chars
+              {persDraftPrompt.length} / {MAX_PROMPT} {ui("chars")}{" "}
             </p>
           </div>
 
@@ -290,8 +351,12 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
               className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
               data-testid="pers-save-extras"
             >
-              {savingPers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save personal overrides
+              {savingPers ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}{" "}
+              {ui("Save personal overrides")}{" "}
             </button>
           </div>
         </div>
@@ -300,25 +365,31 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
       {/* ── Workspace-wide usage rollup ── */}
       <section className="rounded-xl border bg-card p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Workspace usage rollup</h2>
+          <h2 className="text-lg font-semibold">
+            {ui("Workspace usage rollup")}
+          </h2>
           <div className="flex gap-1 rounded-lg border bg-muted/40 p-1">
             {(["today", "7d", "30d", "all"] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
                 className={`rounded px-3 py-1 text-sm transition-colors ${
-                  period === p ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  period === p
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {p === "today" ? "Today" : p === "all" ? "All" : p}
+                {p === "today" ? ui("Today") : p === "all" ? ui("All") : p}
               </button>
             ))}
             <button
               onClick={refreshUsage}
               className="rounded px-2 py-1 text-muted-foreground hover:text-foreground"
-              title="Refresh"
+              title={ui("Refresh")}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${usageLoading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${usageLoading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
         </div>
@@ -327,18 +398,32 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="rounded-lg border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Total tokens</p>
-                <p className="mt-1 text-2xl font-semibold">{usage.totals.tokens.toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Requests</p>
-                <p className="mt-1 text-2xl font-semibold">{usage.totals.requests.toLocaleString()}</p>
-              </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Estimated cost</p>
+                <p className="text-xs text-muted-foreground">
+                  {ui("Total tokens")}
+                </p>
                 <p className="mt-1 text-2xl font-semibold">
-                  {usage.totals.costUsd > 0 ? `$${usage.totals.costUsd.toFixed(4)}` : (
-                    <span className="text-sm font-normal text-muted-foreground">Pricing not configured</span>
+                  {usage.totals.tokens.toLocaleString(ui.locale)}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">
+                  {ui("Requests")}
+                </p>
+                <p className="mt-1 text-2xl font-semibold">
+                  {usage.totals.requests.toLocaleString(ui.locale)}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">
+                  {ui("Estimated cost")}
+                </p>
+                <p className="mt-1 text-2xl font-semibold">
+                  {usage.totals.costUsd > 0 ? (
+                    `$${usage.totals.costUsd.toFixed(4)}`
+                  ) : (
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {ui("Pricing not configured")}
+                    </span>
                   )}
                 </p>
               </div>
@@ -347,24 +432,39 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
               <table className="w-full text-sm">
                 <thead className="bg-muted/30 text-xs uppercase text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2 text-left">Mode</th>
-                    <th className="px-3 py-2 text-right">Prompt</th>
-                    <th className="px-3 py-2 text-right">Completion</th>
-                    <th className="px-3 py-2 text-right">Total</th>
-                    <th className="px-3 py-2 text-right">Requests</th>
+                    <th className="px-3 py-2 text-left">{ui("Mode")}</th>
+                    <th className="px-3 py-2 text-right">{ui("Prompt")}</th>
+                    <th className="px-3 py-2 text-right">{ui("Completion")}</th>
+                    <th className="px-3 py-2 text-right">{ui("Total")}</th>
+                    <th className="px-3 py-2 text-right">{ui("Requests")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.entries(usage.byMode).length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-4 text-center text-muted-foreground">No usage yet.</td></tr>
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-3 py-4 text-center text-muted-foreground"
+                      >
+                        {ui("No usage yet.")}
+                      </td>
+                    </tr>
                   )}
                   {Object.entries(usage.byMode).map(([mode, row]) => (
                     <tr key={mode} className="border-t">
                       <td className="px-3 py-2 font-mono">{mode}</td>
-                      <td className="px-3 py-2 text-right">{row.promptTokens.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right">{row.completionTokens.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right">{row.totalTokens.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right">{row.requestCount.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right">
+                        {row.promptTokens.toLocaleString(ui.locale)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {row.completionTokens.toLocaleString(ui.locale)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {row.totalTokens.toLocaleString(ui.locale)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {row.requestCount.toLocaleString(ui.locale)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -372,7 +472,9 @@ export function DoableAiSettingsTab({ workspaceId, isAdmin }: Props) {
             </div>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">No usage data.</p>
+          <p className="text-sm text-muted-foreground">
+            {ui("No usage data.")}
+          </p>
         )}
       </section>
     </div>

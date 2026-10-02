@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect } from "react";
 import { apiListWorkspaces, type ApiWorkspace } from "@/lib/api";
@@ -11,9 +12,13 @@ import { BarChart3, Users, Globe } from "lucide-react";
 type Tab = "my-usage" | "workspace-usage" | "platform-usage";
 
 export function UsagePage() {
+  const ui = useUiText();
+
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("my-usage");
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
+    null,
+  );
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -21,7 +26,7 @@ export function UsagePage() {
       .then(({ data }) => {
         const persisted = localStorage.getItem("doable_active_workspace_id");
         const found = data.find((w: ApiWorkspace) => w.id === persisted);
-        setActiveWorkspaceId(found ? found.id : data[0]?.id ?? null);
+        setActiveWorkspaceId(found ? found.id : (data[0]?.id ?? null));
         setLoaded(true);
       })
       .catch(() => {
@@ -33,19 +38,35 @@ export function UsagePage() {
 
   if (!loaded) return null;
 
-  const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
-    { key: "my-usage", label: "My Usage", icon: BarChart3 },
-    { key: "workspace-usage", label: "Workspace Usage", icon: Users, adminOnly: true },
-    { key: "platform-usage", label: "Platform", icon: Globe, adminOnly: true },
+  const allTabs: {
+    key: Tab;
+    label: string;
+    icon: React.ElementType;
+    adminOnly?: boolean;
+  }[] = [
+    { key: "my-usage", label: ui("My Usage"), icon: BarChart3 },
+    {
+      key: "workspace-usage",
+      label: ui("Workspace Usage"),
+      icon: Users,
+      adminOnly: true,
+    },
+    {
+      key: "platform-usage",
+      label: ui("Platform"),
+      icon: Globe,
+      adminOnly: true,
+    },
   ];
   const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">Usage</h1>
+        <h1 className="text-2xl font-bold text-foreground">{ui("Usage")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Track your AI usage, token consumption, and costs.
+          {" "}
+          {ui("Track your AI usage, token consumption, and costs.")}{" "}
         </p>
       </div>
 
@@ -70,8 +91,12 @@ export function UsagePage() {
       )}
 
       {/* Tab content */}
-      {activeTab === "my-usage" && <MyUsageTab workspaceId={activeWorkspaceId} />}
-      {activeTab === "workspace-usage" && <WorkspaceUsageTab workspaceId={activeWorkspaceId} />}
+      {activeTab === "my-usage" && (
+        <MyUsageTab workspaceId={activeWorkspaceId} />
+      )}
+      {activeTab === "workspace-usage" && (
+        <WorkspaceUsageTab workspaceId={activeWorkspaceId} />
+      )}
       {activeTab === "platform-usage" && <PlatformUsageTab />}
     </div>
   );

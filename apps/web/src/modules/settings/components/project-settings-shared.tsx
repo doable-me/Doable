@@ -63,7 +63,7 @@ export const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "mcp", label: "MCP Servers", icon: Terminal },
   { id: "skills", label: "Skills & Rules", icon: Brain },
   { id: "context", label: "Knowledge", icon: Brain },
-  { id: "doable-ai", label: "Doable AI", icon: Sparkles },
+  { id: "doable-ai", label: "Doable", icon: Sparkles },
   { id: "security", label: "Security", icon: Shield },
   { id: "domain", label: "Custom Domain", icon: Globe },
   { id: "environments", label: "Environments", icon: Server },
@@ -134,7 +134,7 @@ export function InfoItem({
           <p
             className={cn(
               "mt-0.5 text-sm truncate",
-              mono && "font-mono text-xs"
+              mono && "font-mono text-xs",
             )}
             title={value}
           >

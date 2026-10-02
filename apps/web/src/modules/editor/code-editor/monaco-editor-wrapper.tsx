@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useRef, useCallback, useEffect } from "react";
 import Editor, { type OnMount, type OnChange } from "@monaco-editor/react";
@@ -50,6 +51,8 @@ export function MonacoEditorWrapper({
   onEditorMount,
   onCursorChange,
 }: MonacoEditorWrapperProps) {
+  const ui = useUiText();
+
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const valueRef = useRef(value);
   const { isDark } = useDarkMode();
@@ -119,9 +122,7 @@ export function MonacoEditorWrapper({
   const monacoLanguage = toMonacoLanguage(language);
 
   // Determine the file URI path for Monaco model association
-  const path = filePath
-    ? filePath.replace(/\\/g, "/")
-    : undefined;
+  const path = filePath ? filePath.replace(/\\/g, "/") : undefined;
 
   return (
     <Editor
@@ -172,7 +173,9 @@ export function MonacoEditorWrapper({
         <div className="flex h-full items-center justify-center bg-card">
           <div className="flex flex-col items-center gap-2">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-brand-400" />
-            <span className="text-xs text-muted-foreground">Loading editor...</span>
+            <span className="text-xs text-muted-foreground">
+              {ui("Loading editor...")}
+            </span>
           </div>
         </div>
       }

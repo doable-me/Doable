@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState } from "react";
 import {
@@ -65,6 +66,8 @@ function SpacingGroup({
   onChange: (values: SpacingValues) => void;
   expanded: boolean;
 }) {
+  const ui = useUiText();
+
   const handleSideChange = (side: keyof SpacingValues, val: string) => {
     onChange({ ...values, [side]: val });
   };
@@ -76,10 +79,18 @@ function SpacingGroup({
           {label}
         </span>
         <div className="flex flex-1 items-center gap-1 font-mono text-[11px] text-muted-foreground">
-          <span className="rounded bg-secondary px-1.5 py-0.5">{values.top}</span>
-          <span className="rounded bg-secondary px-1.5 py-0.5">{values.right}</span>
-          <span className="rounded bg-secondary px-1.5 py-0.5">{values.bottom}</span>
-          <span className="rounded bg-secondary px-1.5 py-0.5">{values.left}</span>
+          <span className="rounded bg-secondary px-1.5 py-0.5">
+            {values.top}
+          </span>
+          <span className="rounded bg-secondary px-1.5 py-0.5">
+            {values.right}
+          </span>
+          <span className="rounded bg-secondary px-1.5 py-0.5">
+            {values.bottom}
+          </span>
+          <span className="rounded bg-secondary px-1.5 py-0.5">
+            {values.left}
+          </span>
         </div>
       </div>
     );
@@ -94,25 +105,25 @@ function SpacingGroup({
         <SpacingInput
           value={values.top}
           icon={ArrowUp}
-          label="Top"
+          label={ui("Top")}
           onChange={(v) => handleSideChange("top", v)}
         />
         <SpacingInput
           value={values.right}
           icon={ArrowRight}
-          label="Right"
+          label={ui("Right")}
           onChange={(v) => handleSideChange("right", v)}
         />
         <SpacingInput
           value={values.bottom}
           icon={ArrowDown}
-          label="Bottom"
+          label={ui("Bottom")}
           onChange={(v) => handleSideChange("bottom", v)}
         />
         <SpacingInput
           value={values.left}
           icon={ArrowLeft}
-          label="Left"
+          label={ui("Left")}
           onChange={(v) => handleSideChange("left", v)}
         />
       </div>
@@ -128,6 +139,8 @@ export function SpacingEditor({
   onMarginChange,
   onPaddingChange,
 }: SpacingEditorProps) {
+  const ui = useUiText();
+
   const [expanded, setExpanded] = useState(true);
 
   return (
@@ -135,11 +148,13 @@ export function SpacingEditor({
       {/* Section Header */}
       <div className="flex items-center gap-2 px-3 py-2">
         <Move className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="flex-1 text-xs font-medium text-foreground">Spacing</span>
+        <span className="flex-1 text-xs font-medium text-foreground">
+          {ui("Spacing")}
+        </span>
         <button
           onClick={() => setExpanded((prev) => !prev)}
           className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title={expanded ? "Collapse inputs" : "Expand inputs"}
+          title={expanded ? ui("Collapse inputs") : ui("Expand inputs")}
         >
           {expanded ? (
             <Minimize2 className="h-3 w-3" />
@@ -152,7 +167,7 @@ export function SpacingEditor({
       {/* Content */}
       <div className="space-y-3 px-3 pb-3">
         <SpacingGroup
-          label="Margin"
+          label={ui("Margin")}
           values={margin}
           onChange={onMarginChange}
           expanded={expanded}
@@ -161,7 +176,7 @@ export function SpacingEditor({
         <div className="border-t border-border" />
 
         <SpacingGroup
-          label="Padding"
+          label={ui("Padding")}
           values={padding}
           onChange={onPaddingChange}
           expanded={expanded}

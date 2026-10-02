@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { memo } from "react";
 import { X, Image as ImageIcon, FileText, FileCode, File } from "lucide-react";
@@ -38,6 +39,8 @@ export const AttachmentPreviewStrip = memo(function AttachmentPreviewStrip({
   attachments,
   onRemove,
 }: AttachmentPreviewStripProps) {
+  const ui = useUiText();
+
   if (attachments.length === 0) return null;
 
   return (
@@ -51,7 +54,7 @@ export const AttachmentPreviewStrip = memo(function AttachmentPreviewStrip({
           <button
             onClick={() => onRemove(att.id)}
             className="absolute -right-1.5 -top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background opacity-0 transition-opacity group-hover:opacity-100"
-            title="Remove"
+            title={ui("Remove")}
           >
             <X className="h-2.5 w-2.5" />
           </button>

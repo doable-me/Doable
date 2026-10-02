@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useMemo } from "react";
 import { FileText } from "lucide-react";
@@ -23,7 +24,9 @@ export function FileHeader({ change }: { change: FileChange }) {
       <div className="flex items-center gap-2 min-w-0">
         <FileText className="h-3.5 w-3.5 text-muted-foreground flex-none" />
         <span className="text-sm font-medium truncate">{change.path}</span>
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${colors.badge}`}>
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${colors.badge}`}
+        >
           {colors.label}
         </span>
         {lang && (
@@ -34,13 +37,19 @@ export function FileHeader({ change }: { change: FileChange }) {
       </div>
       <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-none">
         {change.oldSize !== undefined && change.newSize !== undefined && (
-          <span>{formatFileSize(change.oldSize)} → {formatFileSize(change.newSize)}</span>
+          <span>
+            {formatFileSize(change.oldSize)} → {formatFileSize(change.newSize)}
+          </span>
         )}
         {change.newSize !== undefined && change.oldSize === undefined && (
-          <span className="text-green-600">+{formatFileSize(change.newSize)}</span>
+          <span className="text-green-600">
+            +{formatFileSize(change.newSize)}
+          </span>
         )}
         {change.oldSize !== undefined && change.newSize === undefined && (
-          <span className="text-red-600">-{formatFileSize(change.oldSize)}</span>
+          <span className="text-red-600">
+            -{formatFileSize(change.oldSize)}
+          </span>
         )}
       </div>
     </div>
@@ -62,7 +71,9 @@ export function NewFileView({ change }: { change: FileChange }) {
           <span className="inline-flex w-6 shrink-0 items-center justify-center text-green-500 select-none">
             +
           </span>
-          <code className="flex-1 px-2 py-px text-green-900 whitespace-pre">{line}</code>
+          <code className="flex-1 px-2 py-px text-green-900 whitespace-pre">
+            {line}
+          </code>
         </div>
       ))}
     </div>
@@ -84,7 +95,9 @@ export function DeletedFileView({ change }: { change: FileChange }) {
           <span className="inline-flex w-6 shrink-0 items-center justify-center text-red-500 select-none">
             -
           </span>
-          <code className="flex-1 px-2 py-px text-red-900 whitespace-pre">{line}</code>
+          <code className="flex-1 px-2 py-px text-red-900 whitespace-pre">
+            {line}
+          </code>
         </div>
       ))}
     </div>
@@ -102,7 +115,8 @@ export function DiffStatsBar({
   if (total === 0) return null;
 
   const maxBlocks = 20;
-  const addedBlocks = total > 0 ? Math.max(1, Math.round((stats.added / total) * maxBlocks)) : 0;
+  const addedBlocks =
+    total > 0 ? Math.max(1, Math.round((stats.added / total) * maxBlocks)) : 0;
   const removedBlocks = total > 0 ? maxBlocks - addedBlocks : 0;
 
   return (
@@ -127,9 +141,11 @@ export function DiffStatsBar({
 // ─── SideBySideView ─────────────────────────────────────────
 
 export function SideBySideView({ change }: { change: FileChange }) {
+  const ui = useUiText();
+
   const lines = useMemo(
     () => computeLineDiff(change.oldContent ?? "", change.newContent ?? ""),
-    [change.oldContent, change.newContent]
+    [change.oldContent, change.newContent],
   );
 
   const stats = useMemo(() => getDiffStats(lines), [lines]);
@@ -146,7 +162,9 @@ export function SideBySideView({ change }: { change: FileChange }) {
         <div className="flex-1 border-r overflow-auto">
           <div className="sticky top-0 z-10 bg-muted/50 backdrop-blur-sm border-b px-3 py-1">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Before ({getFileName(change.path)})
+              {" "}
+              {ui("Before (")}
+              {getFileName(change.path)})
             </span>
           </div>
           <div className="font-mono text-xs leading-relaxed">
@@ -159,11 +177,15 @@ export function SideBySideView({ change }: { change: FileChange }) {
                   {line.oldLine ?? ""}
                 </span>
                 {line.type === "removed" ? (
-                  <span className="inline-flex w-5 shrink-0 items-center justify-center text-red-500 select-none">-</span>
+                  <span className="inline-flex w-5 shrink-0 items-center justify-center text-red-500 select-none">
+                    -
+                  </span>
                 ) : (
                   <span className="inline-flex w-5 shrink-0" />
                 )}
-                <code className={`flex-1 px-2 py-px whitespace-pre ${line.type === "removed" ? "text-red-800" : ""}`}>
+                <code
+                  className={`flex-1 px-2 py-px whitespace-pre ${line.type === "removed" ? "text-red-800" : ""}`}
+                >
                   {line.content}
                 </code>
               </div>
@@ -175,7 +197,9 @@ export function SideBySideView({ change }: { change: FileChange }) {
         <div className="flex-1 overflow-auto">
           <div className="sticky top-0 z-10 bg-muted/50 backdrop-blur-sm border-b px-3 py-1">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              After ({getFileName(change.path)})
+              {" "}
+              {ui("After (")}
+              {getFileName(change.path)})
             </span>
           </div>
           <div className="font-mono text-xs leading-relaxed">
@@ -188,11 +212,15 @@ export function SideBySideView({ change }: { change: FileChange }) {
                   {line.newLine ?? ""}
                 </span>
                 {line.type === "added" ? (
-                  <span className="inline-flex w-5 shrink-0 items-center justify-center text-green-500 select-none">+</span>
+                  <span className="inline-flex w-5 shrink-0 items-center justify-center text-green-500 select-none">
+                    +
+                  </span>
                 ) : (
                   <span className="inline-flex w-5 shrink-0" />
                 )}
-                <code className={`flex-1 px-2 py-px whitespace-pre ${line.type === "added" ? "text-green-800" : ""}`}>
+                <code
+                  className={`flex-1 px-2 py-px whitespace-pre ${line.type === "added" ? "text-green-800" : ""}`}
+                >
                   {line.content}
                 </code>
               </div>
@@ -209,7 +237,7 @@ export function SideBySideView({ change }: { change: FileChange }) {
 export function UnifiedView({ change }: { change: FileChange }) {
   const lines = useMemo(
     () => computeLineDiff(change.oldContent ?? "", change.newContent ?? ""),
-    [change.oldContent, change.newContent]
+    [change.oldContent, change.newContent],
   );
 
   const stats = useMemo(() => getDiffStats(lines), [lines]);
@@ -245,7 +273,11 @@ export function UnifiedView({ change }: { change: FileChange }) {
                     : "text-transparent"
               }`}
             >
-              {line.type === "added" ? "+" : line.type === "removed" ? "-" : " "}
+              {line.type === "added"
+                ? "+"
+                : line.type === "removed"
+                  ? "-"
+                  : " "}
             </span>
             <code
               className={`flex-1 px-2 py-px whitespace-pre ${

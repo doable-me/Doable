@@ -25,7 +25,7 @@ export function parsePlanSteps(planContent: string | null | undefined): Array<{
 
   for (const line of lines) {
     // Match "## 1. Title", "## Step 1: Title", or "- [ ] Title"
-    const headingMatch = line.match(/^##\s+(?:(?:Step\s+)?\d+[\.:]\s*)?(.+)/i);
+    const headingMatch = line.match(/^#{2,3}\s+(?:(?:Step|Task|Phase)\s+\d+|(?:步骤|阶段|任务)\s*[一二三四五六七八九十百\d]+|\d+)[.：:、)）]?\s*(.+)/i);
     const checkboxMatch = line.match(/^-\s+\[[ x]\]\s+(.+)/i);
     const match = headingMatch || checkboxMatch;
     if (match) {
@@ -61,29 +61,11 @@ export function parsePlanSteps(planContent: string | null | undefined): Array<{
  * Looks for markdown plan structure and wraps it appropriately.
  */
 export function extractPlanFromResponse(text: string): string | null {
-  // Look for a markdown plan header
-  const planHeaderPattern = /^#\s+Plan/m;
-  if (planHeaderPattern.test(text)) {
-    const match = text.match(planHeaderPattern);
-    if (match?.index !== undefined) {
-      return text.slice(match.index).trim();
-    }
-  }
+  // Prose length and UI language are not evidence of a structured plan.
+  if (!parsePlanSteps(text).length) return null;
+  const header = /^#\s+(?:Plan\b|计划|实施计划|执行计划)[^\n]*/im.exec(text);
+  return header?.index !== undefined ? text.slice(header.index).trim() : `# Plan\n\n${text.trim()}`;
 
-  // If the response looks like a structured plan, wrap it
-  if (
-    text.includes("##") &&
-    (text.includes("Step") || text.includes("Task") || text.includes("Phase"))
-  ) {
-    return `# Plan\n\n${text.trim()}`;
-  }
-
-  // Fallback: if substantial text, treat it all as a plan
-  if (text.trim().length > 200) {
-    return `# Plan\n\n${text.trim()}`;
-  }
-
-  return null;
 }
 
 /**

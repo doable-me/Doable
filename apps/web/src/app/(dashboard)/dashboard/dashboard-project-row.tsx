@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState } from "react";
 import {
@@ -49,6 +50,8 @@ export function ProjectRow({
   isShared?: boolean;
   onSharedChanged?: () => void;
 }) {
+  const ui = useUiText();
+
   const statusStyle = STATUS_STYLES[project.status] ?? STATUS_STYLES.draft!;
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
@@ -88,10 +91,20 @@ export function ProjectRow({
 
       {/* Star */}
       <td className="w-10 px-1 py-3">
-        <button onClick={(e) => { e.stopPropagation(); onStar(); }} className="rounded p-0.5">
-          <Star className={`h-4 w-4 transition-colors ${
-            project.starred ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-foreground"
-          }`} />
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStar();
+          }}
+          className="rounded p-0.5"
+        >
+          <Star
+            className={`h-4 w-4 transition-colors ${
+              project.starred
+                ? "fill-yellow-400 text-yellow-400"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          />
         </button>
       </td>
 
@@ -99,12 +112,16 @@ export function ProjectRow({
       <td className="px-3 py-3">
         <div className="flex items-center gap-3">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-medium text-secondary-foreground">
-            {project.name?.charAt(0)?.toUpperCase() ?? "U"}
+            {project.name?.charAt(0)?.toUpperCase() ?? ui("U")}
           </div>
           <div className="min-w-0">
-            <span className="text-sm font-medium text-foreground line-clamp-1">{project.name}</span>
+            <span className="text-sm font-medium text-foreground line-clamp-1">
+              {project.name}
+            </span>
             {project.description && (
-              <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{project.description}</p>
+              <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
+                {project.description}
+              </p>
             )}
           </div>
         </div>
@@ -113,23 +130,26 @@ export function ProjectRow({
       {/* Status */}
       <td className="px-3 py-3">
         <div className="flex items-center gap-1.5">
-          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusStyle.className}`}>
-            {statusStyle.label}
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusStyle.className}`}
+          >
+            {ui(statusStyle.label)}
           </span>
           {isShared && (
             <span
               className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400"
-              title="Shared to Discover"
+              title={ui("Shared to Discover")}
             >
-              <Compass className="h-2.5 w-2.5" />
-              Discover
+              <Compass className="h-2.5 w-2.5" /> {ui("Discover")}{" "}
             </span>
           )}
         </div>
       </td>
 
       {/* Updated */}
-      <td className="px-3 py-3 text-sm text-muted-foreground">{formatRelativeTime(project.updated_at)}</td>
+      <td className="px-3 py-3 text-sm text-muted-foreground">
+        {formatRelativeTime(project.updated_at, ui.locale)}
+      </td>
 
       {/* Actions */}
       <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
@@ -139,24 +159,31 @@ export function ProjectRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={onClick}>
-              <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open in editor
+              <ExternalLink className="mr-2 h-3.5 w-3.5" />{" "}
+              {ui("Open in editor")}{" "}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onRename}>
-              <Pencil className="mr-2 h-3.5 w-3.5" /> Rename
+              <Pencil className="mr-2 h-3.5 w-3.5" /> {ui("Rename")}{" "}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onDuplicate}>
-              <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate
+              <Copy className="mr-2 h-3.5 w-3.5" /> {ui("Duplicate")}{" "}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onStar}>
-              <Star className="mr-2 h-3.5 w-3.5" /> {project.starred ? "Unstar" : "Star"}
+              <Star className="mr-2 h-3.5 w-3.5" />{" "}
+              {project.starred ? ui("Unstar") : ui("Star")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setShareDialogOpen(true)}>
               <Compass className="mr-2 h-3.5 w-3.5" />
-              {isShared ? "Update Discover listing" : "Share to Discover"}
+              {isShared
+                ? ui("Update Discover listing")
+                : ui("Share to Discover")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={onDelete}>
-              <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
+            <DropdownMenuItem
+              className="text-red-400 focus:bg-red-500/10 focus:text-red-400"
+              onClick={onDelete}
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" /> {ui("Delete")}{" "}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

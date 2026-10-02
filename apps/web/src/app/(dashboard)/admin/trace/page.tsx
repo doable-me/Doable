@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 /**
  * /admin/trace — search page.
@@ -17,6 +18,8 @@ import { SearchForm } from "./_components/search-form";
 import { ResultsTable, type TraceRow } from "./_components/results-table";
 
 function AdminTracePageInner() {
+  const ui = useUiText();
+
   const router = useRouter();
   const params = useSearchParams();
   const { isPlatformAdmin, loading: adminLoading } = usePlatformAdmin();
@@ -40,7 +43,9 @@ function AdminTracePageInner() {
         if (!cancelled) setTraces(res.traces);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load traces");
+          setError(
+            err instanceof Error ? err.message : ui("Failed to load traces"),
+          );
           setTraces([]);
         }
       } finally {
@@ -51,7 +56,7 @@ function AdminTracePageInner() {
     return () => {
       cancelled = true;
     };
-  }, [isPlatformAdmin, queryString]);
+  }, [ui, isPlatformAdmin, queryString]);
 
   if (adminLoading) {
     return (
@@ -64,9 +69,15 @@ function AdminTracePageInner() {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
         <ShieldCheck className="h-12 w-12" />
-        <p className="font-medium text-foreground">Platform admin access required</p>
-        <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>
-          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
+        <p className="font-medium text-foreground">
+          {ui("Platform admin access required")}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/dashboard")}
+        >
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> {ui("Back")}{" "}
         </Button>
       </div>
     );
@@ -80,15 +91,18 @@ function AdminTracePageInner() {
             href="/admin"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Admin
+            <ArrowLeft className="h-3.5 w-3.5" /> {ui("Admin")}{" "}
           </Link>
         </div>
         <h1 className="mb-1 flex items-center gap-2 text-2xl font-bold text-foreground">
-          <Activity className="h-6 w-6 text-brand-400" />
-          Trace search
+          <Activity className="h-6 w-6 text-brand-400" />{" "}
+          {ui("Trace search")}{" "}
         </h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          Search traces across services. Click a row to open the flame graph.
+          {" "}
+          {ui(
+            "Search traces across services. Click a row to open the flame graph.",
+          )}{" "}
         </p>
 
         <div className="mb-6">
@@ -97,7 +111,7 @@ function AdminTracePageInner() {
 
         {error && (
           <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">
-            {error}
+            {ui(error)}
           </div>
         )}
 

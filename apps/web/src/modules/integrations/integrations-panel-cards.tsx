@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback } from "react";
 import {
@@ -14,12 +15,13 @@ import {
   Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  TRANSPORT_LABELS,
-  type CustomIntegration,
-} from "./use-integrations";
+import { TRANSPORT_LABELS, type CustomIntegration } from "./use-integrations";
 
-export function StatusDot({ status }: { status: "active" | "error" | "inactive" | "connected" }) {
+export function StatusDot({
+  status,
+}: {
+  status: "active" | "error" | "inactive" | "connected";
+}) {
   const colors = {
     active: "bg-emerald-500",
     connected: "bg-emerald-500",
@@ -36,7 +38,11 @@ export function StatusDot({ status }: { status: "active" | "error" | "inactive" 
 
 // ─── Transport Icon ─────────────────────────────────────────
 
-export function TransportIcon({ type }: { type: CustomIntegration["transport_type"] }) {
+export function TransportIcon({
+  type,
+}: {
+  type: CustomIntegration["transport_type"];
+}) {
   if (type === "stdio") return <Terminal className="h-4 w-4" />;
   return <Globe className="h-4 w-4" />;
 }
@@ -62,6 +68,8 @@ export function BuiltInCard({
   onDisconnect?: () => void;
   children?: React.ReactNode;
 }) {
+  const ui = useUiText();
+
   const [expanded, setExpanded] = useState(false);
   const hasDetails = connected && children;
 
@@ -74,7 +82,9 @@ export function BuiltInCard({
           </div>
           <div className="min-w-0">
             <h3 className="text-sm font-semibold">{name}</h3>
-            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {description}
+            </p>
           </div>
         </div>
 
@@ -105,10 +115,10 @@ export function BuiltInCard({
               "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               connected
                 ? "border border-input text-muted-foreground hover:bg-accent hover:text-foreground"
-                : "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
             )}
           >
-            {connected ? "Disconnect" : "Connect"}
+            {connected ? ui("Disconnect") : ui("Connect")}
           </button>
         </div>
       </div>
@@ -136,6 +146,8 @@ export function CustomCard({
   onDelete: () => void;
   readOnly?: boolean;
 }) {
+  const ui = useUiText();
+
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -181,16 +193,23 @@ export function CustomCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold truncate">{integration.name}</h3>
+            <h3 className="text-sm font-semibold truncate">
+              {integration.name}
+            </h3>
             <StatusDot status={integration.status} />
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {transport.friendly}{" "}
-            <span className="text-muted-foreground">({transport.technical})</span>
+            <span className="text-muted-foreground">
+              ({transport.technical})
+            </span>
             {toolCount > 0 && (
               <>
-                <span className="text-muted-foreground/40 mx-1.5">&middot;</span>
-                {toolCount} {toolCount === 1 ? "capability" : "capabilities"}
+                <span className="text-muted-foreground/40 mx-1.5">
+                  &middot;
+                </span>
+                {toolCount}{" "}
+                {toolCount === 1 ? ui("capability") : ui("capabilities")}
               </>
             )}
           </p>
@@ -211,7 +230,8 @@ export function CustomCard({
           {toolCount > 0 && (
             <div className="px-4 py-3 border-b">
               <p className="text-xs font-medium text-muted-foreground mb-2">
-                Available Capabilities
+                {" "}
+                {ui("Available Capabilities")}{" "}
               </p>
               <div className="space-y-1.5">
                 {(integration.tools ?? []).map((tool) => (
@@ -221,7 +241,9 @@ export function CustomCard({
                   >
                     <Wrench className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs font-medium truncate">{tool.name}</p>
+                      <p className="text-xs font-medium truncate">
+                        {tool.name}
+                      </p>
                       {tool.description && (
                         <p className="text-xs text-muted-foreground line-clamp-1">
                           {tool.description}
@@ -237,7 +259,10 @@ export function CustomCard({
           {toolCount === 0 && (
             <div className="px-4 py-3 border-b">
               <p className="text-xs text-muted-foreground">
-                No capabilities discovered yet. Test the connection to discover what&apos;s available.
+                {" "}
+                {ui(
+                  "No capabilities discovered yet. Test the connection to discover what's available.",
+                )}{" "}
               </p>
             </div>
           )}
@@ -249,7 +274,7 @@ export function CustomCard({
                 "px-4 py-2.5 border-b text-xs flex items-center gap-1.5",
                 integration.status === "error"
                   ? "text-red-600 bg-red-50 dark:bg-red-950/20"
-                  : "text-muted-foreground"
+                  : "text-muted-foreground",
               )}
             >
               {integration.status === "error" && (
@@ -266,7 +291,7 @@ export function CustomCard({
                 "px-4 py-2.5 border-b text-xs flex items-center gap-1.5",
                 testResult.ok
                   ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20"
-                  : "text-red-600 bg-red-50 dark:bg-red-950/20"
+                  : "text-red-600 bg-red-50 dark:bg-red-950/20",
               )}
             >
               {testResult.ok ? (
@@ -289,31 +314,32 @@ export function CustomCard({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              Test Connection
+              )}{" "}
+              {ui("Test Connection")}{" "}
             </button>
-            {!readOnly && <button
-              onClick={handleDelete}
-              onBlur={() => setConfirmDelete(false)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                confirmDelete
-                  ? "bg-red-600 text-white hover:bg-red-700"
-                  : "text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
-              )}
-            >
-              {confirmDelete ? (
-                <>
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Confirm Remove
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Remove
-                </>
-              )}
-            </button>}
+            {!readOnly && (
+              <button
+                onClick={handleDelete}
+                onBlur={() => setConfirmDelete(false)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  confirmDelete
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20",
+                )}
+              >
+                {confirmDelete ? (
+                  <>
+                    <AlertCircle className="h-3.5 w-3.5" />{" "}
+                    {ui("Confirm Remove")}{" "}
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" /> {ui("Remove")}{" "}
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       )}

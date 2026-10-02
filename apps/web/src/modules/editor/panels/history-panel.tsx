@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect } from "react";
 import { X } from "lucide-react";
@@ -15,6 +16,8 @@ interface Props {
 // ─── Main Component ──────────────────────────────────────────
 
 export function HistoryPanel({ projectId, onClose }: Props) {
+  const ui = useUiText();
+
   // Ensure editor store has the correct projectId so VersionHistory can use it
   const storeProjectId = useEditorStore((s) => s.projectId);
   const setProjectId = useEditorStore((s) => s.setProjectId);
@@ -29,11 +32,13 @@ export function HistoryPanel({ projectId, onClose }: Props) {
     <div className="flex h-full flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">Version History</h2>
+        <h2 className="text-sm font-semibold text-foreground">
+          {ui("Version History")}
+        </h2>
         <button
           onClick={onClose}
           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          title="Close"
+          title={ui("Close")}
         >
           <X className="h-4 w-4" />
         </button>

@@ -1,15 +1,10 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState } from "react";
-import {
-  TrendingUp,
-  TrendingDown,
-  Users,
-} from "lucide-react";
+import { TrendingUp, TrendingDown, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type {
-  TimeseriesPoint,
-} from "./analytics-types";
+import type { TimeseriesPoint } from "./analytics-types";
 import { formatNumber } from "./analytics-types";
 export { TopPagesTable } from "./analytics-top-pages";
 
@@ -76,18 +71,20 @@ export function SkeletonBars() {
 // ─── Overview Card ──────────────────────────────────────────
 
 export function OverviewCard({
+  lowerIsBetter = false,
   label,
   value,
   change,
   icon: Icon,
 }: {
+  lowerIsBetter?: boolean;
   label: string;
   value: string;
   change: number;
   icon: typeof Users;
 }) {
   const isPositive = change > 0;
-  const isGood = label === "Bounce Rate" ? !isPositive : isPositive;
+  const isGood = lowerIsBetter ? !isPositive : isPositive;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -100,7 +97,7 @@ export function OverviewCard({
               ? "text-muted-foreground"
               : isGood
                 ? "text-emerald-500"
-                : "text-red-400"
+                : "text-red-400",
           )}
         >
           {change !== 0 &&
@@ -121,14 +118,20 @@ export function OverviewCard({
 // ─── Traffic Chart ──────────────────────────────────────────
 
 export function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
+  const ui = useUiText();
+
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [metric, setMetric] = useState<"visitors" | "pageViews">("visitors");
 
   if (data.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold text-foreground">Traffic Overview</h3>
-        <p className="mt-4 text-center text-xs text-muted-foreground">No traffic data available yet.</p>
+        <h3 className="text-sm font-semibold text-foreground">
+          {ui("Traffic Overview")}
+        </h3>
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          {ui("No traffic data available yet.")}
+        </p>
       </div>
     );
   }
@@ -169,13 +172,15 @@ export function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return d.toLocaleDateString(ui.locale, { month: "short", day: "numeric" });
   };
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Traffic Overview</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          {ui("Traffic Overview")}
+        </h3>
         <div className="flex rounded-md border border-border bg-muted/30">
           <button
             onClick={() => setMetric("visitors")}
@@ -183,10 +188,11 @@ export function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
               "px-2.5 py-1 text-xs font-medium transition-colors rounded-l-md",
               metric === "visitors"
                 ? "bg-brand-500/20 text-brand-400"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Visitors
+            {" "}
+            {ui("Visitors")}{" "}
           </button>
           <button
             onClick={() => setMetric("pageViews")}
@@ -194,10 +200,11 @@ export function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
               "px-2.5 py-1 text-xs font-medium transition-colors rounded-r-md",
               metric === "pageViews"
                 ? "bg-brand-500/20 text-brand-400"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Page Views
+            {" "}
+            {ui("Page Views")}{" "}
           </button>
         </div>
       </div>
@@ -211,8 +218,16 @@ export function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
         >
           <defs>
             <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(var(--brand-500))" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="hsl(var(--brand-500))" stopOpacity="0" />
+              <stop
+                offset="0%"
+                stopColor="hsl(var(--brand-500))"
+                stopOpacity="0.3"
+              />
+              <stop
+                offset="100%"
+                stopColor="hsl(var(--brand-500))"
+                stopOpacity="0"
+              />
             </linearGradient>
           </defs>
 
@@ -296,10 +311,12 @@ export function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
             }}
           >
             <p className="font-medium text-foreground">
-              {data[hoveredIndex][metric].toLocaleString()}{" "}
-              {metric === "visitors" ? "visitors" : "views"}
+              {data[hoveredIndex][metric].toLocaleString(ui.locale)}{" "}
+              {metric === "visitors" ? ui("visitors") : ui("views")}
             </p>
-            <p className="text-muted-foreground">{formatDate(data[hoveredIndex].date)}</p>
+            <p className="text-muted-foreground">
+              {formatDate(data[hoveredIndex].date)}
+            </p>
           </div>
         )}
       </div>
@@ -319,5 +336,3 @@ export function TrafficChart({ data }: { data: TimeseriesPoint[] }) {
     </div>
   );
 }
-
-

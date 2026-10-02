@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useRouter } from "next/navigation";
 import { Check, X, Zap } from "lucide-react";
@@ -58,19 +60,26 @@ const PLANS = [
 ];
 
 export default function PricingPage() {
+  const ui = useUiText();
+  const i18n_PLANS = useUiData(PLANS);
+
   const router = useRouter();
 
   return (
     <div className="min-h-screen bg-background py-16 px-4">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-foreground mb-4">Simple, transparent pricing</h1>
-          <p className="text-lg text-muted-foreground">Start free. Upgrade when you need more.</p>
+          <h1 className="text-4xl font-bold text-foreground mb-4">
+            {ui("Simple, transparent pricing")}
+          </h1>
+          <p className="text-lg text-muted-foreground">
+            {ui("Start free. Upgrade when you need more.")}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {PLANS.map((plan) => {
-              return (
+          {i18n_PLANS.map((plan) => {
+            return (
               <div
                 key={plan.key}
                 className={`rounded-2xl border p-8 flex flex-col gap-6 ${
@@ -81,30 +90,44 @@ export default function PricingPage() {
               >
                 {plan.highlighted && (
                   <div className="flex items-center gap-1.5 text-brand-600 dark:text-brand-400 text-xs font-semibold uppercase tracking-wide">
-                    <Zap className="h-3.5 w-3.5" />
-                    Most popular
+                    <Zap className="h-3.5 w-3.5" /> {ui("Most popular")}{" "}
                   </div>
                 )}
 
                 <div>
-                  <h2 className="text-xl font-bold text-foreground">{plan.name}</h2>
-                  <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>
+                  <h2 className="text-xl font-bold text-foreground">
+                    {plan.name}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {plan.description}
+                  </p>
                 </div>
 
                 <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold text-foreground">{plan.price}</span>
-                  <span className="text-sm text-muted-foreground">{plan.period}</span>
+                  <span className="text-4xl font-bold text-foreground">
+                    {plan.price}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {plan.period}
+                  </span>
                 </div>
 
                 <ul className="flex flex-col gap-3 flex-1">
                   {plan.features.map((f) => (
-                    <li key={f.label} className="flex items-start gap-2.5 text-sm">
+                    <li
+                      key={f.label}
+                      className="flex items-start gap-2.5 text-sm"
+                    >
                       {f.ok ? (
                         <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                       ) : (
                         <X className="h-4 w-4 text-muted-foreground/40 mt-0.5 shrink-0" />
                       )}
-                      <span className={f.ok ? "text-foreground" : "text-muted-foreground/50"}>
+                      <span
+                        className={
+                          f.ok ? "text-foreground" : "text-muted-foreground/50"
+                        }
+                      >
                         {f.label}
                       </span>
                     </li>
@@ -119,7 +142,7 @@ export default function PricingPage() {
                       : "border border-border bg-secondary text-foreground hover:bg-accent"
                   }`}
                 >
-                  {plan.key === "free" ? "Get started" : "Upgrade"}
+                  {plan.key === "free" ? ui("Get started") : ui("Upgrade")}
                 </button>
               </div>
             );
@@ -127,7 +150,15 @@ export default function PricingPage() {
         </div>
 
         <p className="text-center text-sm text-muted-foreground mt-10">
-          Need more? <a href="mailto:hello@doable.me" className="underline hover:text-foreground">Contact us</a> for Enterprise pricing.
+          {" "}
+          {ui("Need more?")}{" "}
+          <a
+            href="mailto:hello@doable.me"
+            className="underline hover:text-foreground"
+          >
+            {ui("Contact us")}
+          </a>{" "}
+          {ui("for Enterprise pricing.")}{" "}
         </p>
       </div>
     </div>

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
@@ -9,6 +10,8 @@ const COLLAPSED_HEIGHT_CLASS = "max-h-24";
 const EXPANDED_HEIGHT_CLASS = "max-h-96";
 
 export function LogTail(): ReactElement {
+  const ui = useUiText();
+
   const lines = useBuildStore((s) => s.rawLogLines);
   const [expanded, setExpanded] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
@@ -31,13 +34,16 @@ export function LogTail(): ReactElement {
   return (
     <div className="border-t border-neutral-800">
       <div className="flex items-center justify-between px-3 py-1 text-xs text-neutral-400">
-        <span>Logs ({lines.length})</span>
+        <span>
+          {ui("Logs (")}
+          {lines.length})
+        </span>
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] uppercase tracking-wide hover:bg-neutral-800"
         >
-          {expanded ? "collapse" : "expand"}
+          {expanded ? ui("collapse") : ui("expand")}
         </button>
       </div>
       <div
@@ -48,7 +54,7 @@ export function LogTail(): ReactElement {
         }`}
       >
         {lines.length === 0 ? (
-          <div className="text-neutral-600">No log output yet.</div>
+          <div className="text-neutral-600">{ui("No log output yet.")}</div>
         ) : (
           lines.map((line) => {
             const tagColour =

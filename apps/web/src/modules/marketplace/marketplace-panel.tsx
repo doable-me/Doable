@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -67,6 +68,8 @@ function ListingCard({
   onInstall: () => void;
   onClick: () => void;
 }) {
+  const ui = useUiText();
+
   return (
     <div
       onClick={onClick}
@@ -79,19 +82,20 @@ function ListingCard({
             {listing.title}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            by {listing.publisher_name}
+            {" "}
+            {ui("by")} {listing.publisher_name}
           </p>
         </div>
         {listing.featured && (
           <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 text-amber-400 rounded-full text-xs font-medium">
-            <Sparkles className="w-3 h-3" /> Featured
+            <Sparkles className="w-3 h-3" /> {ui("Featured")}{" "}
           </span>
         )}
       </div>
 
       {/* Description */}
       <p className="text-sm text-muted-foreground line-clamp-2 mb-4 min-h-[2.5rem]">
-        {listing.short_desc || "No description"}
+        {listing.short_desc || ui("No description")}
       </p>
 
       {/* Stats bar */}
@@ -100,7 +104,9 @@ function ListingCard({
           <span className="flex items-center gap-1">
             <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
             {listing.avg_rating.toFixed(1)}
-            <span className="text-muted-foreground">({listing.review_count})</span>
+            <span className="text-muted-foreground">
+              ({listing.review_count})
+            </span>
           </span>
         )}
         <span className="flex items-center gap-1">
@@ -119,19 +125,22 @@ function ListingCard({
         {listing.skill_count > 0 && (
           <span className="flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-violet-400" />
-            {listing.skill_count} skill{listing.skill_count !== 1 ? "s" : ""}
+            {listing.skill_count} {ui("skill")}
+            {listing.skill_count !== 1 ? ui("s") : ""}
           </span>
         )}
         {listing.rule_count > 0 && (
           <span className="flex items-center gap-1">
             <ShieldIcon className="w-3 h-3 text-emerald-400" />
-            {listing.rule_count} rule{listing.rule_count !== 1 ? "s" : ""}
+            {listing.rule_count} {ui("rule")}
+            {listing.rule_count !== 1 ? ui("s") : ""}
           </span>
         )}
         {listing.knowledge_count > 0 && (
           <span className="flex items-center gap-1">
             <BookOpen className="w-3 h-3 text-sky-400" />
-            {listing.knowledge_count} file{listing.knowledge_count !== 1 ? "s" : ""}
+            {listing.knowledge_count} {ui("file")}
+            {listing.knowledge_count !== 1 ? ui("s") : ""}
           </span>
         )}
         {listing.connector_count > 0 && (
@@ -146,7 +155,10 @@ function ListingCard({
       {listing.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-4">
           {listing.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-xs">
+            <span
+              key={tag}
+              className="px-2 py-0.5 bg-secondary text-secondary-foreground rounded text-xs"
+            >
               {tag}
             </span>
           ))}
@@ -155,7 +167,10 @@ function ListingCard({
 
       {/* Actions */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">v{listing.version}</span>
+        <span className="text-xs text-muted-foreground">
+          {ui("v")}
+          {listing.version}
+        </span>
         <Button
           size="sm"
           variant={installed ? "outline" : "default"}
@@ -165,7 +180,7 @@ function ListingCard({
           }}
           className={installed ? "pointer-events-none opacity-60" : ""}
         >
-          {installed ? "Installed" : "Install"}
+          {installed ? ui("Installed") : ui("Install")}
         </Button>
       </div>
     </div>
@@ -175,11 +190,16 @@ function ListingCard({
 // ─── Main Marketplace Page ──────────────────────────────
 
 export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
+  const ui = useUiText();
+
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | undefined>();
-  const [sortBy, setSortBy] = useState<"popular" | "newest" | "rating">("popular");
-  const [pendingListing, setPendingListing] = useState<MarketplaceListing | null>(null);
+  const [sortBy, setSortBy] = useState<"popular" | "newest" | "rating">(
+    "popular",
+  );
+  const [pendingListing, setPendingListing] =
+    useState<MarketplaceListing | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const { listings, categories, total, loading } = useMarketplaceBrowse({
@@ -202,44 +222,50 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
           <div className="p-2 bg-brand-500/15 rounded-lg">
             <Store className="w-6 h-6 text-brand-400" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Marketplace</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            {ui("Marketplace")}
+          </h1>
           <Link
             href="/help/discover-vs-marketplace"
             className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            title="What's the difference between Discover and Marketplace?"
+            title={ui(
+              "What's the difference between Discover and Marketplace?",
+            )}
           >
-            <HelpCircle className="h-3 w-3" />
-            Discover vs Marketplace
+            <HelpCircle className="h-3 w-3" />{" "}
+            {ui("Discover vs Marketplace")}{" "}
           </Link>
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={() => setImportOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-              title="Import a bundle from JSON, a Standards Zip, or a public GitHub URL"
+              title={ui(
+                "Import a bundle from JSON, a Standards Zip, or a public GitHub URL",
+              )}
             >
-              <Upload className="h-3.5 w-3.5" />
-              Import
+              <Upload className="h-3.5 w-3.5" /> {ui("Import")}{" "}
             </button>
             <Link
               href="/marketplace/my-listings"
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-              title="Manage listings you've published"
+              title={ui("Manage listings you've published")}
             >
-              <Library className="h-3.5 w-3.5" />
-              My listings
+              <Library className="h-3.5 w-3.5" /> {ui("My listings")}{" "}
             </Link>
             <Link
               href="/marketplace/new"
               className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 transition-colors"
-              title="Package one of your environments and list it"
+              title={ui("Package one of your environments and list it")}
             >
-              <Plus className="h-3.5 w-3.5" />
-              List on Marketplace
+              <Plus className="h-3.5 w-3.5" /> {ui("List on Marketplace")}{" "}
             </Link>
           </div>
         </div>
         <p className="text-muted-foreground text-sm">
-          Install AI environments — skills, rules, knowledge, and MCP connectors — created by the community.
+          {" "}
+          {ui(
+            "Install AI environments — skills, rules, knowledge, and MCP connectors — created by the community.",
+          )}{" "}
         </p>
       </div>
 
@@ -250,7 +276,7 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search environments, skills, tags..."
+            placeholder={ui("Search environments, skills, tags...")}
             className="pl-9"
           />
         </div>
@@ -266,7 +292,9 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
               }`}
             >
               {s === "popular" ? (
-                <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Popular</span>
+                <span className="flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3" /> {ui("Popular")}
+                </span>
               ) : (
                 s
               )}
@@ -293,7 +321,10 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-card border border-border rounded-xl p-5 animate-pulse">
+              <div
+                key={i}
+                className="bg-card border border-border rounded-xl p-5 animate-pulse"
+              >
                 <div className="h-5 bg-muted rounded w-3/4 mb-3" />
                 <div className="h-3 bg-muted rounded w-1/3 mb-4" />
                 <div className="h-4 bg-muted rounded w-full mb-2" />
@@ -305,15 +336,22 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
         ) : listings.length === 0 ? (
           <div className="text-center py-16">
             <Store className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-            <p className="text-foreground font-medium">No listings found</p>
+            <p className="text-foreground font-medium">
+              {ui("No listings found")}
+            </p>
             <p className="text-muted-foreground text-sm mt-1">
-              {search ? "Try a different search term" : "Be the first to publish an environment!"}
+              {search
+                ? ui("Try a different search term")
+                : ui("Be the first to publish an environment!")}
             </p>
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-muted-foreground">{total} environment{total !== 1 ? "s" : ""}</p>
+              <p className="text-sm text-muted-foreground">
+                {total} {ui("environment")}
+                {total !== 1 ? ui("s") : ""}
+              </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {listings.map((listing) => (
@@ -333,7 +371,9 @@ export function MarketplacePanel({ workspaceId }: { workspaceId: string }) {
       {pendingListing && (
         <InstallPermissionDialog
           open={!!pendingListing}
-          onOpenChange={(o) => { if (!o) setPendingListing(null); }}
+          onOpenChange={(o) => {
+            if (!o) setPendingListing(null);
+          }}
           listing={pendingListing}
           onConfirm={async () => {
             const { environmentId } = await install(pendingListing.id);

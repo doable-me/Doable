@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import type { ReactElement } from "react";
 
@@ -13,13 +14,15 @@ export interface BuildPanelProps {
 }
 
 export function BuildPanel({ projectId }: BuildPanelProps): ReactElement {
+  const ui = useUiText();
+
   useBuildEvents(projectId);
   const status = useBuildStore((s) => s.status);
 
   return (
     <div className="flex h-full flex-col bg-neutral-900 text-neutral-100">
       <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
-        <h2 className="text-sm font-semibold">Live build</h2>
+        <h2 className="text-sm font-semibold">{ui("Live build")}</h2>
         <span className="font-mono text-[10px] uppercase tracking-wide text-neutral-500">
           {status}
         </span>

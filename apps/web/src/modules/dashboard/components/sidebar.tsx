@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect } from "react";
 import type { Project, Folder } from "@doable/shared";
@@ -46,7 +47,13 @@ function buildTree(folders: Folder[]): FolderTreeItem[] {
   return roots;
 }
 
-function FolderNode({ folder, depth = 0 }: { folder: FolderTreeItem; depth?: number }) {
+function FolderNode({
+  folder,
+  depth = 0,
+}: {
+  folder: FolderTreeItem;
+  depth?: number;
+}) {
   const [expanded, setExpanded] = useState(false);
   const hasChildren = folder.children.length > 0;
 
@@ -83,6 +90,8 @@ export function Sidebar({
   workspaceId,
   onCreateFolder,
 }: SidebarProps) {
+  const ui = useUiText();
+
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
 
@@ -100,7 +109,7 @@ export function Sidebar({
   const recentProjects = [...projects]
     .sort(
       (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     )
     .slice(0, 5);
 
@@ -112,8 +121,7 @@ export function Sidebar({
         {/* Recent */}
         <div className="mb-2">
           <h3 className="mb-1 flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            Recent
+            <Clock className="h-3.5 w-3.5" /> {ui("Recent")}{" "}
           </h3>
           {loading ? (
             <div className="space-y-1.5 px-2">
@@ -122,7 +130,9 @@ export function Sidebar({
               ))}
             </div>
           ) : recentProjects.length === 0 ? (
-            <p className="px-2 text-xs text-muted-foreground">No projects yet</p>
+            <p className="px-2 text-xs text-muted-foreground">
+              {ui("No projects yet")}
+            </p>
           ) : (
             recentProjects.map((p) => (
               <a
@@ -139,8 +149,7 @@ export function Sidebar({
         {/* Starred */}
         <div className="mb-2">
           <h3 className="mb-1 flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <Star className="h-3.5 w-3.5" />
-            Starred
+            <Star className="h-3.5 w-3.5" /> {ui("Starred")}{" "}
           </h3>
           {loading ? (
             <div className="space-y-1.5 px-2">
@@ -150,7 +159,8 @@ export function Sidebar({
             </div>
           ) : starredProjects.length === 0 ? (
             <p className="px-2 text-xs text-muted-foreground">
-              No starred projects
+              {" "}
+              {ui("No starred projects")}{" "}
             </p>
           ) : (
             starredProjects.map((p) => (
@@ -170,14 +180,13 @@ export function Sidebar({
         <div>
           <div className="mb-1 flex items-center justify-between px-2">
             <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <FolderIcon className="h-3.5 w-3.5" />
-              Folders
+              <FolderIcon className="h-3.5 w-3.5" /> {ui("Folders")}{" "}
             </h3>
             {onCreateFolder && (
               <button
                 onClick={onCreateFolder}
                 className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                aria-label="Create folder"
+                aria-label={ui("Create folder")}
               >
                 <FolderPlus className="h-3.5 w-3.5" />
               </button>
@@ -190,7 +199,9 @@ export function Sidebar({
               ))}
             </div>
           ) : folderTree.length === 0 ? (
-            <p className="px-2 text-xs text-muted-foreground">No folders</p>
+            <p className="px-2 text-xs text-muted-foreground">
+              {ui("No folders")}
+            </p>
           ) : (
             folderTree.map((f) => <FolderNode key={f.id} folder={f} />)
           )}

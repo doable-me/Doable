@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useCallback } from "react";
 
@@ -68,7 +69,9 @@ export interface Subscription {
 
 function getAuthHeaders(): HeadersInit {
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("doable_access_token") : null;
+    typeof window !== "undefined"
+      ? localStorage.getItem("doable_access_token")
+      : null;
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -137,7 +140,10 @@ export function useUsage(workspaceId: string | undefined) {
   return { usage, loading };
 }
 
-export function useCreditUsage(workspaceId: string | undefined, days: number = 30) {
+export function useCreditUsage(
+  workspaceId: string | undefined,
+  days: number = 30,
+) {
   const [data, setData] = useState<CreditUsageHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -147,9 +153,12 @@ export function useCreditUsage(workspaceId: string | undefined, days: number = 3
       return;
     }
     setLoading(true);
-    fetch(`${API_URL}/billing/credits/usage?workspaceId=${workspaceId}&days=${days}`, {
-      headers: getAuthHeaders(),
-    })
+    fetch(
+      `${API_URL}/billing/credits/usage?workspaceId=${workspaceId}&days=${days}`,
+      {
+        headers: getAuthHeaders(),
+      },
+    )
       .then((r) => r.json())
       .then((res) => setData(res.data ?? null))
       .catch(console.error)
@@ -174,7 +183,9 @@ export function useCurrentPlan(workspaceId: string | undefined) {
     }
     // Get workspace to determine current plan
     const token =
-      typeof window !== "undefined" ? localStorage.getItem("doable_access_token") : null;
+      typeof window !== "undefined"
+        ? localStorage.getItem("doable_access_token")
+        : null;
     fetch(`${API_URL}/workspaces/${workspaceId}`, {
       headers: {
         "Content-Type": "application/json",
@@ -217,12 +228,17 @@ export function useSubscription(workspaceId: string | undefined) {
 }
 
 export function useBillingActions(workspaceId: string | undefined) {
+  const ui = useUiText();
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const clearError = useCallback(() => setError(null), []);
 
-  const subscribe = async (planId: string, interval: "monthly" | "yearly" = "monthly") => {
+  const subscribe = async (
+    planId: string,
+    interval: "monthly" | "yearly" = "monthly",
+  ) => {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
@@ -234,16 +250,16 @@ export function useBillingActions(workspaceId: string | undefined) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to start checkout");
+        setError(data.error || ui("Failed to start checkout"));
         return;
       }
       if (data.data?.url) {
         window.location.href = data.data.url;
       } else {
-        setError("Checkout URL not available. Please try again.");
+        setError(ui("Checkout URL not available. Please try again."));
       }
     } catch {
-      setError("Network error. Please try again.");
+      setError(ui("Network error. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -261,16 +277,16 @@ export function useBillingActions(workspaceId: string | undefined) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to open billing portal");
+        setError(data.error || ui("Failed to open billing portal"));
         return;
       }
       if (data.data?.url) {
         window.location.href = data.data.url;
       } else {
-        setError("Portal URL not available. Please try again.");
+        setError(ui("Portal URL not available. Please try again."));
       }
     } catch {
-      setError("Network error. Please try again.");
+      setError(ui("Network error. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -288,16 +304,16 @@ export function useBillingActions(workspaceId: string | undefined) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to start top-up checkout");
+        setError(data.error || ui("Failed to start top-up checkout"));
         return;
       }
       if (data.data?.url) {
         window.location.href = data.data.url;
       } else {
-        setError("Top-up URL not available. Please try again.");
+        setError(ui("Top-up URL not available. Please try again."));
       }
     } catch {
-      setError("Network error. Please try again.");
+      setError(ui("Network error. Please try again."));
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { cn } from "@/lib/utils";
 import { Zap } from "lucide-react";
@@ -13,14 +14,20 @@ interface IntegrationCardProps {
   onConnect: (item: CatalogItem) => void;
 }
 
-export function IntegrationCard({ item, onSelect, onConnect }: IntegrationCardProps) {
-  const categoryLabel = CATEGORY_LABELS[item.category] ?? item.category;
+export function IntegrationCard({
+  item,
+  onSelect,
+  onConnect,
+}: IntegrationCardProps) {
+  const ui = useUiText();
+
+  const categoryLabel = ui(CATEGORY_LABELS[item.category]) ?? item.category;
 
   return (
     <div
       className={cn(
         "group relative flex flex-col rounded-xl border bg-background p-4 transition-all",
-        "hover:border-foreground/20 hover:shadow-sm cursor-pointer"
+        "hover:border-foreground/20 hover:shadow-sm cursor-pointer",
       )}
       onClick={() => onSelect(item)}
     >
@@ -56,16 +63,18 @@ export function IntegrationCard({ item, onSelect, onConnect }: IntegrationCardPr
         <span
           className={cn(
             "mt-1 h-2 w-2 rounded-full shrink-0",
-            item.connected ? "bg-emerald-500" : "bg-muted-foreground/30"
+            item.connected ? "bg-emerald-500" : "bg-muted-foreground/30",
           )}
-          title={item.connected ? "Connected" : "Available"}
+          title={item.connected ? ui("Connected") : ui("Available")}
         />
       </div>
 
       {/* Name + Description */}
-      <h3 className="text-sm font-semibold truncate mb-1">{item.displayName}</h3>
+      <h3 className="text-sm font-semibold truncate mb-1">
+        {item.displayName}
+      </h3>
       <p className="text-xs text-muted-foreground line-clamp-2 mb-3 min-h-[2rem]">
-        {item.description || "No description available."}
+        {item.description || ui("No description available.")}
       </p>
 
       {/* Footer: Category + Actions */}
@@ -102,10 +111,10 @@ export function IntegrationCard({ item, onSelect, onConnect }: IntegrationCardPr
             "w-full rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
             item.connected
               ? "border border-input text-foreground hover:bg-accent"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-primary text-primary-foreground hover:bg-primary/90",
           )}
         >
-          {item.connected ? "Manage" : "Connect"}
+          {item.connected ? ui("Manage") : ui("Connect")}
         </button>
       </div>
     </div>

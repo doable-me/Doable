@@ -1,8 +1,18 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState } from "react";
 import type { ApiGitHubCopilotAccount } from "@/lib/api";
-import { Github, Plus, Trash2, CheckCircle, XCircle, Loader2, RefreshCw, Star } from "lucide-react";
+import {
+  Github,
+  Plus,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  RefreshCw,
+  Star,
+} from "lucide-react";
 
 interface Props {
   workspaceId: string | null;
@@ -15,7 +25,18 @@ interface Props {
   onSetActive: (id: string | null) => Promise<void>;
 }
 
-export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccountId, onAdd, onRemove, onValidate, onSetActive }: Props) {
+export function GitHubAccountsTab({
+  workspaceId,
+  accounts,
+  loading,
+  activeAccountId,
+  onAdd,
+  onRemove,
+  onValidate,
+  onSetActive,
+}: Props) {
+  const ui = useUiText();
+
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState("");
   const [token, setToken] = useState("");
@@ -36,7 +57,9 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
       setToken("");
       setShowForm(false);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to add account");
+      setError(
+        err instanceof Error ? err.message : ui("Failed to add account"),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -72,9 +95,14 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">GitHub Copilot Accounts</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            {ui("GitHub Copilot Accounts")}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Connect GitHub accounts with Copilot subscriptions for AI model access.
+            {" "}
+            {ui(
+              "Connect GitHub accounts with Copilot subscriptions for AI model access.",
+            )}{" "}
           </p>
         </div>
         <div className="flex gap-2">
@@ -82,15 +110,13 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
             href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
             className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-colors"
           >
-            <Github className="h-4 w-4" />
-            Connect via OAuth
+            <Github className="h-4 w-4" /> {ui("Connect via OAuth")}{" "}
           </a>
           <button
             onClick={() => setShowForm(!showForm)}
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
           >
-            <Plus className="h-4 w-4" />
-            Add Token
+            <Plus className="h-4 w-4" /> {ui("Add Token")}{" "}
           </button>
         </div>
       </div>
@@ -99,33 +125,34 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
         <div className="rounded-lg border border-border bg-card p-4 space-y-3">
           <input
             type="text"
-            placeholder="Label (e.g. 'Work Account')"
+            placeholder={ui("Label (e.g. 'Work Account')")}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
           />
           <input
             type="password"
-            placeholder="GitHub Personal Access Token"
+            placeholder={ui("GitHub Personal Access Token")}
             value={token}
             onChange={(e) => setToken(e.target.value)}
             className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500"
           />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-400">{ui(error)}</p>}
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowForm(false)}
               className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {" "}
+              {ui("Cancel")}{" "}
             </button>
             <button
               onClick={handleAdd}
               disabled={submitting || !label.trim() || !token.trim()}
               className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50"
             >
-              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
-              Add Account
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}{" "}
+              {ui("Add Account")}{" "}
             </button>
           </div>
         </div>
@@ -134,9 +161,14 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
       {accounts.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-12 text-center">
           <Github className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
-          <p className="text-sm text-muted-foreground">No GitHub accounts connected yet.</p>
+          <p className="text-sm text-muted-foreground">
+            {ui("No GitHub accounts connected yet.")}
+          </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Connect a GitHub account with a Copilot subscription to use Copilot models.
+            {" "}
+            {ui(
+              "Connect a GitHub account with a Copilot subscription to use Copilot models.",
+            )}{" "}
           </p>
         </div>
       ) : (
@@ -153,21 +185,30 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                    isActive ? "bg-brand-600/20" : "bg-secondary"
-                  }`}>
-                    <Github className={`h-5 w-5 ${isActive ? "text-brand-400" : "text-muted-foreground"}`} />
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                      isActive ? "bg-brand-600/20" : "bg-secondary"
+                    }`}
+                  >
+                    <Github
+                      className={`h-5 w-5 ${isActive ? "text-brand-400" : "text-muted-foreground"}`}
+                    />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground">{account.label}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {account.label}
+                      </p>
                       {isActive && (
                         <span className="rounded-full bg-brand-600/20 px-2 py-0.5 text-[10px] font-semibold text-brand-300 uppercase tracking-wider">
-                          Active
+                          {" "}
+                          {ui("Active")}{" "}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">@{account.github_login}</p>
+                    <p className="text-xs text-muted-foreground">
+                      @{account.github_login}
+                    </p>
                   </div>
                   {account.is_valid ? (
                     <CheckCircle className="h-4 w-4 text-green-400" />
@@ -184,20 +225,24 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                         ? "bg-brand-600/20 text-brand-300 hover:bg-brand-600/30"
                         : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                     }`}
-                    title={isActive ? "Remove as default" : "Set as default"}
+                    title={
+                      isActive ? ui("Remove as default") : ui("Set as default")
+                    }
                   >
                     {settingActive === account.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <Star className={`h-3.5 w-3.5 ${isActive ? "fill-brand-400" : ""}`} />
+                      <Star
+                        className={`h-3.5 w-3.5 ${isActive ? "fill-brand-400" : ""}`}
+                      />
                     )}
-                    {isActive ? "Default" : "Set default"}
+                    {isActive ? ui("Default") : ui("Set default")}
                   </button>
                   <button
                     onClick={() => handleValidate(account.id)}
                     disabled={validating === account.id}
                     className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                    title="Test connection"
+                    title={ui("Test connection")}
                   >
                     {validating === account.id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -208,7 +253,7 @@ export function GitHubAccountsTab({ workspaceId, accounts, loading, activeAccoun
                   <button
                     onClick={() => onRemove(account.id)}
                     className="rounded p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
-                    title="Remove account"
+                    title={ui("Remove account")}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

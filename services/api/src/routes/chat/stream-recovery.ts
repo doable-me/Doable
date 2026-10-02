@@ -1,3 +1,5 @@
+import { cycleFingerprint } from "./execution-state.js";
+import { classifyProviderError } from "../../ai/provider-error.js";
 /**
  * Stream recovery: auto-continue (stall detection) and empty-response retry.
  */
@@ -5,96 +7,126 @@ import type { SSEStreamingApi } from "hono/streaming";
 import type { ChatStreamState } from "./types.js";
 import type { CopilotEngine } from "../../ai/providers/copilot.js";
 import { mapEventToSSE, ChannelTokenRouter } from "../../ai/sse-mapper.js";
-import { stripServerPaths } from "../../ai/tool-messages.js";
 import { recordToolEventForTrace } from "./tool-event-bookkeeping.js";
 
-const MAX_AUTO_CONTINUE = 6;
-const MAX_READ_ONLY_CYCLES = 3;
-// BUG-VISUAL-EDIT-001: Visual Edit prompts arrive with full selector
-// context, so the model SHOULD edit immediately. But it sometimes does up
-// to 3-4 reads (locate the JSX, peek related components) before committing
-// — bumping the stall ceiling from 3 to 5 keeps the watchdog protective on
-// truly stuck turns while not killing the legitimate visual-edit "explore
-// then edit" pattern.
-const MAX_READ_ONLY_CYCLES_VISUAL_EDIT = 5;
-const FILE_WRITE_TOOLS = new Set(["create_file", "edit_file", "write_file", "create", "edit", "write"]);
-const READ_TOOLS = new Set(["read_file", "list_files", "search_files", "read", "list", "search"]);
-
-/**
- * Returns true when the user message is a Visual Edit turn (the editor
- * auto-prefixes `[Visual Edit] For the <tag> element with class "..."
- * (selector: ...): <user instruction>`). These turns ALWAYS want a build
- * intent regardless of what verb the user used ("animate this text",
- * "make it red", etc.) — the selector + element tag is implicit context
- * that the request is to MUTATE the element.
- */
-function isVisualEditPrompt(userMessage: string | undefined): boolean {
-  if (!userMessage) return false;
-  return /^\s*\[Visual Edit\]/i.test(userMessage);
+export interface RecoveryPipeline {
+  process: (event: import("@github/copilot-sdk").SessionEvent) => void;
+  flush: () => Promise<void>;
 }
-/**
- * MCP tools that produce a finished artifact (UI resource, download, etc.)
- * — calling one of these IS the deliverable, so auto-continue must NOT
- * pester the model to "continue building" afterwards. Match by suffix so
- * connector-prefixed names (mcp_<connector>_<tool>) are covered too.
- */
-// Only RENDERERS belong here — not the "create_*" kick-off tools. The kick-off
-// returns a status card that injects a BUILD_* prompt for the model's NEXT
-// turn; the actual artifact (xlsx / pdf / slides / md) is produced by the
-// matching build_* / render_*. Listing the kick-offs here made auto-continue
-// declare "deliverable produced" after the status card alone, so the model
-// never reached build_* and the project's index.html / App.tsx stayed at the
-// default Vite scaffold (no SheetJS viewer, no .xlsx file, no preview).
-const PRODUCTIVE_TOOL_SUFFIXES = [
-  // presentation-builder
-  "build_deck",
-  "render_deck",
-  "render_pptx",
-  "render_web_slides",
-  "build_presentation",
-  // markdown-builder
-  "build_markdown",
-  // spreadsheet-builder
-  "build_spreadsheet",
-  // pdf-builder
-  "build_pdf",
-];
-function isProductiveToolName(name: string | undefined): boolean {
-  if (!name) return false;
-  return PRODUCTIVE_TOOL_SUFFIXES.some((s) => name === s || name.endsWith(`_${s}`) || name.endsWith(`.${s}`));
-}
-
-/**
- * Heuristically decide whether the user actually asked the AI to BUILD/MODIFY
- * something. Auto-continue exists to nudge the model when it explored but
- * forgot to write files for a build request — it must NOT fire when the user
- * only asked a read-only / informational question ("read X", "what does Y do?",
- * "show me Z"), because then the model is correctly done after one read.
- */
-function userWantsBuild(userMessage: string | undefined): boolean {
-  if (!userMessage) return true; // unknown intent → preserve old behaviour
-  // BUG-VISUAL-EDIT-001: Visual Edit prompts ALWAYS want a build — the
-  // selector + element tag are implicit "mutate this" context regardless
-  // of which verb the user used ("animate this", "make it red", etc.).
-  if (isVisualEditPrompt(userMessage)) return true;
-  const m = userMessage.toLowerCase().trim();
-  if (m.length === 0) return true;
-  // Strong informational/read-only signals — short messages dominated by these
-  // verbs are almost never build requests.
-  const readOnly = /\b(read|show|tell me|what is|what does|what's|explain|describe|summari[sz]e|list|find|search|check|inspect|look at|view|open|display|print|how does|why does|count)\b/;
-  const buildIntent = /\b(build|create|make|add|implement|fix|update|modify|change|edit|write|generate|scaffold|refactor|deploy|publish|install|setup|set up|configure|design|develop|extend|enhance|improve|delete|remove|rename|move)\b/;
-  const hasBuild = buildIntent.test(m);
-  const hasRead = readOnly.test(m);
-  if (hasBuild) return true;
-  if (hasRead) return false;
-  // No clear signal — be conservative: if the AI already invoked tools (MCP
-  // calls, search, etc.) and is otherwise "done", forcing a "continue building"
-  // turn is far worse than under-continuing. Only auto-continue when the user
-  // gave a long, descriptive product brief (>= 25 words) which implies a build.
-  return m.split(/\s+/).length >= 25;
+/** Standalone adapter for callers without the main chat pipeline. Production
+ * supplies the SAME processor/flush used by the initial stream. */
+function recoveryPipeline(
+  stream: SSEStreamingApi,
+  state: ChatStreamState,
+  provided?: RecoveryPipeline,
+): RecoveryPipeline {
+  if (provided) return provided;
+  const router = new ChannelTokenRouter();
+  let rawLength = 0;
+  const emit = (type: string, data: unknown) => {
+    stream.writeSSE({ data: JSON.stringify({ type, data }) }).catch(() => {});
+  };
+  const chunks = (items: ReturnType<ChannelTokenRouter["process"]>) => {
+    for (const chunk of items) {
+      if (chunk.type === "text") state.assistantContent += chunk.content;
+      else if (chunk.type === "thinking")
+        state.assistantThinking += chunk.content;
+      emit(chunk.type === "text" ? "text_delta" : chunk.type, chunk.content);
+    }
+  };
+  return {
+    process(event) {
+      state.usageCollector?.onUsageEvent(event);
+      state.traceCollector?.onSdkEvent(event as Record<string, unknown>);
+      const toolEvent = recordToolEventForTrace(
+        state,
+        event as Record<string, unknown>,
+        () => {},
+      );
+      if (toolEvent.suppressDisplay) return;
+      const e = event as unknown as {
+        type: string;
+        data?: Record<string, unknown>;
+      };
+      if (e.type === "assistant.message") {
+        const full = String(e.data?.content ?? "");
+        chunks(router.process(full.slice(rawLength)));
+        rawLength = 0;
+        return;
+      }
+      const mapped = mapEventToSSE(event, { preserveThinkingMarkers: true });
+      if (!mapped || mapped.type === "done") return;
+      if (mapped.type === "text_delta" && typeof mapped.data === "string") {
+        rawLength += mapped.data.length;
+        chunks(router.process(mapped.data));
+        return;
+      }
+      if (mapped.type === "error") {
+        state.runOutcome ??= "error";
+        state.traceCollector?.onError(String(mapped.data), "recovery_provider");
+      }
+      if (mapped.type === "thinking" && typeof mapped.data === "string")
+        state.assistantThinking += mapped.data;
+      emit(mapped.type, mapped.data);
+    },
+    async flush() {
+      chunks(router.flush());
+    },
+  };
 }
 
-/** Run auto-continue loops if AI explored but wrote 0 files. */
+/** A stalled provider may leave a live SDK request behind. Cancel it first,
+ * then resume once from the existing ledger; never replay the original request.
+ * Unknown tool outcomes are deliberately ineligible for automatic resubmission. */
+export async function handleTimeoutRecovery(
+  stream: SSEStreamingApi,
+  state: ChatStreamState,
+  engine: CopilotEngine,
+  sessionId: string,
+  providedPipeline?: RecoveryPipeline,
+): Promise<void> {
+  if (!state.deferredError || state.timeoutRecoveryAttempted ||
+      (state.deferredErrorCode ?? classifyProviderError(state.deferredError)) !== "TIMEOUT") return;
+  state.timeoutRecoveryAttempted = true;
+  try {
+    await engine.quiesceSession(sessionId);
+  } catch (error) {
+    state.runOutcome ??= "error";
+    state.traceCollector?.onError(String(error), "timeout_cancellation");
+    return;
+  }
+  if (state.runOutcome || state.awaitingMcpWidget || state.awaitingSupabaseProvision ||
+      state.awaitingIntegrationConnect || state.taskReport?.status === "waiting_for_input" ||
+      state.taskReport?.status === "completed" ||
+      state.assistantToolCalls.some(tool => tool.status !== "completed" &&
+        !(tool.status === "failed" && tool.rejectedWithoutEffects === true))) return;
+  state.deferredError = undefined;
+  state.deferredErrorCode = undefined;
+  state.taskReport = undefined;
+  state.recoveryCycle = (state.recoveryCycle ?? 0) + 1;
+  state.traceCollector?.onAutoContinue(1, "timeout_resume_after_cancellation");
+  await stream.writeSSE({ data: JSON.stringify({ type: "status", data: {
+    phase: "continuing", message: "Checking task progress...",
+  } }) });
+  const pipeline = recoveryPipeline(stream, state, providedPipeline);
+  try {
+    await engine.sendMessage(sessionId,
+      "The previous provider request timed out and has been cancelled. Resume the ORIGINAL user request from the existing conversation and completed tool results. Do not repeat completed changes or external actions. Check existing artifacts before changing them. Work in small verifiable increments. Preserve read-only intent: only modify what the user authorized. Call report_task_status; if input is needed, report waiting_for_input and ask; if fulfilled, report completed and explain the result.",
+      undefined, pipeline.process);
+    await pipeline.flush();
+    // A second timeout must not leave a request running or enter another retry.
+    if (state.deferredError) {
+      await engine.quiesceSession(sessionId);
+      state.runOutcome ??= "error";
+    }
+  } catch (error) {
+    state.runOutcome ??= "error";
+    state.deferredError = error instanceof Error ? error.message : String(error);
+  }
+}
+
+/** Recovery never infers authorization from translated prose. The model reports
+ * intent through a validated tool; unknown clients get one reconciliation round. */
 export async function handleAutoContinue(
   stream: SSEStreamingApi,
   state: ChatStreamState,
@@ -103,196 +135,108 @@ export async function handleAutoContinue(
   projectId: string,
   mode: string,
   recordAssistantToolCall: (name?: string, args?: unknown) => void,
-  userMessage?: string,
+  _userMessage?: string,
+  providedPipeline?: RecoveryPipeline,
 ): Promise<void> {
-  if (mode === "plan") return;
-
-  // If the user's request was clearly informational ("read X", "what is Y?"),
-  // don't push the model to start writing files. This was the source of the
-  // "Stall: same files read in consecutive continues" error.
-  if (!userWantsBuild(userMessage)) {
-    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — read-only user intent`);
+  if (
+    mode === "plan" ||
+    mode === "chat" ||
+    state.runOutcome ||
+    state.deferredError
+  )
     return;
-  }
-
-  // If an MCP interactive widget was shown (e.g. format picker), the session
-  // is intentionally waiting for a user click — do NOT auto-continue, that
-  // would force the model to bypass the picker and start generating files.
-  if (state.awaitingMcpWidget) {
-    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — awaiting MCP widget click`);
-    return;
-  }
-
-  // If `provision_supabase` opened the Connect-Supabase dialog this turn, the
-  // DB connection is not live until the user completes it. Auto-continuing here
-  // nudges the model to keep building while Supabase is still unconnected — at
-  // which point the race-guard blocks @supabase/supabase-js but NOT @doable/data,
-  // so the model falls back to the per-app PGlite DB and builds the whole app in
-  // the wrong database. End the turn and wait for the editor's "Supabase
-  // provisioning complete" re-prompt, which fires once the connection exists.
-  if (state.awaitingSupabaseProvision) {
-    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — awaiting Supabase provision dialog`);
-    return;
-  }
-
-  // If `request_integration` opened the Connect-integration dialog this turn,
-  // the third-party credential is not live until the user completes the popup.
-  // Auto-continuing here nudges the model to keep building against an empty
-  // <connected-integrations> block — at which point it guesses actionNames
-  // (e.g. `text_to_speech` instead of `elevenlabs-text-to-speech`) and the
-  // generated app throws at runtime. End the turn; the fresh manifest is
-  // picked up on the next user message.
-  if (state.awaitingIntegrationConnect) {
-    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue skipped — awaiting integration connect dialog`);
-    return;
-  }
-
-  // BUG-VISUAL-EDIT-001: a Visual Edit turn arrives with full selector
-  // context, so 3 read-only cycles is too tight a ceiling — the model often
-  // legitimately needs 3-4 reads to locate the JSX before committing the
-  // edit. Use the wider cap for these turns; everyone else keeps the old
-  // 3-cycle ceiling.
-  const isVisualEdit = isVisualEditPrompt(userMessage);
-  const readOnlyCycleCeiling = isVisualEdit ? MAX_READ_ONLY_CYCLES_VISUAL_EDIT : MAX_READ_ONLY_CYCLES;
-
-  let autoContinueCount = 0;
-  let prevReadFingerprint = "";
-  let consecutiveReadOnlyCycles = 0;
-
-  while (autoContinueCount < MAX_AUTO_CONTINUE) {
-    const wroteFiles = state.assistantToolCalls.some(
-      (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
-    );
-    const producedArtifact = state.assistantToolCalls.some(
-      (tc) => isProductiveToolName((tc as { name?: string }).name),
-    );
-    if (!state.hadToolCalls || wroteFiles || producedArtifact) break;
-
-    // Stall detection: same-file fingerprinting
-    const toolCallsSinceLastContinue = autoContinueCount === 0
-      ? state.assistantToolCalls
-      : state.assistantToolCalls.slice(-20);
-    const readFiles = toolCallsSinceLastContinue
-      .filter((tc) => READ_TOOLS.has((tc as { name?: string }).name ?? ""))
-      .map((tc) => {
-        const args = tc as Record<string, unknown>;
-        return String(args.path ?? args.file_path ?? args.filePath ?? args.name ?? "");
-      })
-      .sort()
-      .join("|");
-
-    if (autoContinueCount > 0 && readFiles === prevReadFingerprint && readFiles !== "") {
-      state.traceCollector?.onError(`Stall: same files read in consecutive continues: ${readFiles.slice(0, 100)}`, "auto_continue_fingerprint");
-      console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — same files read`);
-      await stream.writeSSE({
-        data: JSON.stringify({
-          type: "error",
-          data: "The AI appears to be stuck reading the same files without making progress. Try rephrasing your request or check the preview for errors.",
-        }),
-      }).catch(() => {});
-      break;
+  if (!state.hadToolCalls) return;
+  const pipeline = recoveryPipeline(stream, state, providedPipeline);
+  let previous = cycleFingerprint(state, state.recoveryCycle ?? 0);
+  let unchanged = 0;
+  const fail = async (outcome: "stalled" | "error", message: string) => {
+    if (state.runOutcome === "aborted") return;
+    state.runOutcome = outcome;
+    state.traceCollector?.onError(message, `recovery_${outcome}`);
+    await stream
+      .writeSSE({ data: JSON.stringify({ type: "error", data: message }) })
+      .catch(() => {});
+  };
+  for (let round = 1; round <= 6; round++) {
+    if (
+      state.runOutcome ||
+      state.awaitingMcpWidget ||
+      state.awaitingSupabaseProvision ||
+      state.awaitingIntegrationConnect
+    )
+      return;
+    const report = state.taskReport;
+    if (report?.status === "waiting_for_input") {
+      state.runOutcome = "waiting";
+      return;
     }
-    prevReadFingerprint = readFiles;
-
-    consecutiveReadOnlyCycles++;
-    if (consecutiveReadOnlyCycles >= readOnlyCycleCeiling) {
-      state.traceCollector?.onError(`Stall: ${consecutiveReadOnlyCycles} consecutive read-only continues (visualEdit=${isVisualEdit})`, "auto_continue_write_free");
-      console.warn(`[Chat][${projectId.slice(0, 8)}] stall detected — ${consecutiveReadOnlyCycles} read-only continues`);
-      // BUG-VISUAL-EDIT-001: tailor the bail message — Visual Edit users
-      // already gave a precise selector, so "provide more guidance" is
-      // misleading; the real problem is the model's planning.
-      const bailMessage = isVisualEdit
-        ? "I couldn't apply the visual edit automatically. Try rephrasing — for example, name the exact change ('add a fade-in animation', 'change the color to red')."
-        : "The AI has been investigating without making changes. Please provide more specific guidance, or check the preview console for errors.";
-      await stream.writeSSE({
-        data: JSON.stringify({ type: "error", data: bailMessage }),
-      }).catch(() => {});
-      break;
-    }
-
-    autoContinueCount++;
-    state.traceCollector?.onAutoContinue(autoContinueCount, `read-only cycle ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
-    console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue attempt ${autoContinueCount}/${MAX_AUTO_CONTINUE}`);
-
+    if (report?.status === "completed") return;
+    state.recoveryCycle = (state.recoveryCycle ?? 0) + 1;
+    state.taskReport = undefined; // Never reuse the previous cycle's completion report.
+    state.traceCollector?.onAutoContinue(
+      round,
+      "structured_task_reconciliation",
+    );
+    await stream.writeSSE({
+      data: JSON.stringify({
+        type: "status",
+        data: { phase: "continuing", message: "Checking task progress..." },
+      }),
+    });
     try {
-      await stream.writeSSE({
-        data: JSON.stringify({
-          type: "status",
-          data: { phase: "continuing", message: `Continuing to build\u2026 (step ${autoContinueCount})` },
-        }),
-      });
-      // BUG-VISUAL-EDIT-001: when a Visual Edit turn enters auto-continue,
-      // use a sharper, selector-aware nudge instead of the generic "create
-      // all the files" prompt. The Visual Edit user already specified the
-      // exact element; the model just needs to commit to an `edit_file`
-      // call now.
-      const continuePrompt = isVisualEdit
-        ? "You have the selector and the user's intent. Make the edit NOW with edit_file — modify the JSX/HTML for that exact element only. Do not read any more files. Apply the change in a single edit_file call. Reply with one short sentence describing what you changed."
-        : "You explored the project and installed packages but haven't created any files yet. Continue building NOW — create all the files the user asked for. Do NOT stop until the app is working in the preview.";
       await engine.sendMessage(
         sessionId,
-        continuePrompt,
+        "Reconcile the ORIGINAL user request and the actual tool results. Call report_task_status. If the request was read-only, do not make changes. If it is fulfilled, report completed and stop. If user input is needed, report waiting_for_input and ask. Only continue work explicitly requested and still unfinished, preserving existing results. For an approved plan use get_plan and report verified step outcomes. Never recreate completed work just to produce a file write.",
         undefined,
-        (evt: import("@github/copilot-sdk").SessionEvent) => {
-          if (state.usageCollector) state.usageCollector.onUsageEvent(evt);
-          state.traceCollector?.onSdkEvent(evt as Record<string, unknown>);
-          // BUG-TRACE-001: route tool start/end through the same helper the
-          // main turn uses, so auto-continue's tool calls (read_file /
-          // edit_file etc.) increment `tool_call_count` and produce
-          // tool_start/tool_end trace events.  Previously this inline
-          // callback only matched `tool.execution_start` /
-          // `tool.execution_complete` / `tool.completed` — missing
-          // `tool.running` and `external_tool.completed`, which silently
-          // dropped MCP-channel tool events from the trace.
-          recordToolEventForTrace(state, evt as Record<string, unknown>, recordAssistantToolCall);
-          const sseData = mapEventToSSE(evt as Record<string, unknown>);
-          if (!sseData) return;
-          state.lastRealEventAt = Date.now();
-          // Suppress session.error during auto-continue — the loop handles recovery
-          if (sseData.type === "error") return;
-          if (sseData.type === "text_delta") {
-            const cleaned = typeof sseData.data === "string" ? sseData.data : "";
-            if (cleaned) {
-              state.assistantContent += cleaned;
-              stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: cleaned }) }).catch(() => {});
-            }
-          } else if (sseData.type === "thinking") {
-            const t = typeof sseData.data === "string" ? sseData.data : "";
-            if (t) state.assistantThinking += t;
-            stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
-          } else if (sseData.type === "tool_delta") {
-            state.sawToolDelta = true;
-            stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
-          } else {
-            stream.writeSSE({ data: JSON.stringify(sseData) }).catch(() => {});
-          }
-        },
+        pipeline.process,
       );
-      console.log(`[Chat][${projectId.slice(0, 8)}] auto-continue ${autoContinueCount} done`);
-    } catch (err) {
-      console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue ${autoContinueCount} failed:`, err instanceof Error ? err.message : err);
-      break;
+      await pipeline.flush();
+      if (state.deferredError) {
+        await fail("error", state.deferredError);
+        state.deferredError = undefined;
+        return;
+      }
+    } catch (error) {
+      await fail(
+        "error",
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
+    }
+    if (state.runOutcome) return;
+    const nextReport = state.taskReport as
+      | import("./execution-state.js").TaskReport
+      | undefined;
+    if (nextReport?.status === "completed") return;
+    if (nextReport?.status === "waiting_for_input") {
+      state.runOutcome = "waiting";
+      return;
+    }
+    if (!nextReport) {
+      await fail(
+        "stalled",
+        "Task status could not be confirmed. Please resume the task or choose a model with tool calling support.",
+      );
+      return;
+    }
+    const current = cycleFingerprint(state, state.recoveryCycle);
+    unchanged = !current || current === previous ? unchanged + 1 : 0;
+    previous = current;
+    if (unchanged >= 2) {
+      await fail(
+        "stalled",
+        "The task made no new progress across repeated attempts. You can resume it without losing completed steps.",
+      );
+      return;
     }
   }
-
-  // Safety ceiling notification
-  if (autoContinueCount >= MAX_AUTO_CONTINUE) {
-    const stillNoFiles = !state.assistantToolCalls.some(
-      (tc) => FILE_WRITE_TOOLS.has((tc as { name?: string }).name ?? ""),
-    );
-    if (stillNoFiles) {
-      console.warn(`[Chat][${projectId.slice(0, 8)}] auto-continue hit ceiling`);
-      await stream.writeSSE({
-        data: JSON.stringify({
-          type: "error",
-          data: "The AI needed more steps than expected. It may be blocked by a configuration issue. Check the preview for errors or try a simpler request.",
-        }),
-      }).catch(() => {});
-    }
-  }
+  await fail(
+    "stalled",
+    "The task reached the continuation limit. Completed work is preserved; resume to continue.",
+  );
 }
 
-/** Retry once if model returned completely empty (0 content, 0 thinking, 0 tool calls). */
+/** Empty-response retry uses the same event and tool ledger as every other cycle. */
 export async function handleEmptyResponseRetry(
   stream: SSEStreamingApi,
   state: ChatStreamState,
@@ -301,102 +245,67 @@ export async function handleEmptyResponseRetry(
   projectId: string,
   augmentedContent: string,
   fileAttachments: Array<{ type: "file"; path: string; displayName?: string }>,
+  providedPipeline?: RecoveryPipeline,
 ): Promise<void> {
-  if (state.assistantContent || state.assistantThinking || state.hadToolCalls) return;
-
-  // If we already have a deferred error that indicates rate limiting,
-  // surface it immediately — retrying would just hit the same limit.
-  if (state.deferredError) {
-    const deferredLower = state.deferredError.toLowerCase();
-    const isRateLimit = deferredLower.includes("rate limit") || deferredLower.includes("429") || deferredLower.includes("quota") || deferredLower.includes("too many requests");
-    if (isRateLimit) {
-      console.warn(`[Chat][${projectId.slice(0, 8)}] empty response with rate limit error — skipping retry, surfacing error`);
-      await stream.writeSSE({
-        data: JSON.stringify({ type: "error", data: state.deferredError }),
-      });
-      state.deferredError = undefined; // consumed — don't emit again in send-handler
-      return;
-    }
+  if (
+    state.runOutcome ||
+    state.timeoutRecoveryAttempted ||
+    state.assistantContent ||
+    state.assistantThinking ||
+    state.hadToolCalls
+  )
+    return;
+  const blocked = ["RATE_LIMIT", "QUOTA", "AUTH"].includes(
+    state.deferredErrorCode ?? classifyProviderError(state.deferredError),
+  );
+  if (blocked) {
+    state.runOutcome = "error";
+    await stream.writeSSE({
+      data: JSON.stringify({ type: "error", data: state.deferredError }),
+    });
+    state.deferredError = undefined;
+    return;
   }
-
-  console.warn(`[Chat][${projectId.slice(0, 8)}] empty response — auto-retrying once`);
+  const priorError = state.deferredError;
+  state.deferredError = undefined;
+  state.deferredErrorCode = undefined;
+  state.recoveryCycle = (state.recoveryCycle ?? 0) + 1;
+  const pipeline = recoveryPipeline(stream, state, providedPipeline);
   await stream.writeSSE({
-    data: JSON.stringify({ type: "status", data: { phase: "retrying", message: "Model returned empty — retrying..." } }),
+    data: JSON.stringify({
+      type: "status",
+      data: {
+        phase: "retrying",
+        message: "Model returned empty — retrying...",
+      },
+    }),
   });
-
-  let retryErrorMsg = "";
   try {
-    const retryRouter = new ChannelTokenRouter();
     await engine.sendMessage(
       sessionId,
       augmentedContent,
-      fileAttachments.length > 0 ? fileAttachments : undefined,
-      (retryEvent: import("@github/copilot-sdk").SessionEvent) => {
-        const rType = (retryEvent as Record<string, unknown>).type as string;
-        if (state.usageCollector) state.usageCollector.onUsageEvent(retryEvent);
-        const retrySseData = mapEventToSSE(retryEvent);
-        // Capture error events from retry attempt
-        if (retrySseData?.type === "error" && typeof retrySseData.data === "string") {
-          retryErrorMsg = retrySseData.data;
-        }
-        if (retrySseData?.type === "text_delta") {
-          state.lastRealEventAt = Date.now();
-          const rawDelta = typeof retrySseData.data === "string" ? retrySseData.data : "";
-          for (const chunk of retryRouter.process(rawDelta)) {
-            if (!chunk.content) continue;
-            if (chunk.type === "text") {
-              state.assistantContent += chunk.content;
-              stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) }).catch(() => {});
-            } else if (chunk.type === "thinking") {
-              state.assistantThinking += chunk.content;
-              stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) }).catch(() => {});
-            } else {
-              state.sawToolDelta = true;
-              stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) }).catch(() => {});
-            }
-          }
-        } else if (retrySseData?.type === "thinking") {
-          state.lastRealEventAt = Date.now();
-          const td = typeof retrySseData.data === "string" ? retrySseData.data : "";
-          state.assistantThinking += td;
-          stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(td) }) }).catch(() => {});
-        } else if (retrySseData && retrySseData.type !== "done" && retrySseData.type !== "error") {
-          state.lastRealEventAt = Date.now();
-          if (retrySseData.type === "tool_call" || retrySseData.type === "tool_result") state.hadToolCalls = true;
-          stream.writeSSE({ data: JSON.stringify(retrySseData) }).catch(() => {});
-        }
-      },
+      fileAttachments.length ? fileAttachments : undefined,
+      pipeline.process,
     );
-    for (const chunk of retryRouter.flush()) {
-      if (!chunk.content) continue;
-      if (chunk.type === "text") {
-        state.assistantContent += chunk.content;
-        await stream.writeSSE({ data: JSON.stringify({ type: "text_delta", data: chunk.content }) });
-      } else if (chunk.type === "thinking") {
-        state.assistantThinking += chunk.content;
-        await stream.writeSSE({ data: JSON.stringify({ type: "thinking", data: stripServerPaths(chunk.content) }) });
-      } else {
-        state.sawToolDelta = true;
-        await stream.writeSSE({ data: JSON.stringify({ type: "tool_delta", data: chunk.content }) });
-      }
-    }
-    console.log(`[Chat][${projectId.slice(0, 8)}] retry result — content: ${state.assistantContent.length}, thinking: ${state.assistantThinking.length}, tools: ${state.hadToolCalls}`);
-  } catch (retryErr) {
-    const errDetail = retryErr instanceof Error ? retryErr.message : String(retryErr);
-    console.warn(`[Chat][${projectId.slice(0, 8)}] retry failed:`, errDetail);
-    if (!retryErrorMsg) retryErrorMsg = errDetail;
+    await pipeline.flush();
+  } catch (error) {
+    state.runOutcome ??= "error";
+    state.deferredError =
+      error instanceof Error ? error.message : String(error);
   }
-
-  // If STILL empty, inform the user with the actual error details
-  if (!state.assistantContent && !state.assistantThinking && !state.hadToolCalls) {
-    // Prefer: deferred error from event-processor > error from retry > generic fallback
-    const actualError = state.deferredError || retryErrorMsg || "";
-    const errorMessage = actualError
-      ? `AI provider error: ${actualError}`
-      : "The AI model returned an empty response. This may be a temporary provider issue — try again in a moment, or switch to a different model in AI Settings.";
+  if (
+    state.deferredError ||
+    (!state.assistantContent && !state.assistantThinking && !state.hadToolCalls)
+  ) {
+    state.runOutcome ??= "error";
+    const message =
+      state.deferredError ??
+      priorError ??
+      "The AI model returned an empty response. Please try again or choose a different model.";
+    state.traceCollector?.onError(message, "empty_response_retry");
     await stream.writeSSE({
-      data: JSON.stringify({ type: "error", data: errorMessage }),
+      data: JSON.stringify({ type: "error", data: message }),
     });
-    if (state.deferredError) state.deferredError = undefined; // consumed
+    state.deferredError = undefined;
   }
 }

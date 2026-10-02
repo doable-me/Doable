@@ -1,23 +1,28 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
 import type { Attachment } from "@/hooks/use-attachments";
 import { API_BASE, generateId } from "./use-chat-types";
-import type { SupabaseProvisionRequest, PendingIntegrationRequest } from "./use-chat-types";
+import type {
+  SupabaseProvisionRequest,
+  PendingIntegrationRequest,
+} from "./use-chat-types";
 import { dispatchSSEEvent, type SSEContext } from "./use-chat-sse";
 import { useChatLifecycle } from "./use-chat-lifecycle";
-import {
-  getStaleThreshold,
-  type AgentPhase,
-} from "./use-agent-progress";
+import { getStaleThreshold, type AgentPhase } from "./use-agent-progress";
 
-export type { SupabaseProvisionRequest, PendingIntegrationRequest } from "./use-chat-types";
+export type {
+  SupabaseProvisionRequest,
+  PendingIntegrationRequest,
+} from "./use-chat-types";
 
 export function useChat(
   projectId: string | null,
   collabSubscribe?: (handler: (msg: any) => void) => () => void,
 ) {
+  const ui = useUiText();
   const abortRef = useRef<AbortController | null>(null);
   // Track which messageIds originated from THIS client so we don't double-render
   const ownMessageIds = useRef<Set<string>>(new Set());
@@ -63,7 +68,11 @@ export function useChat(
 
   // ─── sendMessage ─────────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (content: string, attachments?: Attachment[], projectFiles?: string[]) => {
+    async (
+      content: string,
+      attachments?: Attachment[],
+      projectFiles?: string[],
+    ) => {
       if (!projectId || !content.trim() || isStreaming) return;
 
       lastUserMessageRef.current = content.trim();
@@ -82,7 +91,8 @@ export function useChat(
           mimeType: a.mimeType,
           preview: a.preview,
         })),
-        projectFiles: projectFiles && projectFiles.length > 0 ? projectFiles : undefined,
+        projectFiles:
+          projectFiles && projectFiles.length > 0 ? projectFiles : undefined,
       };
       addMessage(userMessage);
 
@@ -99,7 +109,10 @@ export function useChat(
       };
       addMessage(assistantMessage);
       setStreaming(true);
-      setActiveAgentProgress({ phase: "thinking", message: "Connecting to AI…" });
+      setActiveAgentProgress({
+        phase: "thinking",
+        message: "Connecting to AI…",
+      });
       clearAgentTimeline();
       currentPhaseRef.current = "thinking";
 
@@ -111,48 +124,59 @@ export function useChat(
         const { getStoredTokens } = await import("@/lib/api");
         const { accessToken } = getStoredTokens();
 
-        const response = await fetch(
-          `${API_BASE}/projects/${projectId}/chat`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-            },
-            body: JSON.stringify({
-              content: content.trim(),
-              // Read mode from store at call time to avoid stale closures
-              // (e.g. approvePlan switches mode to "agent" before calling sendMessage).
-              mode: useEditorStore.getState().mode,
-              attachments: attachments?.map((a) => ({
-                type: a.mimeType,
-                data: a.data,
-                name: a.name,
-              })),
-              projectFiles: projectFiles && projectFiles.length > 0 ? projectFiles : undefined,
-            }),
-            signal: controller.signal,
-          }
-        );
+        const response = await fetch(`${API_BASE}/projects/${projectId}/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({
+            content: content.trim(),
+            // Read mode from store at call time to avoid stale closures
+            // (e.g. approvePlan switches mode to "agent" before calling sendMessage).
+            mode: useEditorStore.getState().mode,
+            attachments: attachments?.map((a) => ({
+              type: a.mimeType,
+              data: a.data,
+              name: a.name,
+            })),
+            projectFiles:
+              projectFiles && projectFiles.length > 0
+                ? projectFiles
+                : undefined,
+          }),
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           const status = response.status;
           if (status === 429) {
-            const retryAfter = parseInt(response.headers.get("retry-after") ?? "30", 10);
+            const retryAfter = parseInt(
+              response.headers.get("retry-after") ?? "30",
+              10,
+            );
             updateMessageFields(assistantId, {
-              agentProgress: { phase: "failed", message: `Rate limit reached. Retry in ${retryAfter}s.` },
+              agentProgress: {
+                phase: "failed",
+                message: `Rate limit reached. Retry in ${retryAfter}s.`,
+              },
               isStreaming: false,
             });
             setStreaming(false);
             setActiveAgentProgress(null);
             return;
           }
-          // Doable AI disabled for this project — surface a clear message in the
+          // Doable disabled for this project — surface a clear message in the
           // chat instead of a generic failure. See doableinfo/doable_ai.md.
           if (status === 503) {
-            const body = await response.json().catch(() => ({} as { code?: string; error?: string; hint?: string }));
+            const body = await response
+              .json()
+              .catch(
+                () => ({}) as { code?: string; error?: string; hint?: string },
+              );
             if (body.code === "AI_DISABLED_FOR_PROJECT") {
-              const message = body.error ?? "Doable AI is disabled for this project.";
+              const message =
+                body.error ?? "Doable is disabled for this project.";
               updateMessageFields(assistantId, {
                 content: body.hint ? `${message} ${body.hint}` : message,
                 agentProgress: { phase: "failed", message },
@@ -168,9 +192,15 @@ export function useChat(
 
         // SSE connection open — update to analysing state
         updateMessageFields(assistantId, {
-          agentProgress: { phase: "thinking", message: "Analyzing your request…" },
+          agentProgress: {
+            phase: "thinking",
+            message: "Analyzing your request…",
+          },
         });
-        setActiveAgentProgress({ phase: "thinking", message: "Analyzing your request…" });
+        setActiveAgentProgress({
+          phase: "thinking",
+          message: "Analyzing your request…",
+        });
         currentPhaseRef.current = "thinking";
 
         const reader = response.body?.getReader();
@@ -296,9 +326,11 @@ export function useChat(
 
                 // Track current phase for adaptive stale threshold
                 if (parsed.type === "tool_call") {
-                  const inferredPhase = useEditorStore.getState()
-                    .messages.find((m) => m.id === assistantId)
-                    ?.agentProgress?.phase ?? "thinking";
+                  const inferredPhase =
+                    useEditorStore
+                      .getState()
+                      .messages.find((m) => m.id === assistantId)?.agentProgress
+                      ?.phase ?? "thinking";
                   currentPhaseRef.current = inferredPhase as AgentPhase;
                 }
 
@@ -306,7 +338,8 @@ export function useChat(
 
                 if (result.textDelta) {
                   // Detect and strip inline_clarification JSON blocks emitted by AI
-                  const clarifyRe = /\{"type"\s*:\s*"inline_clarification"[\s\S]*?\}\s*\}/g;
+                  const clarifyRe =
+                    /\{"type"\s*:\s*"inline_clarification"[\s\S]*?\}\s*\}/g;
                   let delta = result.textDelta;
                   const clarifyMatches = delta.match(clarifyRe);
                   if (clarifyMatches) {
@@ -315,10 +348,18 @@ export function useChat(
                         const parsed = JSON.parse(match);
                         if (parsed.data?.id && parsed.data?.question) {
                           // Dispatch as synthetic SSE through the same context
-                          dispatchSSEEvent({ type: "inline_clarification", data: parsed.data }, sseCtx);
-                          delta = delta.replace(match, "").replace(/```json\n?/g, "").replace(/```\n?/g, "");
+                          dispatchSSEEvent(
+                            { type: "inline_clarification", data: parsed.data },
+                            sseCtx,
+                          );
+                          delta = delta
+                            .replace(match, "")
+                            .replace(/```json\n?/g, "")
+                            .replace(/```\n?/g, "");
                         }
-                      } catch { /* ignore malformed */ }
+                      } catch {
+                        /* ignore malformed */
+                      }
                     }
                   }
                   if (delta.trim()) {
@@ -330,7 +371,9 @@ export function useChat(
                 if (result.thinkingDelta) {
                   thinkingAccumulated += result.thinkingDelta;
                   // Show a curated 1-line preview as the status message
-                  const preview = result.thinkingDelta.replace(/\s+/g, " ").trim();
+                  const preview = result.thinkingDelta
+                    .replace(/\s+/g, " ")
+                    .trim();
                   const statusText =
                     preview.length <= 80
                       ? preview
@@ -368,7 +411,9 @@ export function useChat(
                     message: "This step is taking longer than usual…",
                   },
                 });
-                console.info(`[Chat] Stream quiet for ${Math.round(silentMs / 1000)}s in phase "${phase}" — showing warning`);
+                console.info(
+                  `[Chat] Stream quiet for ${Math.round(silentMs / 1000)}s in phase "${phase}" — showing warning`,
+                );
               }
 
               // Only close if BOTH progress AND heartbeat are both silent
@@ -377,7 +422,9 @@ export function useChat(
                 silentMs > staleThreshold &&
                 heartbeatSilentMs > staleThreshold
               ) {
-                console.warn(`[Chat] Stream stale — no events for ${Math.round(silentMs / 1000)}s in phase "${phase}", closing`);
+                console.warn(
+                  `[Chat] Stream stale — no events for ${Math.round(silentMs / 1000)}s in phase "${phase}", closing`,
+                );
                 clearInterval(fallbackFlushId);
                 if (rafHandle) cancelAnimationFrame(rafHandle);
                 if (accumulated) updateMessage(assistantId, accumulated);
@@ -400,10 +447,16 @@ export function useChat(
           return;
         }
         updateMessageFields(assistantId, {
-          agentProgress: { phase: "failed", message: "Something went wrong. Please try again." },
+          agentProgress: {
+            phase: "failed",
+            message: "Something went wrong. Please try again.",
+          },
         });
         const errorContent = "Sorry, something went wrong. Please try again.";
-        if (!useEditorStore.getState().messages.find((m) => m.id === assistantId)?.content) {
+        if (
+          !useEditorStore.getState().messages.find((m) => m.id === assistantId)
+            ?.content
+        ) {
           updateMessage(assistantId, errorContent);
         }
       } finally {
@@ -427,7 +480,7 @@ export function useChat(
       clearAgentTimeline,
       setSupabaseProvisionRequest,
       setPendingIntegrationRequest,
-    ]
+    ],
   );
 
   // ─── stopStreaming — with cancelled state ─────────────────────────
@@ -443,16 +496,20 @@ export function useChat(
       if (!projectId) return;
       // Capture pending questions BEFORE clearing — needed to map IDs to text
       const pendingQs = useEditorStore.getState().pendingQuestions ?? [];
-      const questionTextById = Object.fromEntries(pendingQs.map((q) => [q.id, q.question]));
+      const questionTextById = Object.fromEntries(
+        pendingQs.map((q) => [q.id, q.question]),
+      );
       useEditorStore.getState().setPendingQuestions(null);
       useEditorStore.getState().setPlanPhase("planning");
       const answerText = Object.entries(answers)
         .filter(([, a]) => a.trim())
         .map(([id, a]) => `${questionTextById[id] ?? id}: ${a}`)
         .join("\n");
-      sendMessage(`Here are my answers:\n${answerText}`);
+      sendMessage(
+        ui("Here are my answers:\n{answers}", { answers: answerText }),
+      );
     },
-    [projectId, sendMessage],
+    [projectId, sendMessage, ui],
   );
 
   // ─── approvePlan ─────────────────────────────────────────────────
@@ -462,7 +519,7 @@ export function useChat(
       try {
         const { getStoredTokens } = await import("@/lib/api");
         const { accessToken } = getStoredTokens();
-        await fetch(`${API_BASE}/projects/${projectId}/plan/approve`, {
+        const response = await fetch(`${API_BASE}/projects/${projectId}/plan/approve`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -470,17 +527,20 @@ export function useChat(
           },
           body: JSON.stringify({ planId }),
         });
+        if(!response.ok)throw new Error("Could not approve plan. Please try again.");
         useEditorStore.getState().approvePlan();
         setTimeout(() => {
           sendMessage(
-            "The plan has been approved. Please start building it now, step by step. Follow the plan in .doable/plan.md."
+            ui(
+              "The plan has been approved. Please start building it now, step by step. Follow the plan in .doable/plan.md.",
+            ),
           );
         }, 100);
       } catch (err) {
         console.error("Failed to approve plan:", err);
       }
     },
-    [projectId, sendMessage],
+    [projectId, sendMessage, ui],
   );
 
   // ─── abandonPlan ─────────────────────────────────────────────────

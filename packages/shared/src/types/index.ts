@@ -6,7 +6,12 @@
 //   Everything else (types, labels, dropdowns, Zod schemas, hierarchies) derives automatically.
 
 /** Plans ordered from lowest → highest tier */
-export const WORKSPACE_PLANS = ["free", "pro", "business", "enterprise"] as const;
+export const WORKSPACE_PLANS = [
+  "free",
+  "pro",
+  "business",
+  "enterprise",
+] as const;
 export type WorkspacePlan = (typeof WORKSPACE_PLANS)[number];
 
 /** Roles ordered from lowest → highest privilege */
@@ -14,7 +19,10 @@ export const WORKSPACE_ROLES = ["viewer", "member", "admin", "owner"] as const;
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
 /** Roles that grant platform admin access */
-export const PLATFORM_ADMIN_ROLES: readonly WorkspaceRole[] = ["admin", "owner"] as const;
+export const PLATFORM_ADMIN_ROLES: readonly WorkspaceRole[] = [
+  "admin",
+  "owner",
+] as const;
 
 export type ProjectStatus = "creating" | "draft" | "published" | "error";
 export type ProjectVisibility = "public" | "private";
@@ -27,6 +35,7 @@ export type AiProviderType = "openai" | "azure" | "anthropic";
 
 // ─── Core Entities ──────────────────────────────────────────
 export interface User {
+  interfaceLanguage?: "zh-CN" | "en" | null;
   id: string;
   email: string;
   displayName: string | null;
@@ -201,7 +210,12 @@ export interface DiffSummary {
 }
 
 // ─── GitHub ─────────────────────────────────────────────────
-export type GitHubSyncStatus = "synced" | "ahead" | "behind" | "diverged" | "disconnected";
+export type GitHubSyncStatus =
+  | "synced"
+  | "ahead"
+  | "behind"
+  | "diverged"
+  | "disconnected";
 
 export interface GitHubConnection {
   id: string;

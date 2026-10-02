@@ -1,3 +1,6 @@
+import { getLocale } from "next-intl/server";
+import { normalizeLocale } from "@/i18n/config";
+import { LocaleProvider, PublicLanguageSwitcher } from "@/i18n/locale-provider";
 import type { Metadata } from "next";
 import "./globals.css";
 import { TracingInit } from "@/components/tracing-init";
@@ -15,26 +18,31 @@ import { TracingInit } from "@/components/tracing-init";
 // `<Html>` fallback that breaks pure App-Router apps under force-dynamic.
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Doable | Dream it. Do it. Done.",
-  description:
-    "Tell AI what you want to do and Doable gets it done. From idea to deployed app in minutes.",
-  keywords: ["AI", "app builder", "code generation", "full-stack", "no-code"],
-  icons: {
-    icon: [
-      { url: "/icon", type: "image/png", sizes: "32x32" },
-      { url: "/favicon.ico", sizes: "any" },
-    ],
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const en = (await getLocale()) === "en";
+  return {
+    title: en ? "Doable | Dream it. Do it. Done." : "Doable | 从想法到应用",
+    description: en
+      ? "Tell AI what you want to do and Doable gets it done. From idea to deployed app in minutes."
+      : "Doable。通过自然语言生成、预览与发布应用。",
+    keywords: ["AI", "app builder", "code generation", "full-stack", "no-code"],
+    icons: {
+      icon: [
+        { url: "/icon", type: "image/png", sizes: "32x32" },
+        { url: "/favicon.ico", sizes: "any" },
+      ],
+    },
+  };
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = normalizeLocale(await getLocale());
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -44,10 +52,16 @@ export default function RootLayout({
       </head>
       <body
         className="font-sans antialiased"
-        style={{ fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
+        style={{
+          fontFamily:
+            'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        }}
       >
-        <TracingInit />
-        {children}
+        <LocaleProvider locale={locale}>
+          <TracingInit />
+          {children}
+          <PublicLanguageSwitcher />
+        </LocaleProvider>
       </body>
     </html>
   );

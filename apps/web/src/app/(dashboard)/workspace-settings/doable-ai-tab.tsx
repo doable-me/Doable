@@ -1,11 +1,12 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 /**
- * Workspace Settings → Doable AI tab.
+ * Workspace Settings → Doable tab.
  *
  * Workspace-wide defaults for the runtime AI plane. Projects in this
  * workspace inherit these silently unless they have a per-project override
- * configured in their own Project Settings → Doable AI tab.
+ * configured in their own Project Settings → Doable tab.
  *
  * Surface:
  *   - Default system prompt (applies to every project that doesn't pin one)
@@ -54,7 +55,11 @@ interface WorkspaceUsage {
       costUsd: number;
     }
   >;
-  perProject: { projectId: string | null; requestCount: number; totalTokens: number }[];
+  perProject: {
+    projectId: string | null;
+    requestCount: number;
+    totalTokens: number;
+  }[];
 }
 
 function fmtTokens(n: number): string {
@@ -69,10 +74,14 @@ function fmtCost(usd: number): string {
 }
 function modeLabel(m: string): string {
   switch (m) {
-    case "runtime-chat":  return "Runtime chat";
-    case "runtime-embed": return "Runtime embeddings";
-    case "agent":         return "Editor / builder";
-    default:              return m;
+    case "runtime-chat":
+      return "Runtime chat";
+    case "runtime-embed":
+      return "Runtime embeddings";
+    case "agent":
+      return "Editor / builder";
+    default:
+      return m;
   }
 }
 
@@ -82,7 +91,13 @@ interface Props {
   addToast: (variant: "success" | "error", msg: string) => void;
 }
 
-export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) {
+export function DoableAiWorkspaceTab({
+  workspaceId,
+  isAdmin,
+  addToast,
+}: Props) {
+  const ui = useUiText();
+
   const [extras, setExtras] = useState<WorkspaceAiExtras | null>(null);
   const [form, setForm] = useState({
     defaultThinkingVisibility: "auto" as ThinkingVisibility,
@@ -110,11 +125,15 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
       });
       setLoadError(null);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load workspace AI extras");
+      setLoadError(
+        e instanceof Error
+          ? e.message
+          : ui("Failed to load workspace AI extras"),
+      );
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [ui, workspaceId]);
 
   const loadUsage = useCallback(
     async (p: Period) => {
@@ -125,20 +144,30 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
         );
         setUsage(res.data);
       } catch (e) {
-        addToast("error", e instanceof Error ? e.message : "Failed to load workspace usage");
+        addToast(
+          "error",
+          e instanceof Error ? e.message : ui("Failed to load workspace usage"),
+        );
       } finally {
         setUsageLoading(false);
       }
     },
-    [workspaceId, addToast],
+    [ui, workspaceId, addToast],
   );
 
-  useEffect(() => { void loadExtras(); }, [loadExtras]);
-  useEffect(() => { void loadUsage(period); }, [loadUsage, period]);
+  useEffect(() => {
+    void loadExtras();
+  }, [loadExtras]);
+  useEffect(() => {
+    void loadUsage(period);
+  }, [loadUsage, period]);
 
   const save = useCallback(async () => {
     if (!isAdmin) {
-      addToast("error", "Only workspace owners / admins can change workspace defaults.");
+      addToast(
+        "error",
+        ui("Only workspace owners / admins can change workspace defaults."),
+      );
       return;
     }
     setSaving(true);
@@ -154,17 +183,17 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
         },
       );
       setExtras((prev) => ({
-        ...(prev ?? {} as WorkspaceAiExtras),
+        ...(prev ?? ({} as WorkspaceAiExtras)),
         defaultThinkingVisibility: res.data.defaultThinkingVisibility,
         defaultSystemPrompt: res.data.defaultSystemPrompt,
       }));
-      addToast("success", "Workspace AI defaults saved.");
+      addToast("success", ui("Workspace AI defaults saved."));
     } catch (e) {
       addToast("error", e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }
-  }, [form, workspaceId, isAdmin, addToast]);
+  }, [ui, form, workspaceId, isAdmin, addToast]);
 
   const totals = usage?.totals ?? { tokens: 0, requests: 0, costUsd: 0 };
 
@@ -197,18 +226,32 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
               <Sparkles className="h-5 w-5 text-brand-400" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold text-foreground">Doable AI defaults</h2>
+              <h2 className="text-lg font-semibold text-foreground">
+                {ui("Doable defaults")}
+              </h2>
               <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                Workspace-wide runtime AI defaults for apps generated in this workspace.
-                Projects inherit these unless they pin their own values in
-                <span className="px-1">Project&nbsp;Settings → Doable AI</span>.
+                {" "}
+                {ui(
+                  "Workspace-wide runtime AI defaults for apps generated in this workspace. Projects inherit these unless they pin their own values in",
+                )}{" "}
+                <span className="px-1">{ui("Project Settings → Doable")}</span>.
               </p>
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                <Link href="/ai-settings?tab=connections" className="text-brand-400 hover:text-brand-300 inline-flex items-center gap-1">
-                  Configure chat provider <ExternalLink className="h-3 w-3" />
+                <Link
+                  href="/ai-settings?tab=connections"
+                  className="text-brand-400 hover:text-brand-300 inline-flex items-center gap-1"
+                >
+                  {" "}
+                  {ui("Configure chat provider")}{" "}
+                  <ExternalLink className="h-3 w-3" />
                 </Link>
-                <Link href="/admin?tab=plans&plansSub=embedding" className="text-brand-400 hover:text-brand-300 inline-flex items-center gap-1">
-                  Platform embedding model <ExternalLink className="h-3 w-3" />
+                <Link
+                  href="/admin?tab=plans&plansSub=embedding"
+                  className="text-brand-400 hover:text-brand-300 inline-flex items-center gap-1"
+                >
+                  {" "}
+                  {ui("Platform embedding model")}{" "}
+                  <ExternalLink className="h-3 w-3" />
                 </Link>
               </div>
             </div>
@@ -219,65 +262,90 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-md border bg-muted/30 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Zap className="h-3.5 w-3.5" />
-                Default system prompt
+                <Zap className="h-3.5 w-3.5" />{" "}
+                {ui("Default system prompt")}{" "}
               </div>
-              <div className="mt-1 text-sm truncate" title={extras?.defaultSystemPrompt ?? "(none)"}>
-                {extras?.defaultSystemPrompt
-                  ? extras.defaultSystemPrompt.slice(0, 80) + (extras.defaultSystemPrompt.length > 80 ? "…" : "")
-                  : <span className="text-muted-foreground">none set</span>}
+              <div
+                className="mt-1 text-sm truncate"
+                title={extras?.defaultSystemPrompt ?? ui("(none)")}
+              >
+                {extras?.defaultSystemPrompt ? (
+                  extras.defaultSystemPrompt.slice(0, 80) +
+                  (extras.defaultSystemPrompt.length > 80 ? "…" : "")
+                ) : (
+                  <span className="text-muted-foreground">
+                    {ui("none set")}
+                  </span>
+                )}
               </div>
             </div>
             <div className="rounded-md border bg-muted/30 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Brain className="h-3.5 w-3.5" />
-                Default embedding model
+                <Brain className="h-3.5 w-3.5" />{" "}
+                {ui("Default embedding model")}{" "}
               </div>
               <div className="mt-1 text-sm font-mono truncate">
-                {extras?.defaultEmbeddingModel ?? <span className="font-sans text-muted-foreground">platform default</span>}
+                {extras?.defaultEmbeddingModel ?? (
+                  <span className="font-sans text-muted-foreground">
+                    {ui("platform default")}
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
           {/* Default system prompt editor */}
           <div>
-            <label className="text-xs font-medium text-foreground">Default system prompt</label>
+            <label className="text-xs font-medium text-foreground">
+              {ui("Default system prompt")}
+            </label>
             <textarea
               value={form.defaultSystemPrompt}
-              onChange={(e) => setForm((f) => ({ ...f, defaultSystemPrompt: e.target.value }))}
-              placeholder="e.g. Always answer in concise bullet points. Never reveal internal pricing. If you don't know, say so."
+              onChange={(e) =>
+                setForm((f) => ({ ...f, defaultSystemPrompt: e.target.value }))
+              }
+              placeholder={ui(
+                "e.g. Always answer in concise bullet points. Never reveal internal pricing. If you don't know, say so.",
+              )}
               rows={5}
               maxLength={4096}
               disabled={!isAdmin}
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono disabled:opacity-60"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Prepended to every chat call for projects in this workspace that don't have their own
-              system prompt override. {form.defaultSystemPrompt.length} / 4096 characters.
+              {" "}
+              {ui(
+                "Prepended to every chat call for projects in this workspace that don't have their own system prompt override.",
+              )}{" "}
+              {form.defaultSystemPrompt.length} / 4096 characters.
             </p>
           </div>
 
           {/* Thinking visibility */}
           <div>
-            <p className="text-xs font-medium text-foreground mb-2">Default thinking visibility</p>
+            <p className="text-xs font-medium text-foreground mb-2">
+              {ui("Default thinking visibility")}
+            </p>
             <div className="space-y-2">
-              {([
-                {
-                  id: "auto" as const,
-                  title: "Auto",
-                  body: "Apps receive the raw model output and decide rendering via stripThinking().",
-                },
-                {
-                  id: "always-show" as const,
-                  title: "Always show",
-                  body: "Apps render the thinking disclosure expanded by default.",
-                },
-                {
-                  id: "hide" as const,
-                  title: "Hide (server-side strip)",
-                  body: "Server strips all 17 thinking-tag families before any app sees them.",
-                },
-              ] as const).map((opt) => {
+              {(
+                [
+                  {
+                    id: "auto" as const,
+                    title: ui("Auto"),
+                    body: "Apps receive the raw model output and decide rendering via stripThinking().",
+                  },
+                  {
+                    id: "always-show" as const,
+                    title: ui("Always show"),
+                    body: "Apps render the thinking disclosure expanded by default.",
+                  },
+                  {
+                    id: "hide" as const,
+                    title: ui("Hide (server-side strip)"),
+                    body: "Server strips all 17 thinking-tag families before any app sees them.",
+                  },
+                ] as const
+              ).map((opt) => {
                 const active = form.defaultThinkingVisibility === opt.id;
                 return (
                   <label
@@ -290,12 +358,21 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
                       value={opt.id}
                       checked={active}
                       disabled={!isAdmin}
-                      onChange={() => setForm((f) => ({ ...f, defaultThinkingVisibility: opt.id }))}
+                      onChange={() =>
+                        setForm((f) => ({
+                          ...f,
+                          defaultThinkingVisibility: opt.id,
+                        }))
+                      }
                       className="mt-1"
                     />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground">{opt.title}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{opt.body}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {opt.title}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {opt.body}
+                      </p>
                     </div>
                   </label>
                 );
@@ -305,14 +382,26 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
 
           {!isAdmin && (
             <div className="rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3 text-xs text-yellow-500">
-              You're a member of this workspace but not an admin — these defaults are read-only for you.
+              {" "}
+              {ui(
+                "You're a member of this workspace but not an admin — these defaults are read-only for you.",
+              )}{" "}
             </div>
           )}
 
           <div className="flex justify-end">
-            <Button onClick={() => void save()} disabled={saving || !isAdmin} size="sm" className="gap-1.5">
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-              Save defaults
+            <Button
+              onClick={() => void save()}
+              disabled={saving || !isAdmin}
+              size="sm"
+              className="gap-1.5"
+            >
+              {saving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Save className="h-3 w-3" />
+              )}{" "}
+              {ui("Save defaults")}{" "}
             </Button>
           </div>
         </div>
@@ -322,10 +411,15 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="p-6 border-b border-border flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-foreground">Workspace AI usage</h2>
+            <h2 className="text-lg font-semibold text-foreground">
+              {ui("Workspace AI usage")}
+            </h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Aggregate of every project's runtime AI calls in this workspace (editor / builder
-              calls are shown separately under <code>agent</code> mode).
+              {" "}
+              {ui(
+                "Aggregate of every project's runtime AI calls in this workspace (editor / builder calls are shown separately under",
+              )}{" "}
+              <code>agent</code> {ui("mode).")}{" "}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -335,7 +429,13 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
                 onClick={() => setPeriod(p)}
                 className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${period === p ? "bg-brand-600 text-white" : "bg-muted/40 text-muted-foreground hover:text-foreground"}`}
               >
-                {p === "today" ? "Today" : p === "7d" ? "7d" : p === "30d" ? "30d" : "All"}
+                {p === "today"
+                  ? ui("Today")
+                  : p === "7d"
+                    ? ui("7d")
+                    : p === "30d"
+                      ? ui("30d")
+                      : ui("All")}
               </button>
             ))}
           </div>
@@ -344,19 +444,25 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
         <div className="p-4 space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-md border bg-muted/30 p-3">
-              <div className="text-xs text-muted-foreground">Total tokens</div>
+              <div className="text-xs text-muted-foreground">
+                {ui("Total tokens")}
+              </div>
               <div className="mt-1 text-xl font-semibold">
                 {usageLoading ? "…" : fmtTokens(totals.tokens)}
               </div>
             </div>
             <div className="rounded-md border bg-muted/30 p-3">
-              <div className="text-xs text-muted-foreground">Requests</div>
+              <div className="text-xs text-muted-foreground">
+                {ui("Requests")}
+              </div>
               <div className="mt-1 text-xl font-semibold">
-                {usageLoading ? "…" : totals.requests.toLocaleString()}
+                {usageLoading ? "…" : totals.requests.toLocaleString(ui.locale)}
               </div>
             </div>
             <div className="rounded-md border bg-muted/30 p-3">
-              <div className="text-xs text-muted-foreground">Estimated cost</div>
+              <div className="text-xs text-muted-foreground">
+                {ui("Estimated cost")}
+              </div>
               <div className="mt-1 text-xl font-semibold">
                 {usageLoading ? "…" : fmtCost(totals.costUsd)}
               </div>
@@ -365,24 +471,40 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
 
           {usage && Object.keys(usage.byMode).length > 0 && (
             <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">By mode</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                {ui("By mode")}
+              </p>
               <div className="overflow-hidden rounded-md border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs text-muted-foreground">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium">Mode</th>
-                      <th className="px-3 py-2 text-right font-medium">Requests</th>
-                      <th className="px-3 py-2 text-right font-medium">Total tokens</th>
-                      <th className="px-3 py-2 text-right font-medium">Cost</th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        {ui("Mode")}
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        {ui("Requests")}
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        {ui("Total tokens")}
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        {ui("Cost")}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {Object.entries(usage.byMode).map(([mode, v]) => (
                       <tr key={mode} className="border-t">
                         <td className="px-3 py-2">{modeLabel(mode)}</td>
-                        <td className="px-3 py-2 text-right">{v.requestCount.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right">{fmtTokens(v.totalTokens)}</td>
-                        <td className="px-3 py-2 text-right">{fmtCost(v.costUsd)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {v.requestCount.toLocaleString(ui.locale)}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {fmtTokens(v.totalTokens)}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {fmtCost(v.costUsd)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -393,30 +515,48 @@ export function DoableAiWorkspaceTab({ workspaceId, isAdmin, addToast }: Props) 
 
           {usage && usage.perProject.length > 0 && (
             <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Top projects</p>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                {ui("Top projects")}
+              </p>
               <div className="overflow-hidden rounded-md border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs text-muted-foreground">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium">Project</th>
-                      <th className="px-3 py-2 text-right font-medium">Requests</th>
-                      <th className="px-3 py-2 text-right font-medium">Tokens</th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        {ui("Project")}
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        {ui("Requests")}
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        {ui("Tokens")}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {usage.perProject.map((row) => (
-                      <tr key={row.projectId ?? "(orphan)"} className="border-t">
+                      <tr
+                        key={row.projectId ?? "(orphan)"}
+                        className="border-t"
+                      >
                         <td className="px-3 py-2 font-mono text-xs">
                           {row.projectId ? (
-                            <Link href={`/projects/${row.projectId}/settings?tab=doable-ai`} className="text-brand-400 hover:text-brand-300 underline underline-offset-2">
+                            <Link
+                              href={`/projects/${row.projectId}/settings?tab=doable-ai`}
+                              className="text-brand-400 hover:text-brand-300 underline underline-offset-2"
+                            >
                               {row.projectId.slice(0, 8)}…
                             </Link>
                           ) : (
-                            "(orphan)"
+                            ui("(orphan)")
                           )}
                         </td>
-                        <td className="px-3 py-2 text-right">{row.requestCount.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right">{fmtTokens(row.totalTokens)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {row.requestCount.toLocaleString(ui.locale)}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {fmtTokens(row.totalTokens)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useCallback } from "react";
 import { AlertTriangle, Brain } from "lucide-react";
@@ -14,7 +15,10 @@ import {
   SectionCard,
   SettingsLoadingSkeleton,
 } from "./project-settings-shared";
-import { GeneralTab, IntegrationsPanelWrapper } from "./project-settings-general";
+import {
+  GeneralTab,
+  IntegrationsPanelWrapper,
+} from "./project-settings-general";
 import { ContextFilesTab } from "./project-settings-context";
 import { DomainTab } from "./project-settings-domain";
 import { EnvironmentsTab, DangerTab } from "./project-settings-tabs";
@@ -30,11 +34,25 @@ interface ProjectSettingsProps {
 }
 
 export function ProjectSettings({ projectId }: ProjectSettingsProps) {
+  const ui = useUiText();
+
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     if (typeof window === "undefined") return "general";
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
-    const validTabs: Tab[] = ["general", "integrations", "mcp", "skills", "context", "doable-ai", "security", "domain", "environments", "database", "danger"];
+    const validTabs: Tab[] = [
+      "general",
+      "integrations",
+      "mcp",
+      "skills",
+      "context",
+      "doable-ai",
+      "security",
+      "domain",
+      "environments",
+      "database",
+      "danger",
+    ];
     return validTabs.includes(tab as Tab) ? (tab as Tab) : "general";
   });
   const [project, setProject] = useState<ApiProject | null>(null);
@@ -53,7 +71,10 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
       })
       .catch((err) => {
         if (!cancelled) {
-          addToast("error", err instanceof Error ? err.message : "Failed to load project");
+          addToast(
+            "error",
+            err instanceof Error ? err.message : ui("Failed to load project"),
+          );
         }
       })
       .finally(() => {
@@ -63,7 +84,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, addToast]);
+  }, [ui, projectId, addToast]);
 
   if (loading) {
     return <SettingsLoadingSkeleton />;
@@ -73,9 +94,12 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <AlertTriangle className="mb-3 h-10 w-10 text-muted-foreground" />
-        <p className="text-lg font-medium">Project not found</p>
+        <p className="text-lg font-medium">{ui("Project not found")}</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          The project may have been deleted or you don't have access.
+          {" "}
+          {ui(
+            "The project may have been deleted or you don't have access.",
+          )}{" "}
         </p>
       </div>
     );
@@ -97,7 +121,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                 "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap",
                 activeTab === tab.id
                   ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Icon className="h-4 w-4" />
@@ -119,12 +143,15 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         <IntegrationsPanelWrapper projectId={projectId} />
       )}
       {activeTab === "mcp" && project.workspace_id && (
-        <McpPanel
-          workspaceId={project.workspace_id}
-        />
+        <McpPanel workspaceId={project.workspace_id} />
       )}
       {activeTab === "skills" && project.workspace_id && (
-        <SectionCard title="Skills & Rules" description="Manage reusable skills and rules that shape how the AI works across your workspace.">
+        <SectionCard
+          title={ui("Skills & Rules")}
+          description={ui(
+            "Manage reusable skills and rules that shape how the AI works across your workspace.",
+          )}
+        >
           <SkillsRulesPanel workspaceId={project.workspace_id} />
         </SectionCard>
       )}
@@ -144,12 +171,8 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
       {activeTab === "domain" && (
         <DomainTab project={project} addToast={addToast} />
       )}
-      {activeTab === "environments" && (
-        <EnvironmentsTab project={project} />
-      )}
-      {activeTab === "database" && (
-        <DatabaseTab projectId={projectId} />
-      )}
+      {activeTab === "environments" && <EnvironmentsTab project={project} />}
+      {activeTab === "database" && <DatabaseTab projectId={projectId} />}
       {activeTab === "danger" && (
         <DangerTab project={project} addToast={addToast} />
       )}

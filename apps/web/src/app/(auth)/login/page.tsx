@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -20,9 +21,16 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 };
 
 function LoginPageInner() {
+  const ui = useUiText();
+
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, completeMfaLogin, isAuthenticated, isLoading: authLoading } = useAuth();
+  const {
+    login,
+    completeMfaLogin,
+    isAuthenticated,
+    isLoading: authLoading,
+  } = useAuth();
 
   // Redirect after sign-in (honor returnTo, fall back to dashboard).
   useEffect(() => {
@@ -88,9 +96,9 @@ function LoginPageInner() {
     const errorParam = searchParams.get("error");
     if (errorParam) {
       const fallback = messageParam ?? `Authentication error: ${errorParam}`;
-      setError(OAUTH_ERROR_MESSAGES[errorParam] ?? fallback);
+      setError(ui(OAUTH_ERROR_MESSAGES[errorParam]) ?? fallback);
     }
-  }, [searchParams]);
+  }, [ui, searchParams]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -128,19 +136,27 @@ function LoginPageInner() {
       router.push(target);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "body" in err) {
-        const apiErr = err as { status?: number; body: { error: string; message?: string }; retryAfter?: number };
+        const apiErr = err as {
+          status?: number;
+          body: { error: string; message?: string };
+          retryAfter?: number;
+        };
         if (apiErr.status === 429) {
-          const wait = apiErr.retryAfter ? ` Try again in ${apiErr.retryAfter} seconds.` : "";
-          setError(`Too many login attempts.${wait}`);
+          const wait = apiErr.retryAfter
+            ? ` Try again in ${apiErr.retryAfter} seconds.`
+            : "";
+          setError(ui("Too many login attempts.{v0}", { v0: wait }));
         } else if (apiErr.body.error === "PENDING_APPROVAL") {
-          setPendingMessage(apiErr.body.message ?? "Your signup is awaiting approval.");
+          setPendingMessage(
+            apiErr.body.message ?? "Your signup is awaiting approval.",
+          );
         } else if (apiErr.body.error === "ACCOUNT_DENIED") {
           setError(apiErr.body.message ?? "Your signup was not approved.");
         } else {
           setError(apiErr.body.error);
         }
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(ui("Something went wrong. Please try again."));
       }
     } finally {
       setIsLoading(false);
@@ -179,7 +195,7 @@ function LoginPageInner() {
           setMfaCode("");
         }
       } else {
-        setError("Verification failed. Please try again.");
+        setError(ui("Verification failed. Please try again."));
       }
     } finally {
       setIsLoading(false);
@@ -192,7 +208,9 @@ function LoginPageInner() {
     const params = new URLSearchParams(window.location.search);
     const returnToRaw = params.get("returnTo");
     const returnTo =
-      returnToRaw && returnToRaw.startsWith("/") && !returnToRaw.startsWith("//")
+      returnToRaw &&
+      returnToRaw.startsWith("/") &&
+      !returnToRaw.startsWith("//")
         ? returnToRaw
         : null;
     window.location.href =
@@ -207,17 +225,22 @@ function LoginPageInner() {
     return (
       <>
         <h2 className="mb-3 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
-          You&apos;re on the list
+          {" "}
+          {ui("You're on the list")}{" "}
         </h2>
         <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 text-sm leading-relaxed text-[hsl(var(--foreground))] whitespace-pre-wrap">
           {pendingMessage}
         </div>
         <button
           type="button"
-          onClick={() => { setPendingMessage(null); setError(null); }}
+          onClick={() => {
+            setPendingMessage(null);
+            setError(null);
+          }}
           className="mt-6 block w-full text-center text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
         >
-          Back to sign in
+          {" "}
+          {ui("Back to sign in")}{" "}
         </button>
       </>
     );
@@ -227,31 +250,39 @@ function LoginPageInner() {
     return (
       <>
         <h2 className="mb-2 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
-          Two-factor authentication
+          {" "}
+          {ui("Two-factor authentication")}{" "}
         </h2>
         <p className="mb-6 text-center text-sm text-[hsl(var(--muted-foreground))]">
-          Enter the 6-digit code from your authenticator app, or a recovery code.
+          {" "}
+          {ui(
+            "Enter the 6-digit code from your authenticator app, or a recovery code.",
+          )}{" "}
         </p>
 
         <form onSubmit={handleMfaSubmit} className="space-y-4">
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
-              <svg className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="currentColor">
+              <svg
+                className="mt-0.5 h-4 w-4 shrink-0"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+              >
                 <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4.75a.75.75 0 011.5 0v3a.75.75 0 01-1.5 0v-3zM8 11a1 1 0 110 2 1 1 0 010-2z" />
               </svg>
-              <span>{error}</span>
+              <span>{ui(error)}</span>
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="mfaCode">Verification code</Label>
+            <Label htmlFor="mfaCode">{ui("Verification code")}</Label>
             <Input
               id="mfaCode"
               type="text"
               inputMode="text"
               autoComplete="one-time-code"
               autoFocus
-              placeholder="123456 or recovery-code"
+              placeholder={ui("123456 or recovery-code")}
               required
               disabled={isLoading}
               className="rounded-xl text-center tracking-widest"
@@ -267,20 +298,25 @@ function LoginPageInner() {
           >
             {isLoading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Verifying...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                {ui("Verifying...")}{" "}
               </>
             ) : (
-              "Verify and continue"
+              ui("Verify and continue")
             )}
           </Button>
 
           <button
             type="button"
-            onClick={() => { setMfaToken(null); setMfaCode(""); setError(null); }}
+            onClick={() => {
+              setMfaToken(null);
+              setMfaCode("");
+              setError(null);
+            }}
             className="block w-full text-center text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
           >
-            Back to sign in
+            {" "}
+            {ui("Back to sign in")}{" "}
           </button>
         </form>
       </>
@@ -290,7 +326,8 @@ function LoginPageInner() {
   return (
     <>
       <h2 className="mb-6 text-center text-xl font-semibold text-[hsl(var(--foreground))]">
-        Sign in to your account
+        {" "}
+        {ui("Sign in to your account")}{" "}
       </h2>
 
       {/* OAuth Buttons */}
@@ -305,8 +342,8 @@ function LoginPageInner() {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <GitHubIcon className="mr-2 h-4 w-4" />
-          )}
-          Continue with GitHub
+          )}{" "}
+          {ui("Continue with GitHub")}{" "}
         </Button>
         <Button
           variant="outline"
@@ -318,8 +355,8 @@ function LoginPageInner() {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <GoogleIcon className="mr-2 h-4 w-4" />
-          )}
-          Continue with Google
+          )}{" "}
+          {ui("Continue with Google")}{" "}
         </Button>
       </div>
 
@@ -330,7 +367,8 @@ function LoginPageInner() {
         </div>
         <div className="relative flex justify-center text-xs uppercase">
           <span className="bg-[hsl(var(--card))] px-2 text-[hsl(var(--muted-foreground))]">
-            Or continue with email
+            {" "}
+            {ui("Or continue with email")}{" "}
           </span>
         </div>
       </div>
@@ -346,16 +384,16 @@ function LoginPageInner() {
             >
               <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4.75a.75.75 0 011.5 0v3a.75.75 0 01-1.5 0v-3zM8 11a1 1 0 110 2 1 1 0 010-2z" />
             </svg>
-            <span>{error}</span>
+            <span>{ui(error)}</span>
           </div>
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{ui("Email")}</Label>
           <Input
             id="email"
             type="email"
-            placeholder="you@example.com"
+            placeholder={ui("you@example.com")}
             autoComplete="email"
             required
             disabled={isFormDisabled}
@@ -367,19 +405,20 @@ function LoginPageInner() {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">{ui("Password")}</Label>
             <Link
               href="/forgot-password"
               className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
             >
-              Forgot password?
+              {" "}
+              {ui("Forgot password?")}{" "}
             </Link>
           </div>
           <div className="relative">
             <Input
               id="password"
               type={showPassword ? "text" : "password"}
-              placeholder="Enter your password"
+              placeholder={ui("Enter your password")}
               autoComplete="current-password"
               required
               disabled={isFormDisabled}
@@ -392,7 +431,9 @@ function LoginPageInner() {
               tabIndex={-1}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
               onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={
+                showPassword ? ui("Hide password") : ui("Show password")
+              }
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -416,7 +457,8 @@ function LoginPageInner() {
             htmlFor="remember"
             className="text-sm text-[hsl(var(--muted-foreground))] select-none cursor-pointer"
           >
-            Remember me
+            {" "}
+            {ui("Remember me")}{" "}
           </label>
         </div>
 
@@ -427,22 +469,24 @@ function LoginPageInner() {
         >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Signing in...
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+              {ui("Signing in...")}{" "}
             </>
           ) : (
-            "Sign in"
+            ui("Sign in")
           )}
         </Button>
       </form>
 
       <p className="mt-6 text-center text-sm text-[hsl(var(--muted-foreground))]">
-        Don&apos;t have an account?{" "}
+        {" "}
+        {ui("Don't have an account?")}{" "}
         <Link
           href="/signup"
           className="font-medium text-brand-700 hover:underline"
         >
-          Sign up
+          {" "}
+          {ui("Sign up")}{" "}
         </Link>
       </p>
     </>

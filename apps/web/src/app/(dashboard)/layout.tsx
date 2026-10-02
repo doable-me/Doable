@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback } from "react";
 import { AuthProvider } from "@/providers/auth-provider";
@@ -12,6 +13,8 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const ui = useUiText();
+
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const closeSidebar = useCallback(() => setMobileSidebarOpen(false), []);
 
@@ -23,7 +26,7 @@ export default function DashboardLayout({
           <button
             onClick={() => setMobileSidebarOpen(true)}
             className="fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg bg-card border border-border text-foreground md:hidden"
-            aria-label="Open menu"
+            aria-label={ui("Open menu")}
           >
             <Menu className="h-5 w-5" />
           </button>

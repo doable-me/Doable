@@ -1,3 +1,4 @@
+import {withDependencyLock} from "./dependency-lock.js";
 /**
  * Project File Manager
  *
@@ -243,7 +244,7 @@ async function doCreateProject(
   await chownProjectToApiUser(projectId, projectPath);
   let installResult;
   try {
-    installResult = await adapter.install(installCtx);
+    installResult = await withDependencyLock(projectId, () => adapter.install(installCtx));
   } catch (err) {
     recordInstallFailure(projectId);
     throw err;
@@ -321,6 +322,9 @@ export function hasNodeModules(projectId: string): boolean {
  * framework's required build tool (e.g. vite).
  */
 export async function ensureDependencies(projectId: string): Promise<void> {
+  return withDependencyLock(projectId, () => ensureDependenciesLocked(projectId));
+}
+async function ensureDependenciesLocked(projectId: string): Promise<void> {
   const projectPath = getProjectPath(projectId);
 
   // Python projects: check for requirements.txt without package.json
@@ -432,6 +436,9 @@ export async function ensureDependencies(projectId: string): Promise<void> {
  * only reliable cure. Callers MUST guard against repeated invocation.
  */
 export async function forceReinstallDependencies(projectId: string): Promise<void> {
+  return withDependencyLock(projectId, () => forceReinstallDependenciesLocked(projectId));
+}
+async function forceReinstallDependenciesLocked(projectId: string): Promise<void> {
   const projectPath = getProjectPath(projectId);
   // Node projects only — Python deps live in .venv, not node_modules.
   if (!existsSync(path.join(projectPath, "package.json"))) return;

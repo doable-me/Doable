@@ -1,3 +1,5 @@
+import {toolSucceeded} from "./tool-outcome.js";
+import {classifyProviderError} from "./provider-error.js";
 /**
  * SSE event mapper — maps SDK session events to SSE events for the client.
  * Also exports ChannelTokenRouter for model thinking/reasoning tag parsing.
@@ -173,7 +175,25 @@ export class ChannelTokenRouter {
 }
 
 
-export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
+/** Decode SDK envelopes once so lifecycle bookkeeping and rendering agree. */
+export function extractToolArguments(data: Record<string, unknown>): Record<string, unknown> | undefined {
+  let value: unknown = data.arguments ?? data.args ?? data.input;
+  for (let depth = 0; depth < 4; depth++) {
+    if (typeof value === "string") { try { value = JSON.parse(value); } catch { return undefined; } }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    if (record.arguments !== undefined) { value = record.arguments; continue; }
+    return record;
+  }
+  return undefined;
+}
+
+/** requestId-only external completions acknowledge dispatch, not tool execution. */
+export function isExternalToolAcknowledgement(data: Record<string, unknown> | undefined): boolean {
+  return !data?.toolCallId || (data.result === undefined && data.output === undefined && typeof data.success !== "boolean");
+}
+
+export function mapEventToSSE(event: Record<string, unknown>, options: { preserveThinkingMarkers?: boolean } = {}): SSEEvent | null {
   const type = event.type as string;
   const data = event.data as Record<string, unknown> | undefined;
 
@@ -182,14 +202,14 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "assistant.message_delta": {
       const delta = (data?.deltaContent ?? "") as string;
       if (!delta) return null;
-      return { type: "text_delta", data: sanitizeText(delta) };
+      return { type: "text_delta", data: sanitizeText(delta, options) };
     }
 
     // ─── SDK v0.2.0 streaming delta (raw text chunks) ────
     case "assistant.streaming_delta": {
       const streamDelta = (data?.deltaContent ?? data?.content ?? data?.delta ?? "") as string;
       if (!streamDelta) return null;
-      return { type: "text_delta", data: sanitizeText(streamDelta) };
+      return { type: "text_delta", data: sanitizeText(streamDelta, options) };
     }
 
     // ─── Final complete message (sent after streaming ends) ─
@@ -199,7 +219,7 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     // ─── Legacy / direct provider text events ─────────────
     case "text_delta": {
       const raw = (data?.content ?? data ?? "") as string;
-      return { type: "text_delta", data: sanitizeText(String(raw)) };
+      return { type: "text_delta", data: sanitizeText(String(raw), options) };
     }
 
     // ─── Streaming reasoning deltas (token-by-token thinking) ──
@@ -223,18 +243,14 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
     case "external_tool.requested": {
       const startToolName = (data?.toolName ?? data?.name) as string | undefined;
       if (!startToolName) return null;
-      // Unwrap SDK envelope { toolName, arguments: {...real args...}, toolCallId }
-      const rawStartArgs = (data?.arguments ?? data?.args ?? data?.input) as
-        | Record<string, unknown>
-        | undefined;
-      const startArgs = (rawStartArgs && typeof (rawStartArgs as { arguments?: unknown }).arguments === "object")
-        ? (rawStartArgs as { arguments: Record<string, unknown> }).arguments
-        : rawStartArgs;
+      if (startToolName === "report_task_status") return null;
+      const startArgs = extractToolArguments(data ?? {});
       const startPath = (startArgs?.path ?? startArgs?.filePath ?? startArgs?.file ?? startArgs?.target) as string | undefined;
       return {
         type: "tool_call",
         data: {
           name: startToolName,
+          toolCallId: data?.toolCallId,
           ...(startArgs ? { arguments: startArgs } : {}),
           ...(startPath ? { path: startPath } : {}),
         },
@@ -243,25 +259,21 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
 
     // ─── Tool results (completed) ─────────────────────────
     case "tool.completed":
-    case "tool.execution_complete": {
+    case "tool.execution_complete":
+    case "external_tool.completed": {
+      if (type === "external_tool.completed" && isExternalToolAcknowledgement(data)) return null;
       const resultToolName = (data?.toolName ?? data?.name) as string;
       const toolResult = data?.result as Record<string, unknown> | undefined;
-      // Some SDK channels wrap the request args under .arguments
-      // ({ toolName, arguments: {...real args...}, toolCallId }); unwrap so
-      // the client sees the user-facing path/command fields.
-      const rawReqArgs = (data?.arguments ?? data?.args ?? data?.input) as
-        | Record<string, unknown>
-        | undefined;
-      const reqArgs = (rawReqArgs && typeof (rawReqArgs as { arguments?: unknown }).arguments === "object")
-        ? (rawReqArgs as { arguments: Record<string, unknown> }).arguments
-        : rawReqArgs;
+      if (resultToolName === "report_task_status") return null;
+      const reqArgs = extractToolArguments(data ?? {});
       const reqPath = (reqArgs?.path ?? reqArgs?.filePath ?? reqArgs?.file ?? reqArgs?.target) as string | undefined;
       return {
         type: "tool_result",
         data: {
           name: resultToolName,
-          success: data?.success,
-          friendlyMessage: friendlyToolResult(resultToolName, data?.result, data?.success),
+          success: toolSucceeded(data?.result ?? data?.output,data?.success),
+          toolCallId: data?.toolCallId,
+          friendlyMessage: friendlyToolResult(resultToolName, data?.result ?? data?.output, toolSucceeded(data?.result ?? data?.output,data?.success)),
           // Pass through request args so the client can label cards with the
           // correct file name (BUG: "Reading file" instead of "Reading App.tsx").
           ...(reqArgs ? { args: reqArgs } : {}),
@@ -272,19 +284,17 @@ export function mapEventToSSE(event: Record<string, unknown>): SSEEvent | null {
         },
       };
     }
-    case "external_tool.completed":
-      return null;
 
     // ─── Errors ───────────────────────────────────────────
     case "session.error": {
       const rawMsg = String(data?.message ?? data?.errorType ?? "Unknown error");
-      const statusCode = data?.statusCode as number | undefined;
+      const category=classifyProviderError(data ?? rawMsg);
       let userMsg: string;
-      if (statusCode === 404 || rawMsg.includes("404")) {
+      if (category === "NOT_FOUND") {
         userMsg = "The AI model is unavailable (404). Check your model ID and provider settings.";
-      } else if (statusCode === 401 || rawMsg.includes("unauthorized") || rawMsg.includes("not authorized")) {
+      } else if (category === "AUTH") {
         userMsg = "Authentication failed with the AI provider. Check your API key.";
-      } else if (statusCode === 429 || statusCode === 503 || rawMsg.includes("rate limit") || rawMsg.includes("rate_limit") || rawMsg.includes("quota")) {
+      } else if (category === "RATE_LIMIT" || category === "QUOTA") {
         userMsg = `⚠️ Rate limit exceeded — the AI provider is rejecting requests due to too many calls. Please wait a minute before trying again, or switch to a different model in AI Settings. (Provider error: ${rawMsg.slice(0, 200)})`;
       } else {
         userMsg = sanitizeText(rawMsg);

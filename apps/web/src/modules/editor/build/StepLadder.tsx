@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
@@ -26,6 +27,7 @@ function formatElapsed(ms: number): string {
 }
 
 export function StepLadder(): ReactElement {
+  const ui = useUiText();
   const phases = useBuildStore((s) => s.phases);
   const currentPhase = useBuildStore((s) => s.currentPhase);
   const status = useBuildStore((s) => s.status);
@@ -62,7 +64,7 @@ export function StepLadder(): ReactElement {
               className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${colour}`}
             >
               <span aria-hidden="true">{statusGlyph(p.status)}</span>
-              <span>{p.label}</span>
+              <span>{ui(p.label)}</span>
               {active ? (
                 <span className="ml-1 font-mono text-[10px] text-neutral-400">
                   {formatElapsed(elapsedMs)}

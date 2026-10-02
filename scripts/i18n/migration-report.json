@@ -1,0 +1,13 @@
+{
+  "files": 272,
+  "calls": 4353,
+  "configs": 50,
+  "unhandled": [
+    {
+      "file": "modules/ai-settings/components/provider-icons.tsx",
+      "text": "OC",
+      "reason": "Third-party product abbreviation, deliberately unchanged"
+    }
+  ],
+  "followup": "Supplemental passes cover interpolation, dates, presets, errors, notifications, metadata and context-specific terminology. Counts above describe the initial pass only."
+}

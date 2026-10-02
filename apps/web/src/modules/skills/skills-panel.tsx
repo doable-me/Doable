@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback } from "react";
 import {
@@ -13,11 +14,7 @@ import {
   Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useSkills,
-  type Skill,
-  type Rule,
-} from "./use-skills";
+import { useSkills, type Skill, type Rule } from "./use-skills";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -26,7 +23,11 @@ interface SkillsPanelProps {
   projectId?: string;
 }
 
-import { type ScopeType, InlineCreateForm, SkillCard } from "./skills-panel-components";
+import {
+  type ScopeType,
+  InlineCreateForm,
+  SkillCard,
+} from "./skills-panel-components";
 
 // ─── Section Header ─────────────────────────────────────────
 
@@ -47,10 +48,7 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-center justify-between px-1 py-2">
-      <button
-        onClick={onToggle}
-        className="flex items-center gap-2 text-left"
-      >
+      <button onClick={onToggle} className="flex items-center gap-2 text-left">
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         ) : (
@@ -74,6 +72,8 @@ function SectionHeader({
 // ─── Main Panel ─────────────────────────────────────────────
 
 export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
+  const ui = useUiText();
+
   const {
     skills,
     rules,
@@ -96,21 +96,42 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
   const [rulesSectionOpen, setRulesSectionOpen] = useState(true);
 
   const handleCreateSkill = useCallback(
-    (name: string, content: string, scope: ScopeType, description?: string, autoInvoke?: boolean) => {
-      void createSkill({ skillName: name, description: description ?? "", skillContent: content, autoInvoke: autoInvoke ?? true, scope, projectId }).then(() =>
-        setShowSkillForm(false)
-      );
+    (
+      name: string,
+      content: string,
+      scope: ScopeType,
+      description?: string,
+      autoInvoke?: boolean,
+    ) => {
+      void createSkill({
+        skillName: name,
+        description: description ?? "",
+        skillContent: content,
+        autoInvoke: autoInvoke ?? true,
+        scope,
+        projectId,
+      }).then(() => setShowSkillForm(false));
     },
-    [createSkill, projectId]
+    [createSkill, projectId],
   );
 
   const handleCreateRule = useCallback(
-    (name: string, content: string, scope: ScopeType, _desc?: string, _auto?: boolean) => {
-      void createRule({ ruleName: name, content, filePatterns: [], scope, projectId }).then(() =>
-        setShowRuleForm(false)
-      );
+    (
+      name: string,
+      content: string,
+      scope: ScopeType,
+      _desc?: string,
+      _auto?: boolean,
+    ) => {
+      void createRule({
+        ruleName: name,
+        content,
+        filePatterns: [],
+        scope,
+        projectId,
+      }).then(() => setShowRuleForm(false));
     },
-    [createRule, projectId]
+    [createRule, projectId],
   );
 
   return (
@@ -119,23 +140,21 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Skills & Rules</h3>
+          <h3 className="text-sm font-semibold">{ui("Skills & Rules")}</h3>
         </div>
         <button
           onClick={() => void refresh()}
           className="p-1.5 rounded-md hover:bg-muted transition-colors"
-          title="Refresh"
+          title={ui("Refresh")}
         >
-          <RefreshCw
-            className={cn("h-3.5 w-3.5", loading && "animate-spin")}
-          />
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </button>
       </div>
 
       {/* Error */}
       {error && (
         <div className="px-4 py-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 border-b">
-          {error}
+          {ui(error)}
         </div>
       )}
 
@@ -145,14 +164,15 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
           {/* Loading state */}
           {loading && skills.length === 0 && rules.length === 0 && (
             <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-              Loading...
+              {" "}
+              {ui("Loading...")}{" "}
             </div>
           )}
 
           {/* ── Skills Section ─────────────────────────────── */}
           <SectionHeader
             icon={Lightbulb}
-            title="Skills"
+            title={ui("Skills")}
             count={skills.length}
             expanded={skillsSectionOpen}
             onToggle={() => setSkillsSectionOpen((v) => !v)}
@@ -167,8 +187,11 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
               {/* Skill create form */}
               {showSkillForm && (
                 <InlineCreateForm
-                  label="Skill"
-                  placeholder={"---\nname: my-skill\ntrigger: auto\n---\n\nSkill content here..."}
+                  kind="skill"
+                  label={ui("Skill")}
+                  placeholder={ui(
+                    "--- name: my-skill trigger: auto --- Skill content here...",
+                  )}
                   onSubmit={handleCreateSkill}
                   onCancel={() => setShowSkillForm(false)}
                 />
@@ -183,11 +206,15 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
                   expanded={expandedSkillId === skill.id}
                   onToggle={() =>
                     setExpandedSkillId((prev) =>
-                      prev === skill.id ? null : skill.id
+                      prev === skill.id ? null : skill.id,
                     )
                   }
                   onUpdate={(content, description, autoInvoke) =>
-                    void updateSkill(skill.id, { skillContent: content, description, autoInvoke })
+                    void updateSkill(skill.id, {
+                      skillContent: content,
+                      description,
+                      autoInvoke,
+                    })
                   }
                   onDelete={() => void deleteSkill(skill.id)}
                 />
@@ -198,7 +225,10 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
                 <div className="flex flex-col items-center py-6 text-center">
                   <Lightbulb className="h-6 w-6 text-muted-foreground/30 mb-2" />
                   <p className="text-xs text-muted-foreground">
-                    No skills yet. Skills give your AI reusable capabilities.
+                    {" "}
+                    {ui(
+                      "No skills yet. Skills give your AI reusable capabilities.",
+                    )}{" "}
                   </p>
                 </div>
               )}
@@ -211,7 +241,7 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
           {/* ── Rules Section ──────────────────────────────── */}
           <SectionHeader
             icon={Shield}
-            title="Rules"
+            title={ui("Rules")}
             count={rules.length}
             expanded={rulesSectionOpen}
             onToggle={() => setRulesSectionOpen((v) => !v)}
@@ -226,8 +256,11 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
               {/* Rule create form */}
               {showRuleForm && (
                 <InlineCreateForm
-                  label="Rule"
-                  placeholder="Always respond in a friendly tone.\nNever include raw SQL in responses."
+                  kind="rule"
+                  label={ui("Rule")}
+                  placeholder={ui(
+                    "Always respond in a friendly tone.\\nNever include raw SQL in responses.",
+                  )}
                   onSubmit={handleCreateRule}
                   onCancel={() => setShowRuleForm(false)}
                 />
@@ -242,12 +275,10 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
                   expanded={expandedRuleId === rule.id}
                   onToggle={() =>
                     setExpandedRuleId((prev) =>
-                      prev === rule.id ? null : rule.id
+                      prev === rule.id ? null : rule.id,
                     )
                   }
-                  onUpdate={(content) =>
-                    void updateRule(rule.id, content)
-                  }
+                  onUpdate={(content) => void updateRule(rule.id, content)}
                   onDelete={() => void deleteRule(rule.id)}
                 />
               ))}
@@ -257,7 +288,8 @@ export const SkillsPanel = ({ workspaceId, projectId }: SkillsPanelProps) => {
                 <div className="flex flex-col items-center py-6 text-center">
                   <Shield className="h-6 w-6 text-muted-foreground/30 mb-2" />
                   <p className="text-xs text-muted-foreground">
-                    No rules yet. Rules guide how your AI behaves.
+                    {" "}
+                    {ui("No rules yet. Rules guide how your AI behaves.")}{" "}
                   </p>
                 </div>
               )}

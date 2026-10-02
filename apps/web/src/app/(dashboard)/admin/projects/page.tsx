@@ -1,11 +1,20 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Loader2, RotateCw, RefreshCw, FolderKanban, AlertTriangle,
-  MessageSquare, Search, ChevronLeft, ChevronRight,
+  ArrowLeft,
+  Loader2,
+  RotateCw,
+  RefreshCw,
+  FolderKanban,
+  AlertTriangle,
+  MessageSquare,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { usePlatformAdmin } from "@/hooks/use-platform-admin";
@@ -41,24 +50,34 @@ function fmtAge(iso: string | null): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-function StatusBadge({ status, runtimeState }: { status: string; runtimeState: string | null }) {
+function StatusBadge({
+  status,
+  runtimeState,
+}: {
+  status: string;
+  runtimeState: string | null;
+}) {
   const live = runtimeState === "running";
   const cls = live
     ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
     : status === "published"
-    ? "bg-brand-500/15 text-brand-300 border-brand-500/30"
-    : status === "draft"
-    ? "bg-zinc-500/15 text-zinc-300 border-zinc-500/30"
-    : "bg-amber-500/15 text-amber-300 border-amber-500/30";
+      ? "bg-brand-500/15 text-brand-300 border-brand-500/30"
+      : status === "draft"
+        ? "bg-zinc-500/15 text-zinc-300 border-zinc-500/30"
+        : "bg-amber-500/15 text-amber-300 border-amber-500/30";
   const label = live ? "running" : status;
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${cls}`}>
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${cls}`}
+    >
       {label}
     </span>
   );
 }
 
 export default function ProjectsAdminPage() {
+  const ui = useUiText();
+
   const router = useRouter();
   const { isPlatformAdmin, loading: adminLoading } = usePlatformAdmin();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -72,20 +91,23 @@ export default function ProjectsAdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+      });
       if (search) params.set("search", search);
-      const r = await apiFetch<{ data: { projects: Project[]; total: number } }>(
-        `/admin/projects?${params.toString()}`,
-      );
+      const r = await apiFetch<{
+        data: { projects: Project[]; total: number };
+      }>(`/admin/projects?${params.toString()}`);
       setProjects(r.data.projects);
       setTotal(r.data.total);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load projects");
+      setError(e instanceof Error ? e.message : ui("Failed to load projects"));
     } finally {
       setLoading(false);
     }
-  }, [offset, search]);
+  }, [ui, offset, search]);
 
   useEffect(() => {
     if (isPlatformAdmin) load();
@@ -103,8 +125,12 @@ export default function ProjectsAdminPage() {
     return (
       <div className="max-w-2xl mx-auto p-8 text-center">
         <AlertTriangle className="h-8 w-8 text-amber-400 mx-auto mb-3" />
-        <h1 className="text-xl font-semibold mb-2">Platform admin required</h1>
-        <Button onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
+        <h1 className="text-xl font-semibold mb-2">
+          {ui("Platform admin required")}
+        </h1>
+        <Button onClick={() => router.push("/dashboard")}>
+          {ui("Back to Dashboard")}
+        </Button>
       </div>
     );
   }
@@ -112,22 +138,39 @@ export default function ProjectsAdminPage() {
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="mb-6">
-        <Link href="/admin" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3">
-          <ArrowLeft className="h-4 w-4" /> Back to Admin
+        <Link
+          href="/admin"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3"
+        >
+          <ArrowLeft className="h-4 w-4" /> {ui("Back to Admin")}{" "}
         </Link>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600/20">
             <FolderKanban className="h-5 w-5 text-brand-400" />
           </div>
           <div className="flex-1">
-            <h1 className="text-xl font-semibold">All Projects ({total})</h1>
+            <h1 className="text-xl font-semibold">
+              {ui("All Projects (")}
+              {total})
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Every project on the platform — drafts, published, and live runtime — with framework, owner, chat activity.
+              {" "}
+              {ui(
+                "Every project on the platform — drafts, published, and live runtime — with framework, owner, chat activity.",
+              )}{" "}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-1.5">
-            <RotateCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={load}
+            disabled={loading}
+            className="gap-1.5"
+          >
+            <RotateCw
+              className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+            />{" "}
+            {ui("Refresh")}{" "}
           </Button>
         </div>
       </div>
@@ -138,7 +181,9 @@ export default function ProjectsAdminPage() {
           <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Filter by name, slug, owner email, framework, workspace…"
+            placeholder={ui(
+              "Filter by name, slug, owner email, framework, workspace…",
+            )}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => {
@@ -158,7 +203,8 @@ export default function ProjectsAdminPage() {
             setSearch(searchInput);
           }}
         >
-          Search
+          {" "}
+          {ui("Search")}{" "}
         </Button>
         {search && (
           <Button
@@ -170,14 +216,15 @@ export default function ProjectsAdminPage() {
               setOffset(0);
             }}
           >
-            Clear
+            {" "}
+            {ui("Clear")}{" "}
           </Button>
         )}
       </div>
 
       {error && (
         <div className="mb-3 p-3 rounded-md border border-red-500/30 bg-red-500/10 text-sm text-red-300">
-          {error}
+          {ui(error)}
         </div>
       )}
 
@@ -185,71 +232,122 @@ export default function ProjectsAdminPage() {
         <table className="w-full text-xs">
           <thead className="bg-muted/40 border-b border-border">
             <tr className="text-left text-muted-foreground">
-              <th className="px-3 py-2 font-medium">Project</th>
-              <th className="px-3 py-2 font-medium">Owner / Workspace</th>
-              <th className="px-3 py-2 font-medium">Framework</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Listen</th>
-              <th className="px-3 py-2 font-medium text-right">Sessions</th>
-              <th className="px-3 py-2 font-medium text-right">Messages</th>
-              <th className="px-3 py-2 font-medium">Updated</th>
+              <th className="px-3 py-2 font-medium">{ui("Project")}</th>
+              <th className="px-3 py-2 font-medium">
+                {ui("Owner / Workspace")}
+              </th>
+              <th className="px-3 py-2 font-medium">{ui("Framework")}</th>
+              <th className="px-3 py-2 font-medium">{ui("Status")}</th>
+              <th className="px-3 py-2 font-medium">{ui("Listen")}</th>
+              <th className="px-3 py-2 font-medium text-right">
+                {ui("Sessions")}
+              </th>
+              <th className="px-3 py-2 font-medium text-right">
+                {ui("Messages")}
+              </th>
+              <th className="px-3 py-2 font-medium">{ui("Updated")}</th>
               <th className="px-3 py-2 font-medium text-right"></th>
             </tr>
           </thead>
           <tbody>
             {loading && projects.length === 0 ? (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Loading…
-              </td></tr>
-            ) : projects.length === 0 ? (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
-                No projects match your filter.
-              </td></tr>
-            ) : projects.map((p) => (
-              <tr key={p.projectId} className="border-b border-border last:border-b-0 hover:bg-muted/20">
-                <td className="px-3 py-2">
-                  <Link href={`/editor/${p.projectId}`} className="text-foreground hover:text-brand-400 font-medium">
-                    {p.projectName}
-                  </Link>
-                  <div className="text-[10px] text-muted-foreground font-mono">{p.projectSlug}</div>
-                </td>
-                <td className="px-3 py-2">
-                  <div>{p.ownerEmail ?? "—"}</div>
-                  <div className="text-[10px] text-muted-foreground">{p.workspaceName}</div>
-                </td>
-                <td className="px-3 py-2 font-mono text-[11px]">{p.frameworkId}</td>
-                <td className="px-3 py-2">
-                  <StatusBadge status={p.status} runtimeState={p.runtimeState} />
-                  {p.visibility !== "restricted" && (
-                    <div className="text-[9px] text-muted-foreground mt-0.5">{p.visibility}</div>
-                  )}
-                </td>
-                <td className="px-3 py-2 font-mono text-[11px]">
-                  {p.listenAddr ?? <span className="text-muted-foreground">—</span>}
-                </td>
-                <td className="px-3 py-2 text-right font-mono">{p.sessionsCount}</td>
-                <td className="px-3 py-2 text-right font-mono">{p.messagesCount}</td>
-                <td className="px-3 py-2 text-muted-foreground">{fmtAge(p.updatedAt)}</td>
-                <td className="px-3 py-2 text-right">
-                  {p.sessionsCount > 0 && (
-                    <Link
-                      href={`/admin/chat?projectId=${p.projectId}`}
-                      className="inline-flex items-center gap-1 text-[10px] text-brand-400 hover:text-brand-300"
-                      title="View chat sessions for this project"
-                    >
-                      <MessageSquare className="h-3 w-3" /> chat
-                    </Link>
-                  )}
+              <tr>
+                <td
+                  colSpan={9}
+                  className="px-3 py-8 text-center text-muted-foreground"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin inline mr-2" />{" "}
+                  {ui("Loading…")}{" "}
                 </td>
               </tr>
-            ))}
+            ) : projects.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={9}
+                  className="px-3 py-8 text-center text-muted-foreground"
+                >
+                  {" "}
+                  {ui("No projects match your filter.")}{" "}
+                </td>
+              </tr>
+            ) : (
+              projects.map((p) => (
+                <tr
+                  key={p.projectId}
+                  className="border-b border-border last:border-b-0 hover:bg-muted/20"
+                >
+                  <td className="px-3 py-2">
+                    <Link
+                      href={`/editor/${p.projectId}`}
+                      className="text-foreground hover:text-brand-400 font-medium"
+                    >
+                      {p.projectName}
+                    </Link>
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      {p.projectSlug}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div>{p.ownerEmail ?? "—"}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {p.workspaceName}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-[11px]">
+                    {p.frameworkId}
+                  </td>
+                  <td className="px-3 py-2">
+                    <StatusBadge
+                      status={p.status}
+                      runtimeState={p.runtimeState}
+                    />
+                    {p.visibility !== "restricted" && (
+                      <div className="text-[9px] text-muted-foreground mt-0.5">
+                        {p.visibility}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-[11px]">
+                    {p.listenAddr ?? (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {p.sessionsCount}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {p.messagesCount}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {fmtAge(p.updatedAt)}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {p.sessionsCount > 0 && (
+                      <Link
+                        href={`/admin/chat?projectId=${p.projectId}`}
+                        className="inline-flex items-center gap-1 text-[10px] text-brand-400 hover:text-brand-300"
+                        title={ui("View chat sessions for this project")}
+                      >
+                        <MessageSquare className="h-3 w-3" /> {ui("chat")}{" "}
+                      </Link>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
 
       {/* Pagination */}
       <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>Showing {offset + 1}-{offset + projects.length} of {total}</span>
+        <span>
+          {ui("Showing {start}–{end} of {total}", {
+            start: offset + 1,
+            end: offset + projects.length,
+            total,
+          })}
+        </span>
         <div className="flex items-center gap-1">
           <Button
             variant="outline"

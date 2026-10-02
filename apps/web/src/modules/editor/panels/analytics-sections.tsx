@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { Monitor, Smartphone, Tablet } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -7,13 +8,19 @@ import type { ReferrerData, DeviceData, RealtimeData } from "./analytics-types";
 // ─── Referrers Section ──────────────────────────────────────
 
 export function ReferrersSection({ referrers }: { referrers: ReferrerData[] }) {
+  const ui = useUiText();
+
   if (referrers.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
-          <h3 className="text-sm font-semibold text-foreground">Traffic Sources</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            {ui("Traffic Sources")}
+          </h3>
         </div>
-        <p className="p-4 text-center text-xs text-muted-foreground">No referrer data available yet.</p>
+        <p className="p-4 text-center text-xs text-muted-foreground">
+          {ui("No referrer data available yet.")}
+        </p>
       </div>
     );
   }
@@ -29,25 +36,29 @@ export function ReferrersSection({ referrers }: { referrers: ReferrerData[] }) {
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h3 className="text-sm font-semibold text-foreground">Traffic Sources</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          {ui("Traffic Sources")}
+        </h3>
       </div>
       <div className="p-4 space-y-3">
         {referrers.map((ref) => (
           <div key={ref.source}>
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-foreground">{ref.source}</span>
+                <span className="text-xs font-medium text-foreground">
+                  {ref.source}
+                </span>
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                    typeBadgeColor[ref.type] || typeBadgeColor.other
+                    typeBadgeColor[ref.type] || typeBadgeColor.other,
                   )}
                 >
                   {ref.type}
                 </span>
               </div>
               <span className="text-xs text-muted-foreground">
-                {ref.visits.toLocaleString()} ({ref.percent}%)
+                {ref.visits.toLocaleString(ui.locale)} ({ref.percent}%)
               </span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -66,13 +77,19 @@ export function ReferrersSection({ referrers }: { referrers: ReferrerData[] }) {
 // ─── Device Breakdown Chart ─────────────────────────────────
 
 export function DeviceBreakdownChart({ devices }: { devices: DeviceData[] }) {
+  const ui = useUiText();
+
   if (devices.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
-          <h3 className="text-sm font-semibold text-foreground">Device Breakdown</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            {ui("Device Breakdown")}
+          </h3>
         </div>
-        <p className="p-4 text-center text-xs text-muted-foreground">No device data available yet.</p>
+        <p className="p-4 text-center text-xs text-muted-foreground">
+          {ui("No device data available yet.")}
+        </p>
       </div>
     );
   }
@@ -89,20 +106,19 @@ export function DeviceBreakdownChart({ devices }: { devices: DeviceData[] }) {
     tablet: Tablet,
   };
 
-  const segments = devices.reduce<{ device: string; start: number; end: number; color: string }[]>(
-    (acc, d) => {
-      const start = acc.length > 0 ? acc[acc.length - 1]!.end : 0;
-      const key = d.device.toLowerCase();
-      acc.push({
-        device: d.device,
-        start,
-        end: start + d.percent * 3.6,
-        color: deviceColors[key]?.css || "hsl(var(--brand-500))",
-      });
-      return acc;
-    },
-    []
-  );
+  const segments = devices.reduce<
+    { device: string; start: number; end: number; color: string }[]
+  >((acc, d) => {
+    const start = acc.length > 0 ? acc[acc.length - 1]!.end : 0;
+    const key = d.device.toLowerCase();
+    acc.push({
+      device: d.device,
+      start,
+      end: start + d.percent * 3.6,
+      color: deviceColors[key]?.css || "hsl(var(--brand-500))",
+    });
+    return acc;
+  }, []);
 
   const conicStops = segments
     .map((s) => `${s.color} ${s.start}deg ${s.end}deg`)
@@ -111,7 +127,9 @@ export function DeviceBreakdownChart({ devices }: { devices: DeviceData[] }) {
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h3 className="text-sm font-semibold text-foreground">Device Breakdown</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          {ui("Device Breakdown")}
+        </h3>
       </div>
       <div className="flex items-center gap-6 p-4">
         <div
@@ -129,8 +147,12 @@ export function DeviceBreakdownChart({ devices }: { devices: DeviceData[] }) {
               <div key={d.device} className="flex items-center gap-2.5">
                 <div className={cn("h-2.5 w-2.5 rounded-sm", bgColor)} />
                 <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="flex-1 text-xs text-foreground">{d.device}</span>
-                <span className="text-xs font-medium text-foreground">{d.percent}%</span>
+                <span className="flex-1 text-xs text-foreground">
+                  {d.device}
+                </span>
+                <span className="text-xs font-medium text-foreground">
+                  {d.percent}%
+                </span>
               </div>
             );
           })}
@@ -149,13 +171,17 @@ export function HorizontalBarSection({
   title: string;
   items: { name: string; count: number; percent: number }[];
 }) {
+  const ui = useUiText();
+
   if (items.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         </div>
-        <p className="p-4 text-center text-xs text-muted-foreground">No data available yet.</p>
+        <p className="p-4 text-center text-xs text-muted-foreground">
+          {ui("No data available yet.")}
+        </p>
       </div>
     );
   }
@@ -171,9 +197,11 @@ export function HorizontalBarSection({
         {items.slice(0, 5).map((item) => (
           <div key={item.name}>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-foreground">{item.name}</span>
+              <span className="text-xs font-medium text-foreground">
+                {item.name}
+              </span>
               <span className="text-xs text-muted-foreground">
-                {item.count.toLocaleString()} ({item.percent}%)
+                {item.count.toLocaleString(ui.locale)} ({item.percent}%)
               </span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -198,6 +226,8 @@ export function RealtimeSection({
   realtime: RealtimeData | null;
   loading: boolean;
 }) {
+  const ui = useUiText();
+
   if (loading && !realtime) {
     return (
       <div className="rounded-lg border border-border bg-card p-4 animate-pulse">
@@ -220,22 +250,36 @@ export function RealtimeSection({
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
         </span>
-        <h3 className="text-sm font-semibold text-foreground">Real-time</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          {ui("Real-time")}
+        </h3>
       </div>
       <div className="p-4">
-        <p className="text-2xl font-bold text-foreground">{realtime.activeVisitors}</p>
+        <p className="text-2xl font-bold text-foreground">
+          {realtime.activeVisitors}
+        </p>
         <p className="text-xs text-muted-foreground mb-3">
-          active visitor{realtime.activeVisitors !== 1 ? "s" : ""} right now
+          {" "}
+          {ui("active visitor")}
+          {realtime.activeVisitors !== 1 ? ui("s") : ""} {ui("right now")}{" "}
         </p>
 
         {realtime.pages && realtime.pages.length > 0 && (
           <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">Current pages:</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {ui("Current pages:")}
+            </p>
             {realtime.pages.slice(0, 5).map((page) => (
-              <div key={page.path} className="flex items-center justify-between text-xs">
-                <span className="font-mono text-foreground truncate mr-2">{page.path}</span>
+              <div
+                key={page.path}
+                className="flex items-center justify-between text-xs"
+              >
+                <span className="font-mono text-foreground truncate mr-2">
+                  {page.path}
+                </span>
                 <span className="text-muted-foreground shrink-0">
-                  {page.visitors} visitor{page.visitors !== 1 ? "s" : ""}
+                  {page.visitors} {ui("visitor")}
+                  {page.visitors !== 1 ? ui("s") : ""}
                 </span>
               </div>
             ))}

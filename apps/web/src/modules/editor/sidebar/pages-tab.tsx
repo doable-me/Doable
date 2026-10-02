@@ -1,16 +1,11 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback, useMemo } from "react";
 import { useEditorStore, type FileNode } from "../hooks/use-editor-store";
 import { usePreview } from "../hooks/use-preview";
 import { useChat } from "../hooks/use-chat";
-import {
-  Layout,
-  Plus,
-  Globe,
-  FileText,
-  Search,
-} from "lucide-react";
+import { Layout, Plus, Globe, FileText, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -92,9 +87,7 @@ function deriveRoute(baseName: string): string {
   const lower = baseName.toLowerCase();
   if (lower === "home" || lower === "index") return "/";
   // Convert PascalCase to kebab-case for the route
-  const kebab = baseName
-    .replace(/([a-z])([A-Z])/g, "$1-$2")
-    .toLowerCase();
+  const kebab = baseName.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
   return `/${kebab}`;
 }
 
@@ -107,6 +100,8 @@ function AddPageDialog({
   onSubmit: (name: string) => void;
   onCancel: () => void;
 }) {
+  const ui = useUiText();
+
   const [name, setName] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -116,15 +111,19 @@ function AddPageDialog({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2 p-3 border-b border-border bg-muted/30">
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-2 p-3 border-b border-border bg-muted/30"
+    >
       <label className="text-xs font-medium text-muted-foreground">
-        New Page Name
+        {" "}
+        {ui("New Page Name")}{" "}
       </label>
       <input
         autoFocus
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="e.g. Dashboard, Settings, Pricing"
+        placeholder={ui("e.g. Dashboard, Settings, Pricing")}
         className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       />
       <div className="flex items-center gap-2">
@@ -133,14 +132,16 @@ function AddPageDialog({
           disabled={!name.trim()}
           className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Create via AI
+          {" "}
+          {ui("Create via AI")}{" "}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
-          Cancel
+          {" "}
+          {ui("Cancel")}{" "}
         </button>
       </div>
     </form>
@@ -150,6 +151,8 @@ function AddPageDialog({
 // ─── Main Component ─────────────────────────────────────────
 
 export function PagesTab() {
+  const ui = useUiText();
+
   const { fileTree, projectId, previewUrl } = useEditorStore();
   const { navigate } = usePreview(projectId);
   const { sendMessage, isStreaming } = useChat(projectId);
@@ -166,8 +169,7 @@ export function PagesTab() {
     const q = searchQuery.toLowerCase();
     return pages.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.route.toLowerCase().includes(q)
+        p.name.toLowerCase().includes(q) || p.route.toLowerCase().includes(q),
     );
   }, [pages, searchQuery]);
 
@@ -179,9 +181,10 @@ export function PagesTab() {
       const path = url.pathname;
       // Strip the /preview/:projectId prefix if present
       const previewPrefix = projectId ? `/preview/${projectId}` : "";
-      const cleanPath = previewPrefix && path.startsWith(previewPrefix)
-        ? path.slice(previewPrefix.length) || "/"
-        : path;
+      const cleanPath =
+        previewPrefix && path.startsWith(previewPrefix)
+          ? path.slice(previewPrefix.length) || "/"
+          : path;
       return pages.find((p) => p.route === cleanPath)?.route ?? null;
     } catch {
       return null;
@@ -194,7 +197,7 @@ export function PagesTab() {
       const routePath = page.route === "/" ? "" : page.route;
       navigate(routePath);
     },
-    [navigate]
+    [navigate],
   );
 
   // Add page via AI
@@ -204,7 +207,7 @@ export function PagesTab() {
       const prompt = `Create a new page called "${name}" with a route at /${name.toLowerCase().replace(/\s+/g, "-")}. Add it to the router in App.tsx and create the page component in src/pages/${name.replace(/\s+/g, "")}.tsx with a basic layout that matches the existing pages.`;
       sendMessage(prompt);
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   return (
@@ -212,19 +215,19 @@ export function PagesTab() {
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Pages
+          {" "}
+          {ui("Pages")}{" "}
         </h3>
         <button
           onClick={() => setShowAddDialog(!showAddDialog)}
           disabled={isStreaming}
           className={cn(
             "flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors",
-            isStreaming && "opacity-50 cursor-not-allowed"
+            isStreaming && "opacity-50 cursor-not-allowed",
           )}
-          title="Add a new page"
+          title={ui("Add a new page")}
         >
-          <Plus className="h-3 w-3" />
-          Add
+          <Plus className="h-3 w-3" /> {ui("Add")}{" "}
         </button>
       </div>
 
@@ -244,7 +247,7 @@ export function PagesTab() {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search pages..."
+              placeholder={ui("Search pages...")}
               className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
           </div>
@@ -257,7 +260,11 @@ export function PagesTab() {
           <div className="flex flex-col items-center justify-center py-8 px-3">
             <FileText className="h-6 w-6 text-muted-foreground/50" />
             <p className="mt-2 text-xs text-muted-foreground text-center">
-              {searchQuery ? "No pages match your search." : "No pages detected. Add files to src/pages/ to see them here."}
+              {searchQuery
+                ? ui("No pages match your search.")
+                : ui(
+                    "No pages detected. Add files to src/pages/ to see them here.",
+                  )}
             </p>
           </div>
         ) : (
@@ -272,13 +279,13 @@ export function PagesTab() {
                     "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors group",
                     isActive
                       ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                   )}
                 >
                   <Layout
                     className={cn(
                       "h-3.5 w-3.5 flex-none",
-                      isActive ? "text-primary" : "text-muted-foreground"
+                      isActive ? "text-primary" : "text-muted-foreground",
                     )}
                   />
                   <div className="flex flex-1 items-center justify-between min-w-0">
@@ -288,7 +295,7 @@ export function PagesTab() {
                         "ml-2 flex-none text-[11px] font-mono",
                         isActive
                           ? "text-primary/70"
-                          : "text-muted-foreground/60 group-hover:text-muted-foreground"
+                          : "text-muted-foreground/60 group-hover:text-muted-foreground",
                       )}
                     >
                       {page.route}
@@ -305,7 +312,10 @@ export function PagesTab() {
       <div className="border-t border-border px-3 py-2">
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <Globe className="h-3 w-3" />
-          <span>{pages.length} page{pages.length !== 1 ? "s" : ""} detected</span>
+          <span>
+            {pages.length} {ui("page")}
+            {pages.length !== 1 ? ui("s") : ""} {ui("detected")}
+          </span>
         </div>
       </div>
     </div>

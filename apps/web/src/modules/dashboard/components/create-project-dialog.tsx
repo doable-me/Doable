@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -53,18 +55,30 @@ type CreationMode = "blank" | "prompt" | "template";
 const FRAMEWORK_META: Record<string, { icon: typeof Globe; color: string }> = {
   "vite-react": { icon: Atom, color: "text-cyan-400" },
   "nextjs-app": { icon: Globe, color: "text-white" },
-  "sveltekit": { icon: Hexagon, color: "text-orange-400" },
-  "nuxt": { icon: Layers, color: "text-green-400" },
-  "astro": { icon: Wind, color: "text-purple-400" },
-  "hono": { icon: Zap, color: "text-orange-300" },
-  "fastapi": { icon: Server, color: "text-emerald-400" },
-  "django": { icon: Code2, color: "text-green-300" },
+  sveltekit: { icon: Hexagon, color: "text-orange-400" },
+  nuxt: { icon: Layers, color: "text-green-400" },
+  astro: { icon: Wind, color: "text-purple-400" },
+  hono: { icon: Zap, color: "text-orange-300" },
+  fastapi: { icon: Server, color: "text-emerald-400" },
+  django: { icon: Code2, color: "text-green-300" },
 };
 
 // Fallback list if API call fails
 const FALLBACK_FRAMEWORKS = [
-  { id: "vite-react", name: "React (Vite)", description: "Client-side SPA", category: "Frontend", isDefault: true },
-  { id: "nextjs-app", name: "Next.js", description: "Full-stack React", category: "Full-Stack", isDefault: false },
+  {
+    id: "vite-react",
+    name: "React (Vite)",
+    description: "Client-side SPA",
+    category: "Frontend",
+    isDefault: true,
+  },
+  {
+    id: "nextjs-app",
+    name: "Next.js",
+    description: "Full-stack React",
+    category: "Full-Stack",
+    isDefault: false,
+  },
 ];
 
 function slugify(text: string): string {
@@ -80,29 +94,43 @@ export function CreateProjectDialog({
   onOpenChange,
   onCreate,
 }: CreateProjectDialogProps) {
+  const ui = useUiText();
+  const i18n_FALLBACK_FRAMEWORKS = useUiData(FALLBACK_FRAMEWORKS);
+
   const [mode, setMode] = useState<CreationMode>("blank");
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [selectedFramework, setSelectedFramework] = useState<string>("vite-react");
+  const [selectedFramework, setSelectedFramework] =
+    useState<string>("vite-react");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slugEdited, setSlugEdited] = useState(false);
   const [templates, setTemplates] = useState<ApiTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [frameworks, setFrameworks] = useState(FALLBACK_FRAMEWORKS);
+  const [frameworks, setFrameworks] = useState(i18n_FALLBACK_FRAMEWORKS);
 
   // Fetch enabled frameworks from the API
   useEffect(() => {
     if (!open) return;
-    apiFetch<{ frameworks: Array<{ id: string; name: string; description: string; category: string; isDefault: boolean }>; defaultFramework: string }>("/frameworks")
+    apiFetch<{
+      frameworks: Array<{
+        id: string;
+        name: string;
+        description: string;
+        category: string;
+        isDefault: boolean;
+      }>;
+      defaultFramework: string;
+    }>("/frameworks")
       .then((res) => {
         if (res.frameworks && res.frameworks.length > 0) {
           setFrameworks(res.frameworks);
           // Set default framework selection
-          const def = res.frameworks.find((f) => f.isDefault) ?? res.frameworks[0];
+          const def =
+            res.frameworks.find((f) => f.isDefault) ?? res.frameworks[0];
           if (def) setSelectedFramework(def.id);
         }
       })
@@ -133,7 +161,7 @@ export function CreateProjectDialog({
         setSlug(slugify(value));
       }
     },
-    [slugEdited]
+    [slugEdited],
   );
 
   const reset = () => {
@@ -143,18 +171,22 @@ export function CreateProjectDialog({
     setDescription("");
     setPrompt("");
     setSelectedTemplate(null);
-    setSelectedFramework(frameworks.find((f) => f.isDefault)?.id ?? frameworks[0]?.id ?? "vite-react");
+    setSelectedFramework(
+      frameworks.find((f) => f.isDefault)?.id ??
+        frameworks[0]?.id ??
+        "vite-react",
+    );
     setError(null);
     setSlugEdited(false);
   };
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      setError("Project name is required");
+      setError(ui("Project name is required"));
       return;
     }
     if (!slug.trim() || slug.length < 3) {
-      setError("Slug must be at least 3 characters");
+      setError(ui("Slug must be at least 3 characters"));
       return;
     }
 
@@ -168,14 +200,15 @@ export function CreateProjectDialog({
         description: description.trim() || undefined,
         prompt: mode === "prompt" ? prompt.trim() || undefined : undefined,
         templateId:
-          mode === "template" ? selectedTemplate ?? undefined : undefined,
-        frameworkId:
-          mode !== "template" ? selectedFramework : undefined,
+          mode === "template" ? (selectedTemplate ?? undefined) : undefined,
+        frameworkId: mode !== "template" ? selectedFramework : undefined,
       });
       reset();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create project");
+      setError(
+        err instanceof Error ? err.message : ui("Failed to create project"),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -185,18 +218,38 @@ export function CreateProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-xl">Create a new project</DialogTitle>
+          <DialogTitle className="text-xl">
+            {ui("Create a new project")}
+          </DialogTitle>
           <DialogDescription>
-            Start from scratch, describe what you want, or pick a template.
+            {" "}
+            {ui(
+              "Start from scratch, describe what you want, or pick a template.",
+            )}{" "}
           </DialogDescription>
         </DialogHeader>
 
         {/* Mode Selector */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { key: "blank" as const, icon: FileCode, label: "Blank", desc: "Start fresh" },
-            { key: "prompt" as const, icon: MessageSquare, label: "From prompt", desc: "AI generates" },
-            { key: "template" as const, icon: LayoutTemplate, label: "Template", desc: "Pre-built" },
+            {
+              key: "blank" as const,
+              icon: FileCode,
+              label: ui("Blank"),
+              desc: ui("Start fresh"),
+            },
+            {
+              key: "prompt" as const,
+              icon: MessageSquare,
+              label: ui("From prompt"),
+              desc: ui("AI generates"),
+            },
+            {
+              key: "template" as const,
+              icon: LayoutTemplate,
+              label: ui("Template"),
+              desc: ui("Pre-built"),
+            },
           ].map(({ key, icon: Icon, label, desc }) => (
             <button
               key={key}
@@ -207,7 +260,9 @@ export function CreateProjectDialog({
                   : "border-zinc-700/50 text-zinc-400 hover:border-zinc-600 hover:bg-zinc-800/50 hover:text-zinc-200"
               }`}
             >
-              <Icon className={`h-6 w-6 ${mode === key ? "text-blue-400" : ""}`} />
+              <Icon
+                className={`h-6 w-6 ${mode === key ? "text-blue-400" : ""}`}
+              />
               <div>
                 <div className="text-sm font-semibold">{label}</div>
                 <div className="text-[11px] text-zinc-500">{desc}</div>
@@ -219,10 +274,15 @@ export function CreateProjectDialog({
         {/* Framework selector — shown for blank and prompt modes */}
         {(mode === "blank" || mode === "prompt") && (
           <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-300">Framework</label>
+            <label className="text-sm font-medium text-zinc-300">
+              {ui("Framework")}
+            </label>
             <div className="grid grid-cols-2 gap-2">
               {frameworks.map((fw) => {
-                const meta = FRAMEWORK_META[fw.id] ?? { icon: Globe, color: "text-white" };
+                const meta = FRAMEWORK_META[fw.id] ?? {
+                  icon: Globe,
+                  color: "text-white",
+                };
                 const Icon = meta.icon;
                 return (
                   <button
@@ -235,16 +295,28 @@ export function CreateProjectDialog({
                         : "border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800/50"
                     }`}
                   >
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                      selectedFramework === fw.id ? "bg-blue-500/20" : "bg-zinc-800"
-                    }`}>
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                        selectedFramework === fw.id
+                          ? "bg-blue-500/20"
+                          : "bg-zinc-800"
+                      }`}
+                    >
                       <Icon className={`h-4.5 w-4.5 ${meta.color}`} />
                     </div>
                     <div className="min-w-0">
-                      <div className={`text-sm font-medium ${
-                        selectedFramework === fw.id ? "text-white" : "text-zinc-200"
-                      }`}>{fw.name}</div>
-                      <div className="text-xs text-zinc-500">{fw.description}</div>
+                      <div
+                        className={`text-sm font-medium ${
+                          selectedFramework === fw.id
+                            ? "text-white"
+                            : "text-zinc-200"
+                        }`}
+                      >
+                        {fw.name}
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        {ui(fw.description)}
+                      </div>
                     </div>
                   </button>
                 );
@@ -256,9 +328,11 @@ export function CreateProjectDialog({
         {/* Form */}
         <div className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium">Name</label>
+            <label className="mb-1 block text-sm font-medium">
+              {ui("Name")}
+            </label>
             <Input
-              placeholder="My Awesome Project"
+              placeholder={ui("My Awesome Project")}
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               autoFocus
@@ -266,9 +340,11 @@ export function CreateProjectDialog({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Slug</label>
+            <label className="mb-1 block text-sm font-medium">
+              {ui("Slug")}
+            </label>
             <Input
-              placeholder="my-awesome-project"
+              placeholder={ui("my-awesome-project")}
               value={slug}
               onChange={(e) => {
                 setSlug(e.target.value);
@@ -279,11 +355,14 @@ export function CreateProjectDialog({
 
           <div>
             <label className="mb-1 block text-sm font-medium">
-              Description{" "}
-              <span className="font-normal text-muted-foreground">(optional)</span>
+              {" "}
+              {ui("Description")}{" "}
+              <span className="font-normal text-muted-foreground">
+                {ui("(optional)")}
+              </span>
             </label>
             <Input
-              placeholder="A brief description..."
+              placeholder={ui("A brief description...")}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -292,11 +371,12 @@ export function CreateProjectDialog({
           {mode === "prompt" && (
             <div>
               <label className="mb-1 block text-sm font-medium">
-                What do you want to build?
+                {" "}
+                {ui("What do you want to build?")}{" "}
               </label>
               <textarea
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="Describe your application in detail..."
+                placeholder={ui("Describe your application in detail...")}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={3}
@@ -307,16 +387,18 @@ export function CreateProjectDialog({
           {mode === "template" && (
             <div>
               <label className="mb-1 block text-sm font-medium">
-                Choose a template
+                {" "}
+                {ui("Choose a template")}{" "}
               </label>
               {templatesLoading ? (
                 <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
-                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                  Loading templates…
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />{" "}
+                  {ui("Loading templates…")}{" "}
                 </div>
               ) : templates.length === 0 ? (
                 <div className="py-6 text-center text-xs text-muted-foreground">
-                  No templates available.
+                  {" "}
+                  {ui("No templates available.")}{" "}
                 </div>
               ) : (
                 <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto">
@@ -341,9 +423,7 @@ export function CreateProjectDialog({
             </div>
           )}
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{ui(error)}</p>}
         </div>
 
         <DialogFooter>
@@ -354,11 +434,12 @@ export function CreateProjectDialog({
               onOpenChange(false);
             }}
           >
-            Cancel
+            {" "}
+            {ui("Cancel")}{" "}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create project
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{" "}
+            {ui("Create project")}{" "}
           </Button>
         </DialogFooter>
       </DialogContent>

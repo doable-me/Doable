@@ -1,16 +1,20 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import type { ReactElement } from "react";
 
 import { useBuildStore } from "./store/build-store";
 
 export function HighlightsRail(): ReactElement {
+  const ui = useUiText();
+
   const errors = useBuildStore((s) => s.errors);
 
   if (errors.length === 0) {
     return (
       <div className="flex-1 overflow-y-auto px-3 py-2 text-xs text-neutral-500">
-        No errors yet.
+        {" "}
+        {ui("No errors yet.")}{" "}
       </div>
     );
   }
@@ -24,7 +28,7 @@ export function HighlightsRail(): ReactElement {
             className="rounded-md border border-red-700/60 bg-red-950/30 p-2 text-xs"
           >
             <div className="flex items-center gap-2 font-mono text-red-300">
-              <span aria-hidden="true">x</span>
+              <span aria-hidden="true">{ui("x")}</span>
               <span>
                 {err.file}
                 {err.line != null ? `:${err.line}` : ""}
@@ -34,7 +38,8 @@ export function HighlightsRail(): ReactElement {
             <div className="mt-1 text-neutral-200">{err.message}</div>
             {err.resolved ? (
               <div className="mt-1 text-[10px] uppercase tracking-wide text-emerald-400">
-                resolved
+                {" "}
+                {ui("resolved")}{" "}
               </div>
             ) : null}
           </li>

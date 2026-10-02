@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { ArrowUp, CornerRightUp, Code2, Trash2 } from "lucide-react";
@@ -34,6 +35,8 @@ export function VisualEditToolbar({
   onDelete,
   hasPendingChanges = false,
 }: VisualEditToolbarProps) {
+  const ui = useUiText();
+
   const [prompt, setPrompt] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -123,7 +126,9 @@ export function VisualEditToolbar({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={hasPendingChanges ? "Save first" : "Ask Doable..."}
+          placeholder={
+            hasPendingChanges ? ui("Save first") : ui("Ask Doable...")
+          }
           disabled={hasPendingChanges}
           className="h-7 w-full rounded-lg bg-secondary px-2.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         />
@@ -135,7 +140,7 @@ export function VisualEditToolbar({
         onClick={handleSubmit}
         disabled={!prompt.trim()}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-brand-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-        title="Send prompt"
+        title={ui("Send prompt")}
       >
         <ArrowUp className="h-3.5 w-3.5" />
       </button>
@@ -148,7 +153,7 @@ export function VisualEditToolbar({
         type="button"
         onClick={onSelectParent}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        title="Select parent element"
+        title={ui("Select parent element")}
       >
         <CornerRightUp className="h-3.5 w-3.5" />
       </button>
@@ -158,7 +163,7 @@ export function VisualEditToolbar({
         type="button"
         onClick={onViewCode}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        title="View source code"
+        title={ui("View source code")}
       >
         <Code2 className="h-3.5 w-3.5" />
       </button>
@@ -168,7 +173,7 @@ export function VisualEditToolbar({
         type="button"
         onClick={onDelete}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-red-400"
-        title="Delete element"
+        title={ui("Delete element")}
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>

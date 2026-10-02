@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -12,6 +13,8 @@ import { useAuth } from "@/hooks/use-auth";
  * Once loaded, if the user is not authenticated, it redirects to /login.
  */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
+  const ui = useUiText();
+
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
@@ -26,7 +29,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-brand-600" />
-          <p className="text-sm text-gray-500">Loading...</p>
+          <p className="text-sm text-gray-500">{ui("Loading...")}</p>
         </div>
       </div>
     );

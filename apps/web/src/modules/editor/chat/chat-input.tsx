@@ -1,9 +1,25 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Paperclip, Square, Plus, ArrowUp, ChevronDown, Sparkles, FileIcon, FolderIcon, X } from "lucide-react";
+import {
+  Send,
+  Paperclip,
+  Square,
+  Plus,
+  ArrowUp,
+  ChevronDown,
+  Sparkles,
+  FileIcon,
+  FolderIcon,
+  X,
+} from "lucide-react";
 import { ModeToggle } from "./mode-toggle";
-import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
+import {
+  useAttachments,
+  ACCEPTED_EXTENSIONS,
+  type Attachment,
+} from "@/hooks/use-attachments";
 import { AttachmentPreviewStrip } from "./attachment-preview";
 import type { FileNode } from "../hooks/use-editor-store";
 
@@ -21,12 +37,13 @@ const PLACEHOLDER_SUGGESTIONS = [
 ];
 
 function useRotatingPlaceholder(): string {
+  const ui = useUiText();
   const [index, setIndex] = useState(0);
   const [displayText, setDisplayText] = useState("");
   const [isTyping, setIsTyping] = useState(true);
 
   useEffect(() => {
-    const target = PLACEHOLDER_SUGGESTIONS[index]!;
+    const target = ui(PLACEHOLDER_SUGGESTIONS[index]!);
     let charIndex = 0;
     let timeout: ReturnType<typeof setTimeout>;
 
@@ -61,13 +78,17 @@ function useRotatingPlaceholder(): string {
     }
 
     return () => clearTimeout(timeout);
-  }, [index, isTyping]);
+  }, [index, isTyping, ui]);
 
-  return displayText || "Describe what you want to build...";
+  return displayText || ui("Describe what you want to build...");
 }
 
 interface ChatInputProps {
-  onSend: (content: string, attachments?: Attachment[], projectFiles?: string[]) => void;
+  onSend: (
+    content: string,
+    attachments?: Attachment[],
+    projectFiles?: string[],
+  ) => void;
   onStop?: () => void;
   isStreaming: boolean;
   disabled?: boolean;
@@ -81,10 +102,14 @@ export function ChatInput({
   disabled,
   fileTree,
 }: ChatInputProps) {
+  const ui = useUiText();
+
   const [value, setValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
-  const [selectedProjectFiles, setSelectedProjectFiles] = useState<string[]>([]);
+  const [selectedProjectFiles, setSelectedProjectFiles] = useState<string[]>(
+    [],
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const filePickerRef = useRef<HTMLDivElement>(null);
   const placeholder = useRotatingPlaceholder();
@@ -100,13 +125,19 @@ export function ChatInput({
     clearAll,
   } = useAttachments();
 
-  const hasContent = value.trim().length > 0 || attachments.length > 0 || selectedProjectFiles.length > 0;
+  const hasContent =
+    value.trim().length > 0 ||
+    attachments.length > 0 ||
+    selectedProjectFiles.length > 0;
 
   // Close file picker when clicking outside
   useEffect(() => {
     if (!showFilePicker) return;
     const handleClick = (e: MouseEvent) => {
-      if (filePickerRef.current && !filePickerRef.current.contains(e.target as Node)) {
+      if (
+        filePickerRef.current &&
+        !filePickerRef.current.contains(e.target as Node)
+      ) {
         setShowFilePicker(false);
       }
     };
@@ -116,7 +147,13 @@ export function ChatInput({
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0 && selectedProjectFiles.length === 0) || disabled) return;
+    if (
+      (!trimmed &&
+        attachments.length === 0 &&
+        selectedProjectFiles.length === 0) ||
+      disabled
+    )
+      return;
     onSend(
       trimmed || "(attachments)",
       attachments.length > 0 ? attachments : undefined,
@@ -140,7 +177,7 @@ export function ChatInput({
         handleSend();
       }
     },
-    [isStreaming, handleSend]
+    [isStreaming, handleSend],
   );
 
   const handleInput = useCallback(() => {
@@ -167,7 +204,7 @@ export function ChatInput({
       setIsDragging(false);
       onDrop(e);
     },
-    [onDrop]
+    [onDrop],
   );
 
   return (
@@ -205,9 +242,15 @@ export function ChatInput({
                 className="flex items-center gap-1 rounded-md bg-brand-500/10 border border-brand-500/20 px-2 py-1 text-[11px] text-brand-400"
               >
                 <FileIcon className="h-3 w-3" />
-                <span className="max-w-[150px] truncate">{filePath.split("/").pop()}</span>
+                <span className="max-w-[150px] truncate">
+                  {filePath.split("/").pop()}
+                </span>
                 <button
-                  onClick={() => setSelectedProjectFiles((prev) => prev.filter((p) => p !== filePath))}
+                  onClick={() =>
+                    setSelectedProjectFiles((prev) =>
+                      prev.filter((p) => p !== filePath),
+                    )
+                  }
                   className="ml-0.5 rounded-full hover:bg-brand-500/20 p-0.5"
                 >
                   <X className="h-2.5 w-2.5" />
@@ -233,55 +276,57 @@ export function ChatInput({
         <div className="flex items-center justify-between px-2 pb-2 mt-1">
           {/* Left side: Attach + Project Files + ModeToggle */}
           <div className="flex items-center gap-2">
-             <button
-               onClick={openFilePicker}
-               className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200 border border-white/5"
-               title="Upload files from your device"
-             >
-               <Plus className="h-4 w-4" />
-               {attachments.length > 0 && (
-                 <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[10px] font-medium text-white shadow-sm">
-                   {attachments.length}
-                 </span>
-               )}
-             </button>
+            <button
+              onClick={openFilePicker}
+              className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200 border border-white/5"
+              title={ui("Upload files from your device")}
+            >
+              <Plus className="h-4 w-4" />
+              {attachments.length > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[10px] font-medium text-white shadow-sm">
+                  {attachments.length}
+                </span>
+              )}
+            </button>
 
-             {/* Project file attach button */}
-             {fileTree && fileTree.length > 0 && (
-               <div className="relative" ref={filePickerRef}>
-                 <button
-                   onClick={() => setShowFilePicker(!showFilePicker)}
-                   className="relative flex h-8 items-center gap-1 rounded-full bg-white/5 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200 border border-white/5 px-2"
-                   title="Attach project files"
-                 >
-                   <FileIcon className="h-3.5 w-3.5" />
-                   <span className="text-[10px] font-medium">Files</span>
-                   {selectedProjectFiles.length > 0 && (
-                     <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[10px] font-medium text-white shadow-sm">
-                       {selectedProjectFiles.length}
-                     </span>
-                   )}
-                 </button>
+            {/* Project file attach button */}
+            {fileTree && fileTree.length > 0 && (
+              <div className="relative" ref={filePickerRef}>
+                <button
+                  onClick={() => setShowFilePicker(!showFilePicker)}
+                  className="relative flex h-8 items-center gap-1 rounded-full bg-white/5 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200 border border-white/5 px-2"
+                  title={ui("Attach project files")}
+                >
+                  <FileIcon className="h-3.5 w-3.5" />
+                  <span className="text-[10px] font-medium">{ui("Files")}</span>
+                  {selectedProjectFiles.length > 0 && (
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[10px] font-medium text-white shadow-sm">
+                      {selectedProjectFiles.length}
+                    </span>
+                  )}
+                </button>
 
-                 {/* File picker dropdown */}
-                 {showFilePicker && (
-                   <ProjectFilePicker
-                     fileTree={fileTree}
-                     selected={selectedProjectFiles}
-                     onToggle={(path) => {
-                       setSelectedProjectFiles((prev) =>
-                         prev.includes(path)
-                           ? prev.filter((p) => p !== path)
-                           : prev.length < 10 ? [...prev, path] : prev
-                       );
-                     }}
-                     onClose={() => setShowFilePicker(false)}
-                   />
-                 )}
-               </div>
-             )}
-             
-             <ModeToggle />
+                {/* File picker dropdown */}
+                {showFilePicker && (
+                  <ProjectFilePicker
+                    fileTree={fileTree}
+                    selected={selectedProjectFiles}
+                    onToggle={(path) => {
+                      setSelectedProjectFiles((prev) =>
+                        prev.includes(path)
+                          ? prev.filter((p) => p !== path)
+                          : prev.length < 10
+                            ? [...prev, path]
+                            : prev,
+                      );
+                    }}
+                    onClose={() => setShowFilePicker(false)}
+                  />
+                )}
+              </div>
+            )}
+
+            <ModeToggle />
           </div>
 
           {/* Right side: Send / Stop */}
@@ -290,28 +335,31 @@ export function ChatInput({
               <button
                 onClick={onStop}
                 className="flex h-8 items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/20 px-3 text-red-500 hover:bg-red-500/20 transition-colors"
-                title="Stop generating"
+                title={ui("Stop generating")}
               >
                 <Square className="h-3 w-3 fill-current" />
-                <span className="text-[11px] font-medium">Stop</span>
+                <span className="text-[11px] font-medium">{ui("Stop")}</span>
               </button>
             ) : (
               <button
                 onClick={handleSend}
                 disabled={!hasContent || disabled}
                 className="group flex h-8 items-center gap-1.5 rounded-full bg-brand-500 border border-brand-500/20 px-3 text-white shadow-sm hover:bg-brand-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                title="Send message"
+                title={ui("Send message")}
               >
-                <span className="text-[11px] font-medium tracking-wide">Send</span>
+                <span className="text-[11px] font-medium tracking-wide">
+                  {ui("Send")}
+                </span>
                 <ArrowUp className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5" />
               </button>
             )}
           </div>
         </div>
       </div>
-      
+
       <div className="mt-2 text-center text-[10px] text-muted-foreground/40 font-medium tracking-wide">
-        Shift + Enter for new line
+        {" "}
+        {ui("Shift + Enter for new line")}{" "}
       </div>
     </div>
   );
@@ -330,6 +378,8 @@ function ProjectFilePicker({
   onToggle: (path: string) => void;
   onClose: () => void;
 }) {
+  const ui = useUiText();
+
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -347,7 +397,9 @@ function ProjectFilePicker({
   collectFiles(fileTree);
 
   const filtered = search.trim()
-    ? allFiles.filter((f) => f.path.toLowerCase().includes(search.toLowerCase()))
+    ? allFiles.filter((f) =>
+        f.path.toLowerCase().includes(search.toLowerCase()),
+      )
     : null;
 
   return (
@@ -358,7 +410,7 @@ function ProjectFilePicker({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search project files..."
+          placeholder={ui("Search project files...")}
           className="w-full rounded-md bg-muted/50 px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-brand-500/50"
           autoFocus
         />
@@ -369,7 +421,9 @@ function ProjectFilePicker({
         {filtered ? (
           // Search results (flat list)
           filtered.length === 0 ? (
-            <p className="text-center text-muted-foreground py-4">No files found</p>
+            <p className="text-center text-muted-foreground py-4">
+              {ui("No files found")}
+            </p>
           ) : (
             filtered.map((f) => (
               <FilePickerItem
@@ -390,11 +444,13 @@ function ProjectFilePicker({
               selected={selected}
               expanded={expanded}
               onToggle={onToggle}
-              onExpand={(path) => setExpanded((prev) => {
-                const next = new Set(prev);
-                next.has(path) ? next.delete(path) : next.add(path);
-                return next;
-              })}
+              onExpand={(path) =>
+                setExpanded((prev) => {
+                  const next = new Set(prev);
+                  next.has(path) ? next.delete(path) : next.add(path);
+                  return next;
+                })
+              }
               depth={0}
             />
           ))
@@ -410,7 +466,8 @@ function ProjectFilePicker({
           onClick={onClose}
           className="text-[10px] text-brand-400 hover:text-brand-300 font-medium"
         >
-          Done
+          {" "}
+          {ui("Done")}{" "}
         </button>
       </div>
     </div>
@@ -444,19 +501,22 @@ function FilePickerNode({
         >
           <FolderIcon className="h-3 w-3 text-muted-foreground shrink-0" />
           <span className="text-muted-foreground truncate">{node.name}</span>
-          <ChevronDown className={`h-2.5 w-2.5 text-muted-foreground/50 ml-auto transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
-        </button>
-        {isExpanded && node.children?.map((child) => (
-          <FilePickerNode
-            key={child.path}
-            node={child}
-            selected={selected}
-            expanded={expanded}
-            onToggle={onToggle}
-            onExpand={onExpand}
-            depth={depth + 1}
+          <ChevronDown
+            className={`h-2.5 w-2.5 text-muted-foreground/50 ml-auto transition-transform ${isExpanded ? "" : "-rotate-90"}`}
           />
-        ))}
+        </button>
+        {isExpanded &&
+          node.children?.map((child) => (
+            <FilePickerNode
+              key={child.path}
+              node={child}
+              selected={selected}
+              expanded={expanded}
+              onToggle={onToggle}
+              onExpand={onExpand}
+              depth={depth + 1}
+            />
+          ))}
       </div>
     );
   }

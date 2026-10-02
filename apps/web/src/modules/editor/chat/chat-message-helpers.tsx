@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useCallback, useState } from "react";
 import { Copy, Check, Wrench } from "lucide-react";
@@ -15,14 +16,11 @@ export function renderMarkdown(text: string): string {
   html = html.replace(
     /```(\w+)?\n([\s\S]*?)```/g,
     (_match, lang, code) =>
-      `<pre class="code-block ${lang ?? ""}" data-lang="${lang ?? ""}"><code>${code.trim()}</code></pre>`
+      `<pre class="code-block ${lang ?? ""}" data-lang="${lang ?? ""}"><code>${code.trim()}</code></pre>`,
   );
 
   // Inline code
-  html = html.replace(
-    /`([^`]+)`/g,
-    '<code class="inline-code">$1</code>'
-  );
+  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
   // Bold (before italic so **bold** isn't caught by *italic*)
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
@@ -31,25 +29,43 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
 
   // Headings (# to ####) — must be at start of line
-  html = html.replace(/^#### (.+)$/gm, '<h4 class="chat-h4 bubble-heading">$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3 class="chat-h3 bubble-heading">$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2 class="chat-h2 bubble-heading">$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1 class="chat-h1 bubble-heading">$1</h1>');
+  html = html.replace(
+    /^#### (.+)$/gm,
+    '<h4 class="chat-h4 bubble-heading">$1</h4>',
+  );
+  html = html.replace(
+    /^### (.+)$/gm,
+    '<h3 class="chat-h3 bubble-heading">$1</h3>',
+  );
+  html = html.replace(
+    /^## (.+)$/gm,
+    '<h2 class="chat-h2 bubble-heading">$1</h2>',
+  );
+  html = html.replace(
+    /^# (.+)$/gm,
+    '<h1 class="chat-h1 bubble-heading">$1</h1>',
+  );
 
   // Unordered lists: lines starting with - or *
-  html = html.replace(/^[*-] (.+)$/gm, '<li class="premium-ul-li bubble-item"><div class="ul-bullet"></div><div class="li-content">$1</div></li>');
+  html = html.replace(
+    /^[*-] (.+)$/gm,
+    '<li class="premium-ul-li bubble-item"><div class="ul-bullet"></div><div class="li-content">$1</div></li>',
+  );
 
   // Ordered lists: lines starting with 1. 2. etc.
-  html = html.replace(/^(\d+)\. (.+)$/gm, '<li class="premium-ol-li bubble-item"><div class="ol-number">$1</div><div class="li-content">$2</div></li>');
+  html = html.replace(
+    /^(\d+)\. (.+)$/gm,
+    '<li class="premium-ol-li bubble-item"><div class="ol-number">$1</div><div class="li-content">$2</div></li>',
+  );
 
   // Wrap consecutive <li> runs in <ul>/<ol>
   html = html.replace(
     /((?:<li class="premium-ul-li bubble-item">[\s\S]*?<\/li>\s*)+)/g,
-    '<ul class="premium-ul">$1</ul>'
+    '<ul class="premium-ul">$1</ul>',
   );
   html = html.replace(
     /((?:<li class="premium-ol-li bubble-item">[\s\S]*?<\/li>\s*)+)/g,
-    '<ol class="premium-ol">$1</ol>'
+    '<ol class="premium-ol">$1</ol>',
   );
 
   // Horizontal rules
@@ -63,13 +79,18 @@ export function renderMarkdown(text: string): string {
 
   // Clean up: remove <br /> right after block elements
   html = html.replace(/<\/(h[1-4]|li|ul|ol|pre|hr|div)><br \/>/g, "</$1>");
-  html = html.replace(/<hr class="chat-hr" \/><br \/>/g, '<hr class="chat-hr" />');
+  html = html.replace(
+    /<hr class="chat-hr" \/><br \/>/g,
+    '<hr class="chat-hr" />',
+  );
 
   return html;
 }
 
 // ─── Code Block with Copy ───────────────────────────────────
 export function CodeBlockCopyButton({ content }: { content: string }) {
+  const ui = useUiText();
+
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -82,7 +103,7 @@ export function CodeBlockCopyButton({ content }: { content: string }) {
     <button
       onClick={handleCopy}
       className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-      title="Copy code"
+      title={ui("Copy code")}
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-green-500" />
@@ -94,7 +115,12 @@ export function CodeBlockCopyButton({ content }: { content: string }) {
 }
 
 // ─── Tool Activity Summary (shown for history messages) ─────
-export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: string; arguments?: unknown }> }) {
+export function ToolActivitySummary({
+  toolCalls,
+}: {
+  toolCalls: Array<{ name: string; arguments?: unknown }>;
+}) {
+  const ui = useUiText();
   const counts: Record<string, number> = {};
   for (const tc of toolCalls) {
     const name = tc.name ?? "unknown";
@@ -103,28 +129,71 @@ export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: st
 
   const friendlyName = (name: string, count: number): string => {
     switch (name) {
-      case "create_file": return `Created ${count} file${count > 1 ? "s" : ""}`;
-      case "edit_file": return `Edited ${count} file${count > 1 ? "s" : ""}`;
-      case "read_file": return `Read ${count} file${count > 1 ? "s" : ""}`;
-      case "list_files": return "Explored project structure";
-      case "install_package": return `Installed ${count} package${count > 1 ? "s" : ""}`;
-      case "search_files": return `Searched ${count} time${count > 1 ? "s" : ""}`;
-      case "run_terminal_command": return `Ran ${count} command${count > 1 ? "s" : ""}`;
-      case "report_intent": return "Planning";
-      case "create_plan": return "Creating plan";
-      case "mark_step_complete": return "Tracking progress";
+      case "create_file":
+        return ui("Created {count, plural, one {# file} other {# files}}", {
+          count,
+        });
+      case "edit_file":
+        return ui("Edited {count, plural, one {# file} other {# files}}", {
+          count,
+        });
+      case "read_file":
+        return ui("Read {count, plural, one {# file} other {# files}}", {
+          count,
+        });
+      case "list_files":
+        return ui("Explored project structure");
+      case "install_package":
+        return ui(
+          "Installed {count, plural, one {# package} other {# packages}}",
+          { count },
+        );
+      case "search_files":
+        return ui("Searched {count, plural, one {# time} other {# times}}", {
+          count,
+        });
+      case "run_terminal_command":
+        return ui("Ran {count, plural, one {# command} other {# commands}}", {
+          count,
+        });
+      case "report_intent":
+        return ui("Planning");
+      case "create_plan":
+        return ui("Creating plan");
+      case "mark_step_complete":
+        return ui("Tracking progress");
       default: {
         // MCP tools: strip prefix, humanize the tool name
         if (name.startsWith("mcp_")) {
           const parts = name.slice(4).split("_");
           // Find where server name ends and tool name starts by looking for common tool verbs
-          const verbIdx = parts.findIndex(p => ["get", "list", "search", "create", "update", "delete", "query", "manage", "run", "download", "cancel", "save", "new"].includes(p));
+          const verbIdx = parts.findIndex((p) =>
+            [
+              "get",
+              "list",
+              "search",
+              "create",
+              "update",
+              "delete",
+              "query",
+              "manage",
+              "run",
+              "download",
+              "cancel",
+              "save",
+              "new",
+            ].includes(p),
+          );
           const toolParts = verbIdx > 0 ? parts.slice(verbIdx) : parts;
-          const label = toolParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+          const label = toolParts
+            .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+            .join(" ");
           return count > 1 ? `${label} (×${count})` : label;
         }
         // Humanize underscore names
-        const humanized = name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        const humanized = name
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
         return count > 1 ? `${humanized} (×${count})` : humanized;
       }
     }
@@ -132,7 +201,12 @@ export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: st
 
   const allCounts = Object.entries(counts);
 
-  const writeTools = ["create_file", "edit_file", "install_package", "run_terminal_command"];
+  const writeTools = [
+    "create_file",
+    "edit_file",
+    "install_package",
+    "run_terminal_command",
+  ];
   const mcpTools = allCounts.filter(([name]) => name.startsWith("mcp_"));
   const writeEntries = allCounts.filter(([name]) => writeTools.includes(name));
   // Show write tools + MCP tools preferentially; fall back to all tools
@@ -150,8 +224,12 @@ export function ToolActivitySummary({ toolCalls }: { toolCalls: Array<{ name: st
         <div className="flex-1 min-w-0 flex flex-wrap gap-x-2 gap-y-1 items-center text-[12px] text-muted-foreground/80">
           {entries.map(([name, count], i) => (
             <span key={name} className="flex items-center gap-2">
-              <span className="font-medium text-foreground/90">{friendlyName(name, count)}</span>
-              {i < entries.length - 1 && <span className="h-1 w-1 rounded-full bg-border/80" />}
+              <span className="font-medium text-foreground/90">
+                {friendlyName(name, count)}
+              </span>
+              {i < entries.length - 1 && (
+                <span className="h-1 w-1 rounded-full bg-border/80" />
+              )}
             </span>
           ))}
         </div>

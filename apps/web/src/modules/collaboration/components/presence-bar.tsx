@@ -1,10 +1,19 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { MessageCircle } from "lucide-react";
 import { useCollaboration } from "../collaboration-context";
 
 export function PresenceBar() {
-  const { members, unreadCount, chatPopoutOpen, setChatPopoutOpen, setChatVisible } = useCollaboration();
+  const ui = useUiText();
+
+  const {
+    members,
+    unreadCount,
+    chatPopoutOpen,
+    setChatPopoutOpen,
+    setChatVisible,
+  } = useCollaboration();
 
   // Only show when 2+ members in the room
   if (members.length < 2) return null;
@@ -58,7 +67,7 @@ export function PresenceBar() {
           )}
         </div>
         <span className="text-[11px] text-muted-foreground ml-1">
-          {members.length} online
+          {members.length} {ui("online")}{" "}
         </span>
       </div>
 
@@ -68,7 +77,7 @@ export function PresenceBar() {
         className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
       >
         <MessageCircle className="h-3.5 w-3.5" />
-        <span>Chat</span>
+        <span>{ui("Chat")}</span>
         {unreadCount > 0 && (
           <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
             {unreadCount > 99 ? "99+" : unreadCount}

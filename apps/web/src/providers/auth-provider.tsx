@@ -1,5 +1,6 @@
 "use client";
 
+import { LocaleAccountSync } from "@/i18n/locale-provider";
 import {
   createContext,
   useCallback,
@@ -25,6 +26,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────
 
 export interface AuthUser {
+  interfaceLanguage?: string | null;
   id: string;
   email: string;
   displayName: string;
@@ -108,6 +110,7 @@ function storeUser(user: AuthUser | null): void {
 }
 
 function toAuthUser(apiUser: {
+  interfaceLanguage?: string | null;
   id: string;
   email: string;
   displayName: string | null;
@@ -118,8 +121,10 @@ function toAuthUser(apiUser: {
   return {
     id: apiUser.id,
     email: apiUser.email,
-    displayName: apiUser.displayName ?? apiUser.email.split("@")[0] ?? apiUser.email,
+    displayName:
+      apiUser.displayName ?? apiUser.email.split("@")[0] ?? apiUser.email,
     avatarUrl: apiUser.avatarUrl,
+    interfaceLanguage: apiUser.interfaceLanguage,
     isPlatformAdmin: apiUser.isPlatformAdmin ?? false,
     platformRole: apiUser.platformRole ?? "member",
   };
@@ -213,7 +218,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isMfaChallenge(res)) {
       // Don't set user yet — the caller must render the MFA challenge
       // step and call completeMfaLogin to finish signing in.
-      return { mfaRequired: true, mfaToken: res.mfaToken, expiresIn: res.expiresIn };
+      return {
+        mfaRequired: true,
+        mfaToken: res.mfaToken,
+        expiresIn: res.expiresIn,
+      };
     }
     const authUser = toAuthUser(res.user);
     setUser(authUser);
@@ -221,25 +230,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { mfaRequired: false };
   }, []);
 
-  const completeMfaLogin = useCallback(async (args: { mfaToken: string; code: string }) => {
-    const res = await apiMfaLoginVerify(args);
-    const authUser = toAuthUser(res.user);
-    setUser(authUser);
-    storeUser(authUser);
-  }, []);
+  const completeMfaLogin = useCallback(
+    async (args: { mfaToken: string; code: string }) => {
+      const res = await apiMfaLoginVerify(args);
+      const authUser = toAuthUser(res.user);
+      setUser(authUser);
+      storeUser(authUser);
+    },
+    [],
+  );
 
-  const register = useCallback(async (data: RegisterData): Promise<RegisterResult> => {
-    const res = await apiRegister(data);
-    if (isPendingSignup(res)) {
-      // Approvals are on — no tokens issued, no user state. Caller shows
-      // the message and stops at the signup page.
-      return { pending: true, message: res.message };
-    }
-    const authUser = toAuthUser(res.user);
-    setUser(authUser);
-    storeUser(authUser);
-    return { pending: false };
-  }, []);
+  const register = useCallback(
+    async (data: RegisterData): Promise<RegisterResult> => {
+      const res = await apiRegister(data);
+      if (isPendingSignup(res)) {
+        // Approvals are on — no tokens issued, no user state. Caller shows
+        // the message and stops at the signup page.
+        return { pending: true, message: res.message };
+      }
+      const authUser = toAuthUser(res.user);
+      setUser(authUser);
+      storeUser(authUser);
+      return { pending: false };
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -291,8 +306,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginAsDemo,
       refreshUser,
     }),
-    [user, isLoading, login, completeMfaLogin, register, logout, loginAsDemo, refreshUser]
+    [
+      user,
+      isLoading,
+      login,
+      completeMfaLogin,
+      register,
+      logout,
+      loginAsDemo,
+      refreshUser,
+    ],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      <LocaleAccountSync
+        userId={user?.id}
+        interfaceLanguage={user?.interfaceLanguage}
+      />
+      {children}
+    </AuthContext.Provider>
+  );
 }

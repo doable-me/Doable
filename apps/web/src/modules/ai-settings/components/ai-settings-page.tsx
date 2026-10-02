@@ -1,10 +1,16 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiListWorkspaces, apiFetch, type ApiWorkspace } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
-import { useGitHubAccounts, useCustomProviders, useWorkspaceAISettings, useUserAiPreferences } from "../hooks/use-ai-settings";
+import {
+  useGitHubAccounts,
+  useCustomProviders,
+  useWorkspaceAISettings,
+  useUserAiPreferences,
+} from "../hooks/use-ai-settings";
 import { ConnectionsTab } from "./connections-tab";
 import { ModelConfigTab } from "./model-config-tab";
 import { AccessControlTab } from "./access-control-tab";
@@ -14,30 +20,40 @@ import { Link2, Bot, Shield, ShieldAlert, Sparkles } from "lucide-react";
 type Tab = "connections" | "models" | "doable-ai" | "access";
 
 export function AiSettingsPage() {
+  const ui = useUiText();
+
   const router = useRouter();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("connections");
   const [workspaces, setWorkspaces] = useState<ApiWorkspace[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
+    null,
+  );
   const [loaded, setLoaded] = useState(false);
   const [featureAllowed, setFeatureAllowed] = useState<boolean | null>(null);
-  const [featureDeniedReason, setFeatureDeniedReason] = useState<string | null>(null);
+  const [featureDeniedReason, setFeatureDeniedReason] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
-    apiListWorkspaces().then(({ data }) => {
-      setWorkspaces(data);
-      const persisted = localStorage.getItem("doable_active_workspace_id");
-      const found = data.find((w) => w.id === persisted);
-      setActiveWorkspaceId(found ? found.id : data[0]?.id ?? null);
-      setLoaded(true);
-    }).catch(() => { setLoaded(true); });
+    apiListWorkspaces()
+      .then(({ data }) => {
+        setWorkspaces(data);
+        const persisted = localStorage.getItem("doable_active_workspace_id");
+        const found = data.find((w) => w.id === persisted);
+        setActiveWorkspaceId(found ? found.id : (data[0]?.id ?? null));
+        setLoaded(true);
+      })
+      .catch(() => {
+        setLoaded(true);
+      });
   }, []);
 
   // Check feature flag access for this user
   useEffect(() => {
     if (!loaded || !activeWorkspaceId) return;
     apiFetch<{ allowed: boolean; reason: string }>(
-      `/admin/features/check/ai_settings?workspaceId=${activeWorkspaceId}`
+      `/admin/features/check/ai_settings?workspaceId=${activeWorkspaceId}`,
     )
       .then((res) => {
         setFeatureAllowed(res.allowed);
@@ -52,7 +68,8 @@ export function AiSettingsPage() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const isPlatformAdmin = !!user?.isPlatformAdmin;
   const isWorkspaceAdmin =
-    activeWorkspace?.userRole === "owner" || activeWorkspace?.userRole === "admin";
+    activeWorkspace?.userRole === "owner" ||
+    activeWorkspace?.userRole === "admin";
 
   // All hooks must be called before any conditional returns
   const githubAccounts = useGitHubAccounts(activeWorkspaceId);
@@ -64,17 +81,28 @@ export function AiSettingsPage() {
   // Only block if the feature is explicitly disabled or per-user denied.
   const isHardDenied =
     featureAllowed === false &&
-    (featureDeniedReason === "feature_disabled" || featureDeniedReason === "user_override_denied");
+    (featureDeniedReason === "feature_disabled" ||
+      featureDeniedReason === "user_override_denied");
   const hasAccess = !isHardDenied;
 
   // Connections is now visible to every member: any member can add their
   // own personal Copilot account / provider. Admin-only actions inside
   // (e.g. "Add for workspace") are gated within the tab itself.
-  const allTabs: { key: Tab; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
-    { key: "connections", label: "Connections", icon: Link2 },
-    { key: "models", label: "Configure Model", icon: Bot },
-    { key: "doable-ai", label: "Doable AI", icon: Sparkles },
-    { key: "access", label: "Access Control", icon: Shield, adminOnly: true },
+  const allTabs: {
+    key: Tab;
+    label: string;
+    icon: React.ElementType;
+    adminOnly?: boolean;
+  }[] = [
+    { key: "connections", label: ui("Connections"), icon: Link2 },
+    { key: "models", label: ui("Configure Model"), icon: Bot },
+    { key: "doable-ai", label: ui("Doable"), icon: Sparkles },
+    {
+      key: "access",
+      label: ui("Access Control"),
+      icon: Shield,
+      adminOnly: true,
+    },
   ];
   const tabs = allTabs.filter((t) => !t.adminOnly || isPlatformAdmin);
 
@@ -101,19 +129,26 @@ export function AiSettingsPage() {
       <div className="mx-auto max-w-4xl px-6 py-10">
         <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center">
           <ShieldAlert className="h-12 w-12 text-muted-foreground mb-4" />
-          <h2 className="text-lg font-semibold text-foreground">Access Restricted</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            {ui("Access Restricted")}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground max-w-md">
             {featureDeniedReason === "feature_disabled"
-              ? "AI Settings has been disabled by a platform administrator."
+              ? ui("AI Settings has been disabled by a platform administrator.")
               : featureDeniedReason === "user_override_denied"
-              ? "Your access to AI Settings has been restricted by a platform administrator."
-              : "You don't have permission to access AI Settings. Contact your administrator."}
+                ? ui(
+                    "Your access to AI Settings has been restricted by a platform administrator.",
+                  )
+                : ui(
+                    "You don't have permission to access AI Settings. Contact your administrator.",
+                  )}
           </p>
           <button
             onClick={() => router.push("/dashboard")}
             className="mt-6 rounded-lg bg-secondary px-4 py-2 text-sm text-foreground hover:bg-accent transition-colors"
           >
-            Back to Dashboard
+            {" "}
+            {ui("Back to Dashboard")}{" "}
           </button>
         </div>
       </div>
@@ -123,9 +158,12 @@ export function AiSettingsPage() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">AI Settings</h1>
+        <h1 className="text-2xl font-bold text-foreground">
+          {ui("AI Settings")}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Configure which AI models power your workspace.
+          {" "}
+          {ui("Configure which AI models power your workspace.")}{" "}
         </p>
       </div>
 

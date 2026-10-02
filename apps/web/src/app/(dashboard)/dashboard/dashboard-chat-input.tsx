@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -30,15 +32,20 @@ import { apiFetch } from "@/lib/api";
 const FRAMEWORK_META: Record<string, { icon: LucideIcon; color: string }> = {
   "vite-react": { icon: Atom, color: "text-cyan-500 dark:text-cyan-400" },
   "nextjs-app": { icon: Globe, color: "text-gray-800 dark:text-white" },
-  "sveltekit": { icon: Hexagon, color: "text-orange-400" },
-  "nuxt": { icon: Layers, color: "text-green-400" },
-  "astro": { icon: Wind, color: "text-purple-400" },
-  "hono": { icon: Zap, color: "text-orange-300" },
-  "fastapi": { icon: Server, color: "text-emerald-400" },
-  "django": { icon: Code2, color: "text-green-300" },
+  sveltekit: { icon: Hexagon, color: "text-orange-400" },
+  nuxt: { icon: Layers, color: "text-green-400" },
+  astro: { icon: Wind, color: "text-purple-400" },
+  hono: { icon: Zap, color: "text-orange-300" },
+  fastapi: { icon: Server, color: "text-emerald-400" },
+  django: { icon: Code2, color: "text-green-300" },
 };
 
-const AUTO_DETECT_OPTION = { id: "", label: "Auto-detect", icon: Wand2, color: "text-violet-400 dark:text-violet-400" };
+const AUTO_DETECT_OPTION = {
+  id: "",
+  label: "Auto-detect",
+  icon: Wand2,
+  color: "text-violet-400 dark:text-violet-400",
+};
 
 function getDocIcon(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -83,6 +90,8 @@ export function ChatInput({
   frameworkId: string | null;
   onFrameworkChange: (id: string | null) => void;
 }) {
+  const ui = useUiText();
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -90,7 +99,7 @@ export function ChatInput({
         onSubmit();
       }
     },
-    [onSubmit]
+    [onSubmit],
   );
 
   const placeholder = useTypingPlaceholder();
@@ -123,8 +132,12 @@ export function ChatInput({
                   />
                 ) : (
                   <div className="h-16 w-auto min-w-[64px] max-w-[140px] rounded-lg border border-border bg-muted/50 flex items-center gap-1.5 px-2">
-                    <span className="text-lg shrink-0">{getDocIcon(att.name)}</span>
-                    <span className="text-[10px] text-muted-foreground truncate">{att.name}</span>
+                    <span className="text-lg shrink-0">
+                      {getDocIcon(att.name)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground truncate">
+                      {att.name}
+                    </span>
                   </div>
                 )}
                 <button
@@ -142,7 +155,7 @@ export function ChatInput({
             <button
               onClick={onOpenFilePicker}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-              title="Attach files"
+              title={ui("Attach files")}
             >
               <Plus className="h-4 w-4" />
             </button>
@@ -155,10 +168,9 @@ export function ChatInput({
                     ? "bg-blue-100 dark:bg-blue-600/20 text-blue-700 dark:text-blue-400"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                title="Strategize first, then do the work"
+                title={ui("Strategize first, then do the work")}
               >
-                <Target className="h-3 w-3" />
-                Strategize
+                <Target className="h-3 w-3" /> {ui("Strategize")}{" "}
               </button>
               <div className="w-px h-4 bg-border" />
               <button
@@ -168,10 +180,9 @@ export function ChatInput({
                     ? "bg-brand-100 dark:bg-brand-600/20 text-brand-700 dark:text-brand-400"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                title="Start working immediately"
+                title={ui("Start working immediately")}
               >
-                <Hammer className="h-3 w-3" />
-                Work
+                <Hammer className="h-3 w-3" /> {ui("Work")}{" "}
               </button>
             </div>
             {/* Framework picker — defaults to auto-detect (server picks
@@ -191,7 +202,7 @@ export function ChatInput({
                     ? "text-red-400 bg-red-500/10 animate-pulse"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
-                title={isListening ? "Stop recording" : "Voice input"}
+                title={isListening ? ui("Stop recording") : ui("Voice input")}
               >
                 <Mic className="h-4 w-4" />
               </button>
@@ -200,7 +211,9 @@ export function ChatInput({
                 type="button"
                 disabled
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-50 cursor-not-allowed"
-                title="Voice input isn't supported in this browser. Try Chrome or Edge."
+                title={ui(
+                  "Voice input isn't supported in this browser. Try Chrome or Edge.",
+                )}
               >
                 <Mic className="h-4 w-4" />
               </button>
@@ -245,10 +258,15 @@ function FrameworkPicker({
   onChange: (id: string | null) => void;
   disabled?: boolean;
 }) {
+  const ui = useUiText();
+  const i18n_AUTO_DETECT_OPTION = useUiData(AUTO_DETECT_OPTION);
+
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [options, setOptions] = useState<{ id: string; label: string; icon: LucideIcon; color: string }[]>([AUTO_DETECT_OPTION]);
+  const [options, setOptions] = useState<
+    { id: string; label: string; icon: LucideIcon; color: string }[]
+  >([i18n_AUTO_DETECT_OPTION]);
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
   // Fetch enabled frameworks from API once
@@ -256,16 +274,21 @@ function FrameworkPicker({
     apiFetch<{ frameworks: Array<{ id: string; name: string }> }>("/frameworks")
       .then((res) => {
         if (res.frameworks?.length > 0) {
-          const opts = [AUTO_DETECT_OPTION, ...res.frameworks.map((fw) => ({
-            id: fw.id,
-            label: fw.name,
-            icon: FRAMEWORK_META[fw.id]?.icon ?? Globe,
-            color: FRAMEWORK_META[fw.id]?.color ?? "text-muted-foreground",
-          }))];
+          const opts = [
+            i18n_AUTO_DETECT_OPTION,
+            ...res.frameworks.map((fw) => ({
+              id: fw.id,
+              label: fw.name,
+              icon: FRAMEWORK_META[fw.id]?.icon ?? Globe,
+              color: FRAMEWORK_META[fw.id]?.color ?? "text-muted-foreground",
+            })),
+          ];
           setOptions(opts);
         }
       })
-      .catch(() => { /* use default auto-detect only */ });
+      .catch(() => {
+        /* use default auto-detect only */
+      });
   }, []);
 
   // Close on outside click
@@ -275,7 +298,8 @@ function FrameworkPicker({
       if (
         btnRef.current?.contains(e.target as Node) ||
         menuRef.current?.contains(e.target as Node)
-      ) return;
+      )
+        return;
       setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
@@ -304,45 +328,50 @@ function FrameworkPicker({
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         className="flex items-center gap-1.5 rounded-full border border-border px-2.5 h-7 text-[11px] font-medium text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-colors"
-        title="Pick framework explicitly, or let the server detect from your prompt"
+        title={ui(
+          "Pick framework explicitly, or let the server detect from your prompt",
+        )}
         disabled={disabled}
       >
         <Icon className={`h-3.5 w-3.5 ${selected.color}`} />
         <span>{selected.label}</span>
-        <ChevronDown className={`h-3 w-3 opacity-60 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown
+          className={`h-3 w-3 opacity-60 transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
-      {open && createPortal(
-        <div
-          ref={menuRef}
-          className="fixed z-[9999] min-w-[180px] rounded-xl border border-border bg-popover p-1 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150"
-          style={{ top: pos.top, left: pos.left }}
-        >
-          {options.map((opt) => {
-            const OptIcon = opt.icon;
-            const isSelected = opt.id === (value ?? "");
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => {
-                  onChange(opt.id || null);
-                  setOpen(false);
-                }}
-                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
-                  isSelected
-                    ? "bg-accent text-accent-foreground font-medium"
-                    : "text-popover-foreground hover:bg-accent/60"
-                }`}
-              >
-                <OptIcon className={`h-3.5 w-3.5 shrink-0 ${opt.color}`} />
-                <span>{opt.label}</span>
-              </button>
-            );
-          })}
-        </div>,
-        document.body
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[9999] min-w-[180px] rounded-xl border border-border bg-popover p-1 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            {options.map((opt) => {
+              const OptIcon = opt.icon;
+              const isSelected = opt.id === (value ?? "");
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.id || null);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
+                    isSelected
+                      ? "bg-accent text-accent-foreground font-medium"
+                      : "text-popover-foreground hover:bg-accent/60"
+                  }`}
+                >
+                  <OptIcon className={`h-3.5 w-3.5 shrink-0 ${opt.color}`} />
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -17,7 +18,11 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: (() => {
     const fromUrl = (u: string | undefined) => {
       if (!u) return null;
-      try { return new URL(u).hostname; } catch { return null; }
+      try {
+        return new URL(u).hostname;
+      } catch {
+        return null;
+      }
     };
     const apex = (host: string) => {
       if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return host;
@@ -26,10 +31,16 @@ const nextConfig: NextConfig = {
     };
     // Dev-only cross-origin allowlist. Derive from the install env; never
     // hardcode our own domain so self-hosters don't carry `*.doable.me`.
-    const host = fromUrl(process.env.NEXT_PUBLIC_APP_URL)
-      || fromUrl(process.env.NEXT_PUBLIC_API_URL)
-      || "";
-    return [host, host ? `*.${apex(host)}` : "", "localhost", "127.0.0.1"].filter(Boolean);
+    const host =
+      fromUrl(process.env.NEXT_PUBLIC_APP_URL) ||
+      fromUrl(process.env.NEXT_PUBLIC_API_URL) ||
+      "";
+    return [
+      host,
+      host ? `*.${apex(host)}` : "",
+      "localhost",
+      "127.0.0.1",
+    ].filter(Boolean);
   })(),
   experimental: {
     serverActions: {
@@ -54,9 +65,13 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: '/settings/ai', destination: '/ai-settings', permanent: false },
-      { source: '/settings/usage', destination: '/usage', permanent: false },
-      { source: '/settings/billing', destination: '/billing', permanent: false },
+      { source: "/settings/ai", destination: "/ai-settings", permanent: false },
+      { source: "/settings/usage", destination: "/usage", permanent: false },
+      {
+        source: "/settings/billing",
+        destination: "/billing",
+        permanent: false,
+      },
     ];
   },
   async rewrites() {
@@ -64,7 +79,7 @@ const nextConfig: NextConfig = {
       // Bare /favicon.ico requests (crawlers, browsers without <link rel="icon">)
       // are served by the dynamic icon.tsx route. Standalone build doesn't auto-alias
       // icon.tsx to /favicon.ico, so we wire it explicitly.
-      { source: '/favicon.ico', destination: '/icon' },
+      { source: "/favicon.ico", destination: "/icon" },
     ];
   },
   async headers() {
@@ -111,7 +126,13 @@ const nextConfig: NextConfig = {
     // allow="microphone; autoplay".
     const apiUrlRaw = process.env.NEXT_PUBLIC_API_URL || "";
     const previewOrigin = apiUrlRaw
-      ? (() => { try { return new URL(apiUrlRaw).origin; } catch { return ""; } })()
+      ? (() => {
+          try {
+            return new URL(apiUrlRaw).origin;
+          } catch {
+            return "";
+          }
+        })()
       : "";
     const micList = previewOrigin ? `(self "${previewOrigin}")` : "(self)";
     // BUG-016: CSP was applying `unsafe-eval` + `unsafe-inline` to every
@@ -206,5 +227,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
-
+export default createNextIntlPlugin("./src/i18n/request.ts")(nextConfig);

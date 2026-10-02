@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import {
   useCallback,
@@ -23,6 +24,8 @@ export function EditorLayout({
   preview,
   toolbar,
 }: EditorLayoutProps) {
+  const ui = useUiText();
+
   const {
     panelSizes,
     sidebarCollapsed,
@@ -46,7 +49,7 @@ export function EditorLayout({
         size: handle === "left" ? sidebarWidth : panelSizes.preview,
       };
     },
-    [sidebarWidth, panelSizes.preview]
+    [sidebarWidth, panelSizes.preview],
   );
 
   useEffect(() => {
@@ -56,7 +59,10 @@ export function EditorLayout({
       const delta = e.clientX - dragStartRef.current.x;
 
       if (dragging === "left") {
-        const newWidth = Math.max(180, Math.min(400, dragStartRef.current.size + delta));
+        const newWidth = Math.max(
+          180,
+          Math.min(400, dragStartRef.current.size + delta),
+        );
         setPanelSizes({ sidebar: newWidth });
       }
     };
@@ -93,7 +99,7 @@ export function EditorLayout({
           <button
             onClick={toggleSidebar}
             className="flex h-full w-10 flex-col items-center border-r border-border bg-muted/30 pt-3 hover:bg-muted/60 transition-colors"
-            title="Expand sidebar"
+            title={ui("Expand sidebar")}
           >
             <PanelLeft className="h-4 w-4 text-muted-foreground" />
           </button>
@@ -126,9 +132,7 @@ export function EditorLayout({
 
         {/* Center panel (chat + code) */}
         {showCenter && (
-          <div className="flex flex-1 min-w-0 overflow-hidden">
-            {center}
-          </div>
+          <div className="flex flex-1 min-w-0 overflow-hidden">{center}</div>
         )}
 
         {/* Right drag handle */}
@@ -149,9 +153,7 @@ export function EditorLayout({
 
         {/* Preview panel */}
         {showPreview && (
-          <div className="flex flex-1 min-w-0 overflow-hidden">
-            {preview}
-          </div>
+          <div className="flex flex-1 min-w-0 overflow-hidden">{preview}</div>
         )}
       </div>
     </div>

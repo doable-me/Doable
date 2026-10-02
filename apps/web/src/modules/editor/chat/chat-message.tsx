@@ -1,10 +1,28 @@
 "use client";
+import { translateProgress } from "@/i18n/progress";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { memo, useCallback, useState, useMemo, useRef, useEffect } from "react";
 import {
-  Bot, User, Copy, Check, Loader2, Brain, Wrench, Sparkles,
-  ListChecks, Undo2, AlertCircle, Terminal, Package, Search,
-  FileEdit, FilePlus, Cpu, ChevronDown, XCircle,
+  Bot,
+  User,
+  Copy,
+  Check,
+  Loader2,
+  Brain,
+  Wrench,
+  Sparkles,
+  ListChecks,
+  Undo2,
+  AlertCircle,
+  Terminal,
+  Package,
+  Search,
+  FileEdit,
+  FilePlus,
+  Cpu,
+  ChevronDown,
+  XCircle,
 } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "../hooks/use-editor-store";
 import { useEditorStore } from "../hooks/use-editor-store";
@@ -14,48 +32,81 @@ import { apiFetch } from "@/lib/api";
 import { ToolCallCard } from "./tool-call-card";
 import { ErrorRecoveryCard } from "./error-recovery-card";
 import { McpUiResourceCard } from "./mcp-ui-resource";
-import { renderMarkdown, CodeBlockCopyButton, ToolActivitySummary } from "./chat-message-helpers";
-import type { AgentPhase, AgentProgressState } from "../hooks/use-agent-progress";
+import {
+  renderMarkdown,
+  CodeBlockCopyButton,
+  ToolActivitySummary,
+} from "./chat-message-helpers";
+import type {
+  AgentPhase,
+  AgentProgressState,
+} from "../hooks/use-agent-progress";
 import { PHASE_LABELS } from "../hooks/use-agent-progress";
 import { InlineClarificationCard } from "./plan/inline-clarification";
 import { UserInputCard } from "./user-input-card";
 
 // ─── Phase → Icon mapping ─────────────────────────────────────
-function PhaseIcon({ phase, className = "" }: { phase: AgentPhase; className?: string }) {
+function PhaseIcon({
+  phase,
+  className = "",
+}: {
+  phase: AgentPhase;
+  className?: string;
+}) {
   const base = `shrink-0 ${className}`;
   switch (phase) {
-    case "thinking": return <Brain className={`${base} text-brand-400 animate-pulse`} />;
-    case "planning": return <ListChecks className={`${base} text-brand-400 animate-pulse`} />;
-    case "clarifying": return <Brain className={`${base} text-amber-400`} />;
-    case "reading_files": return <Search className={`${base} text-blue-400`} />;
-    case "writing_files": return <FileEdit className={`${base} text-blue-400 animate-pulse`} />;
-    case "running_command": return <Terminal className={`${base} text-purple-400 animate-pulse`} />;
-    case "installing": return <Package className={`${base} text-orange-400 animate-pulse`} />;
-    case "testing": return <Cpu className={`${base} text-indigo-400 animate-pulse`} />;
-    case "fixing": return <Wrench className={`${base} text-amber-400 animate-spin`} />;
-    case "streaming_response": return <Loader2 className={`${base} text-brand-400 animate-spin`} />;
-    case "completed": return <Check className={`${base} text-green-500`} />;
-    case "failed": return <AlertCircle className={`${base} text-red-400`} />;
-    case "cancelled": return <XCircle className={`${base} text-muted-foreground`} />;
-    default: return <Loader2 className={`${base} text-brand-400 animate-spin`} />;
+    case "thinking":
+      return <Brain className={`${base} text-brand-400 animate-pulse`} />;
+    case "planning":
+      return <ListChecks className={`${base} text-brand-400 animate-pulse`} />;
+    case "clarifying":
+      return <Brain className={`${base} text-amber-400`} />;
+    case "reading_files":
+      return <Search className={`${base} text-blue-400`} />;
+    case "writing_files":
+      return <FileEdit className={`${base} text-blue-400 animate-pulse`} />;
+    case "running_command":
+      return <Terminal className={`${base} text-purple-400 animate-pulse`} />;
+    case "installing":
+      return <Package className={`${base} text-orange-400 animate-pulse`} />;
+    case "testing":
+      return <Cpu className={`${base} text-indigo-400 animate-pulse`} />;
+    case "fixing":
+      return <Wrench className={`${base} text-amber-400 animate-spin`} />;
+    case "streaming_response":
+      return <Loader2 className={`${base} text-brand-400 animate-spin`} />;
+    case "completed":
+      return <Check className={`${base} text-green-500`} />;
+    case "failed":
+      return <AlertCircle className={`${base} text-red-400`} />;
+    case "cancelled":
+      return <XCircle className={`${base} text-muted-foreground`} />;
+    default:
+      return <Loader2 className={`${base} text-brand-400 animate-spin`} />;
   }
 }
 
 // ─── Streaming Status Indicator ───────────────────────────────
 // Shown inline beneath the message header while content is also streaming
 function StreamingStatus({ progress }: { progress?: AgentProgressState }) {
+  const ui = useUiText();
   if (!progress || progress.phase === "streaming_response") return null;
 
   const isError = progress.phase === "failed";
   const isCancelled = progress.phase === "cancelled";
 
   return (
-    <div className={`flex items-center gap-1.5 text-xs mb-1.5 ${isError ? "text-red-400" :
-        isCancelled ? "text-muted-foreground" :
-          "text-muted-foreground"
-      }`}>
+    <div
+      className={`flex items-center gap-1.5 text-xs mb-1.5 ${
+        isError
+          ? "text-red-400"
+          : isCancelled
+            ? "text-muted-foreground"
+            : "text-muted-foreground"
+      }`}
+    >
       <PhaseIcon phase={progress.phase} className="h-3 w-3" />
-      <span>{progress.message}</span>
+      <span>{translateProgress(progress.message, ui)}</span>
     </div>
   );
 }
@@ -63,6 +114,8 @@ function StreamingStatus({ progress }: { progress?: AgentProgressState }) {
 // ─── Glowing Progress Card (formerly WaitingIndicator) ──────────
 // Shown during agent execution when no content has streamed yet, or while terminal commands run
 function GlowingProgressCard({ progress }: { progress?: AgentProgressState }) {
+  const ui = useUiText();
+
   const phase = progress?.phase ?? "thinking";
   const message = progress?.message ?? "Thinking…";
 
@@ -74,7 +127,7 @@ function GlowingProgressCard({ progress }: { progress?: AgentProgressState }) {
 
   // Take the last 3 completed/in_progress events
   const visibleEvents = agentTimeline
-    .filter(t => t.status !== "failed" && !t.message.includes("undefined"))
+    .filter((t) => t.status !== "failed" && !t.message.includes("undefined"))
     .slice(-4);
 
   return (
@@ -93,7 +146,7 @@ function GlowingProgressCard({ progress }: { progress?: AgentProgressState }) {
 
         {/* Title */}
         <h3 className="mt-4 text-sm font-semibold text-white tracking-wide">
-          {message}
+          {translateProgress(message, ui)}
         </h3>
 
         {/* Dynamic Checklist */}
@@ -102,7 +155,10 @@ function GlowingProgressCard({ progress }: { progress?: AgentProgressState }) {
             const isLast = idx === visibleEvents.length - 1;
             const isSpinning = isLast && !isError && phase !== "completed";
             return (
-              <div key={evt.id} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 transition-all">
+              <div
+                key={evt.id}
+                className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 transition-all"
+              >
                 <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
                   {isSpinning ? (
                     <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
@@ -110,8 +166,10 @@ function GlowingProgressCard({ progress }: { progress?: AgentProgressState }) {
                     <Check className="h-3 w-3 text-brand-400" />
                   )}
                 </div>
-                <span className={`text-[11px] font-medium truncate ${isSpinning ? "text-brand-100" : "text-muted-foreground"}`}>
-                  {evt.message}
+                <span
+                  className={`text-[11px] font-medium truncate ${isSpinning ? "text-brand-100" : "text-muted-foreground"}`}
+                >
+                  {translateProgress(evt.message, ui)}
                 </span>
               </div>
             );
@@ -122,7 +180,9 @@ function GlowingProgressCard({ progress }: { progress?: AgentProgressState }) {
               <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/10 border border-brand-500/20">
                 <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
               </div>
-              <span className="text-[11px] font-medium text-muted-foreground">Preparing workspace…</span>
+              <span className="text-[11px] font-medium text-muted-foreground">
+                {ui("Preparing workspace…")}
+              </span>
             </div>
           )}
         </div>
@@ -153,6 +213,8 @@ function ThinkingSection({
   isStreaming: boolean;
   summaryLine?: string;
 }) {
+  const ui = useUiText();
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(isStreaming);
   const wasStreamingRef = useRef(isStreaming);
@@ -166,20 +228,26 @@ function ThinkingSection({
   useEffect(() => {
     if (isOpen && isStreaming && scrollRef.current) {
       const el = scrollRef.current;
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      const isNearBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       if (isNearBottom) el.scrollTop = el.scrollHeight;
     }
   }, [content, isOpen, isStreaming]);
 
   // Derive a 1-line summary from the first meaningful sentence if not provided
-  const displaySummary = summaryLine || (() => {
-    if (!content) return "";
-    const firstSentence = content.replace(/\n+/g, " ").trim().split(/[.!?]/)[0];
-    if (!firstSentence) return "";
-    return firstSentence.length > 80
-      ? firstSentence.slice(0, 77) + "…"
-      : firstSentence;
-  })();
+  const displaySummary =
+    summaryLine ||
+    (() => {
+      if (!content) return "";
+      const firstSentence = content
+        .replace(/\n+/g, " ")
+        .trim()
+        .split(/[.!?]/)[0];
+      if (!firstSentence) return "";
+      return firstSentence.length > 80
+        ? firstSentence.slice(0, 77) + "…"
+        : firstSentence;
+    })();
 
   return (
     <div className="mb-2 rounded-md border border-border/50 bg-muted/20 text-xs">
@@ -188,12 +256,21 @@ function ThinkingSection({
         onClick={() => setIsOpen((p) => !p)}
         className="w-full cursor-pointer select-none px-2.5 py-1.5 text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
       >
-        <Brain className={`h-3 w-3 text-brand-400 shrink-0 ${isStreaming ? "animate-pulse" : ""}`} />
+        <Brain
+          className={`h-3 w-3 text-brand-400 shrink-0 ${isStreaming ? "animate-pulse" : ""}`}
+        />
         <span className="flex-1 text-left truncate">
-          {isStreaming ? "Thinking…" : (displaySummary || "Thought process")}
+          {isStreaming
+            ? ui("Thinking…")
+            : displaySummary || ui("Thought process")}
         </span>
-        <span className="text-[10px] text-muted-foreground/40 shrink-0">{wordCount}w</span>
-        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        <span className="text-[10px] text-muted-foreground/40 shrink-0">
+          {wordCount}
+          {ui("w")}
+        </span>
+        <ChevronDown
+          className={`h-3 w-3 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
+        />
       </button>
       {isOpen && (
         <div
@@ -218,7 +295,12 @@ interface ChatMessageProps {
   onClarificationAnswer?: (content: string) => void;
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, onClarificationAnswer }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({
+  message,
+  onClarificationAnswer,
+}: ChatMessageProps) {
+  const ui = useUiText();
+
   const isUser = message.role === "user";
   const hasThinking = !!message.thinkingContent;
 
@@ -227,26 +309,32 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
     message.agentProgress ??
     (message.liveStatus
       ? (() => {
-        // Backward-compat: parse legacy colon-string format
-        const colonIdx = message.liveStatus.indexOf(":");
-        const KNOWN = new Set(["plan", "tool_call", "tool_result", "status"]);
-        const maybeType = colonIdx > 0 ? message.liveStatus.slice(0, colonIdx) : "";
-        const isPrefixed = KNOWN.has(maybeType);
-        const msg = isPrefixed ? message.liveStatus.slice(colonIdx + 1) : message.liveStatus;
-        const phase: AgentPhase =
-          maybeType === "tool_call" ? "writing_files" :
-            maybeType === "tool_result" ? "completed" :
-              maybeType === "plan" ? "planning" :
-                "thinking";
-        return { phase, message: msg || PHASE_LABELS[phase] };
-      })()
+          // Backward-compat: parse legacy colon-string format
+          const colonIdx = message.liveStatus.indexOf(":");
+          const KNOWN = new Set(["plan", "tool_call", "tool_result", "status"]);
+          const maybeType =
+            colonIdx > 0 ? message.liveStatus.slice(0, colonIdx) : "";
+          const isPrefixed = KNOWN.has(maybeType);
+          const msg = isPrefixed
+            ? message.liveStatus.slice(colonIdx + 1)
+            : message.liveStatus;
+          const phase: AgentPhase =
+            maybeType === "tool_call"
+              ? "writing_files"
+              : maybeType === "tool_result"
+                ? "completed"
+                : maybeType === "plan"
+                  ? "planning"
+                  : "thinking";
+          return { phase, message: msg || ui(PHASE_LABELS[phase]) };
+        })()
       : undefined);
 
   const isWaiting = message.isStreaming && !message.content && !hasThinking;
-  const isActivelyStreaming = message.isStreaming && !!(message.content || hasThinking);
+  const isActivelyStreaming =
+    message.isStreaming && !!(message.content || hasThinking);
   const isTerminal =
-    agentProgress?.phase === "failed" ||
-    agentProgress?.phase === "cancelled";
+    agentProgress?.phase === "failed" || agentProgress?.phase === "cancelled";
 
   const [undoing, setUndoing] = useState(false);
   const [userMsgExpanded, setUserMsgExpanded] = useState(false);
@@ -276,21 +364,23 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
       // Forward to parent (chat-panel) which calls sendMessage to reach the API
       onClarificationAnswer?.(content);
     },
-    [message.id, message.clarificationQuestion, updateMessageFields, onClarificationAnswer]
+    [
+      message.id,
+      message.clarificationQuestion,
+      updateMessageFields,
+      onClarificationAnswer,
+    ],
   );
 
   const handleClarificationSkip = useCallback(
     (questionId: string) => {
       handleClarificationAnswer(questionId, "__skipped__");
     },
-    [handleClarificationAnswer]
+    [handleClarificationAnswer],
   );
 
   const canUndo =
-    !isUser &&
-    !message.isStreaming &&
-    message.versionSha &&
-    !message.undone;
+    !isUser && !message.isStreaming && message.versionSha && !message.undone;
 
   const handleUndo = useCallback(async () => {
     if (!projectId || !message.versionSha || undoing) return;
@@ -311,33 +401,32 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
   // Memoize rendered markdown
   const renderedHtml = useMemo(() => {
     if (!message.content) return "";
-    const content =
-      isActivelyStreaming
-        ? message.content.replace(/:\s*$/, "")
-        : message.content;
+    const content = isActivelyStreaming
+      ? message.content.replace(/:\s*$/, "")
+      : message.content;
     return renderMarkdown(content);
   }, [message.content, isActivelyStreaming]);
 
   // Live tool call cards (from liveToolCalls array)
   const liveToolCalls = message.liveToolCalls ?? [];
   // Show cards only during streaming or if they recently completed (< 30s)
-  const visibleToolCalls = isActivelyStreaming || isWaiting
-    ? liveToolCalls
-    : liveToolCalls.filter((tc) => tc.status !== "running");
+  const visibleToolCalls =
+    isActivelyStreaming || isWaiting
+      ? liveToolCalls
+      : liveToolCalls.filter((tc) => tc.status !== "running");
 
   // Progress percent (for plan step tracking)
   const progressPercent = agentProgress?.percent;
 
   return (
-    <div
-      className={`flex gap-3 px-4 py-3 ${isUser ? "" : "bg-muted/30"}`}
-    >
+    <div className={`flex gap-3 px-4 py-3 ${isUser ? "" : "bg-muted/30"}`}>
       {/* Avatar */}
       <div
-        className={`flex h-7 w-7 flex-none items-center justify-center rounded-full ${isUser
+        className={`flex h-7 w-7 flex-none items-center justify-center rounded-full ${
+          isUser
             ? "bg-primary text-primary-foreground"
             : "bg-gradient-to-br from-brand-500 to-brand-300 text-white"
-          }`}
+        }`}
       >
         {isUser ? (
           <User className="h-3.5 w-3.5" />
@@ -351,10 +440,10 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
         {/* Header row */}
         <div className="mb-1 flex items-center gap-2">
           <span className="text-xs font-semibold text-foreground">
-            {isUser ? "You" : "Doable AI"}
+            {isUser ? ui("You") : ui("Doable")}
           </span>
           <span className="text-xs text-muted-foreground">
-            {new Date(message.timestamp).toLocaleTimeString([], {
+            {new Date(message.timestamp).toLocaleTimeString(ui.locale, {
               hour: "2-digit",
               minute: "2-digit",
             })}
@@ -377,7 +466,19 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
                 key={filePath}
                 className="inline-flex items-center gap-1 rounded-md bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 text-[10px] text-brand-400"
               >
-                <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                <svg
+                  className="h-2.5 w-2.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
                 {filePath.split("/").pop()}
               </span>
             ))}
@@ -415,7 +516,7 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
         {message.undone && (
           <div className="mb-1.5 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
             <Undo2 className="h-3 w-3" />
-            <span className="font-medium">Changes undone</span>
+            <span className="font-medium">{ui("Changes undone")}</span>
           </div>
         )}
 
@@ -424,19 +525,27 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
           <GlowingProgressCard progress={agentProgress} />
         ) : message.content ? (
           <div
-            className={`prose-editor text-sm leading-relaxed ${message.undone ? "text-muted-foreground opacity-60" : "text-foreground"
-              } ${isActivelyStreaming ? "streaming-bubble" : ""}`}
+            className={`prose-editor text-sm leading-relaxed ${
+              message.undone
+                ? "text-muted-foreground opacity-60"
+                : "text-foreground"
+            } ${isActivelyStreaming ? "streaming-bubble" : ""}`}
           >
             {/* Collapse long user messages (>500 chars) to avoid overwhelming the chat */}
             {isUser && message.content.length > 500 && !userMsgExpanded ? (
               <>
-                <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content.slice(0, 500) + "…") }} />
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: renderMarkdown(message.content.slice(0, 500) + "…"),
+                  }}
+                />
                 <button
                   onClick={() => setUserMsgExpanded(true)}
                   className="mt-1 text-xs text-brand-500 hover:text-brand-400 font-medium flex items-center gap-1"
                 >
-                  <ChevronDown className="h-3 w-3" />
-                  Show full prompt ({Math.ceil(message.content.length / 1000)}k chars)
+                  <ChevronDown className="h-3 w-3" /> {ui("Show full prompt (")}
+                  {Math.ceil(message.content.length / 1000)}
+                  {ui("k chars)")}{" "}
                 </button>
               </>
             ) : (
@@ -447,8 +556,8 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
                     onClick={() => setUserMsgExpanded(false)}
                     className="mt-1 text-xs text-brand-500 hover:text-brand-400 font-medium flex items-center gap-1"
                   >
-                    <ChevronDown className="h-3 w-3 rotate-180" />
-                    Collapse
+                    <ChevronDown className="h-3 w-3 rotate-180" />{" "}
+                    {ui("Collapse")}{" "}
                   </button>
                 )}
               </>
@@ -463,16 +572,13 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
           </div>
         ) : isTerminal && !isWaiting ? (
           agentProgress?.phase === "failed" ? (
-            <ErrorRecoveryCard
-              kind="generic"
-              message={agentProgress.message}
-            />
+            <ErrorRecoveryCard kind="generic" message={agentProgress.message} />
           ) : (
             <GlowingProgressCard progress={agentProgress} />
           )
         ) : null}
-        
-                {/* Inline clarification question card */}
+
+        {/* Inline clarification question card */}
         {!isUser && message.clarificationQuestion && (
           <InlineClarificationCard
             questionId={message.clarificationQuestion.id}
@@ -507,35 +613,46 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
         )}
 
         {/* MCP-Apps interactive UI resources — sandboxed iframes */}
-        {!isUser && projectId && message.mcpResources && Object.values(message.mcpResources).length > 0 && (
-          <div className="space-y-1">
-            {Object.values(message.mcpResources).map((res) => (
-              <McpUiResourceCard
-                key={res.toolCallId}
-                resource={res}
-                projectId={projectId}
-                onResource={(newRes) => {
-                  updateMessageFields(message.id, {
-                    mcpResources: {
-                      ...(message.mcpResources ?? {}),
-                      [newRes.toolCallId]: newRes,
-                    },
-                  });
-                }}
-              />
-            ))}
-          </div>
-        )}
+        {!isUser &&
+          projectId &&
+          message.mcpResources &&
+          Object.values(message.mcpResources).length > 0 && (
+            <div className="space-y-1">
+              {Object.values(message.mcpResources).map((res) => (
+                <McpUiResourceCard
+                  key={res.toolCallId}
+                  resource={res}
+                  projectId={projectId}
+                  onResource={(newRes) => {
+                    updateMessageFields(message.id, {
+                      mcpResources: {
+                        ...(message.mcpResources ?? {}),
+                        [newRes.toolCallId]: newRes,
+                      },
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
         {/* Tool activity summary — shown for history messages with tool calls */}
-        {!isUser && !message.isStreaming && !message.content && message.hadToolCalls && message.toolCallDetails && (
-          <ToolActivitySummary toolCalls={message.toolCallDetails} />
-        )}
-        {!isUser && !message.isStreaming && message.content && message.hadToolCalls && message.toolCallDetails && (
-          <div className="mt-1.5">
+        {!isUser &&
+          !message.isStreaming &&
+          !message.content &&
+          message.hadToolCalls &&
+          message.toolCallDetails && (
             <ToolActivitySummary toolCalls={message.toolCallDetails} />
-          </div>
-        )}
+          )}
+        {!isUser &&
+          !message.isStreaming &&
+          message.content &&
+          message.hadToolCalls &&
+          message.toolCallDetails && (
+            <div className="mt-1.5">
+              <ToolActivitySummary toolCalls={message.toolCallDetails} />
+            </div>
+          )}
 
         {/* Token counter */}
         {!isUser && !message.isStreaming && message.usage && (
@@ -554,32 +671,49 @@ export const ChatMessage = memo(function ChatMessage({ message, onClarificationA
             ) : (
               <Undo2 className="h-3 w-3" />
             )}
-            {undoing ? "Undoing..." : "Undo changes"}
+            {undoing ? ui("Undoing...") : ui("Undo changes")}
           </button>
         )}
 
         {/* ─── Suggestion Pills ────────────────────────────────────────── */}
-        {!isUser && !message.isStreaming && message.content && isTerminal && !message.clarificationQuestion && !message.undone && (
-          <div className="mt-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-300">
-            {["Make the stats pop more", "Add a dark / light toggle", "Improve the activity table", "Add more animations"].map((sugg) => (
-              <button
-                key={sugg}
-                onClick={() => {
-                  const chatInput = document.querySelector<HTMLTextAreaElement>('textarea');
-                  if (chatInput) {
-                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-                    nativeInputValueSetter?.call(chatInput, sugg);
-                    chatInput.dispatchEvent(new Event("input", { bubbles: true }));
-                    chatInput.focus();
-                  }
-                }}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-white/10 hover:text-foreground transition-all duration-200"
-              >
-                {sugg}
-              </button>
-            ))}
-          </div>
-        )}
+        {!isUser &&
+          !message.isStreaming &&
+          message.content &&
+          isTerminal &&
+          !message.clarificationQuestion &&
+          !message.undone && (
+            <div className="mt-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-300">
+              {[
+                "Make the stats pop more",
+                "Add a dark / light toggle",
+                "Improve the activity table",
+                "Add more animations",
+              ].map((sugg) => (
+                <button
+                  key={sugg}
+                  onClick={() => {
+                    const chatInput =
+                      document.querySelector<HTMLTextAreaElement>("textarea");
+                    if (chatInput) {
+                      const nativeInputValueSetter =
+                        Object.getOwnPropertyDescriptor(
+                          window.HTMLTextAreaElement.prototype,
+                          "value",
+                        )?.set;
+                      nativeInputValueSetter?.call(chatInput, sugg);
+                      chatInput.dispatchEvent(
+                        new Event("input", { bubbles: true }),
+                      );
+                      chatInput.focus();
+                    }
+                  }}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-white/10 hover:text-foreground transition-all duration-200"
+                >
+                  {sugg}
+                </button>
+              ))}
+            </div>
+          )}
       </div>
     </div>
   );

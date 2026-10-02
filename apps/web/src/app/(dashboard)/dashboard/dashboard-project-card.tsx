@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState } from "react";
 import {
@@ -55,6 +56,8 @@ export function ProjectCard({
   isShared?: boolean;
   onSharedChanged?: () => void;
 }) {
+  const ui = useUiText();
+
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const statusStyle = STATUS_STYLES[project.status] ?? STATUS_STYLES.draft!;
   const [imgFailed, setImgFailed] = useState(false);
@@ -77,7 +80,9 @@ export function ProjectCard({
       onContextMenu={onContextMenu}
     >
       {/* Thumbnail — real image with gradient fallback */}
-      <div className={`relative h-36 rounded-t-xl overflow-hidden ${(!project.thumbnail_url || imgFailed) ? `bg-gradient-to-br ${PROJECT_GRADIENTS[colorIdx]}` : ''}`}>
+      <div
+        className={`relative h-36 rounded-t-xl overflow-hidden ${!project.thumbnail_url || imgFailed ? `bg-gradient-to-br ${PROJECT_GRADIENTS[colorIdx]}` : ""}`}
+      >
         {project.thumbnail_url && !imgFailed ? (
           <img
             src={`${API_URL}${project.thumbnail_url}?v=${encodeURIComponent(project.updated_at)}`}
@@ -88,9 +93,20 @@ export function ProjectCard({
           />
         ) : (
           <>
-            <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)", backgroundSize: "16px 16px" }} />
-            <div className={`absolute -bottom-4 -right-4 h-24 w-24 rounded-full ${PROJECT_ACCENT_COLORS[colorIdx]} blur-xl`} />
-            <div className={`absolute -top-2 -left-2 h-16 w-16 rounded-full ${PROJECT_ACCENT_COLORS[colorIdx]} blur-lg opacity-60`} />
+            <div
+              className="absolute inset-0 opacity-[0.07]"
+              style={{
+                backgroundImage:
+                  "radial-gradient(circle, currentColor 1px, transparent 1px)",
+                backgroundSize: "16px 16px",
+              }}
+            />
+            <div
+              className={`absolute -bottom-4 -right-4 h-24 w-24 rounded-full ${PROJECT_ACCENT_COLORS[colorIdx]} blur-xl`}
+            />
+            <div
+              className={`absolute -top-2 -left-2 h-16 w-16 rounded-full ${PROJECT_ACCENT_COLORS[colorIdx]} blur-lg opacity-60`}
+            />
             <div className="absolute inset-3 rounded-lg bg-white/[0.06] backdrop-blur-[1px] border border-white/[0.08] p-2.5">
               <div className="h-1.5 w-10 bg-white/10 rounded mb-1.5" />
               <div className="h-1.5 w-full bg-white/[0.06] rounded mb-1" />
@@ -104,7 +120,7 @@ export function ProjectCard({
               </div>
             </div>
             <div className="absolute bottom-2 right-3 text-4xl font-bold text-white/[0.08] leading-none select-none">
-              {project.name?.charAt(0)?.toUpperCase() ?? "P"}
+              {project.name?.charAt(0)?.toUpperCase() ?? ui("P")}
             </div>
           </>
         )}
@@ -121,7 +137,11 @@ export function ProjectCard({
             onSelect(project.id, e.metaKey || e.ctrlKey);
           }}
         >
-          {selected ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+          {selected ? (
+            <CheckSquare className="h-3.5 w-3.5" />
+          ) : (
+            <Square className="h-3.5 w-3.5" />
+          )}
         </button>
 
         {/* Star button */}
@@ -131,37 +151,52 @@ export function ProjectCard({
               ? "bg-yellow-500/20 text-yellow-400 opacity-100"
               : "bg-foreground/30 backdrop-blur-sm text-background hover:bg-foreground/50 opacity-0 group-hover:opacity-100"
           }`}
-          onClick={(e) => { e.stopPropagation(); onStar(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onStar();
+          }}
         >
-          <Star className={`h-3.5 w-3.5 ${project.starred ? "fill-yellow-400 text-yellow-400" : ""}`} />
+          <Star
+            className={`h-3.5 w-3.5 ${project.starred ? "fill-yellow-400 text-yellow-400" : ""}`}
+          />
         </button>
 
         {/* Quick actions */}
-        <div className="absolute bottom-2.5 right-2.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-all" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="absolute bottom-2.5 right-2.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-all"
+          onClick={(e) => e.stopPropagation()}
+        >
           <DropdownMenu>
             <DropdownMenuTrigger className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground/40 backdrop-blur-sm text-background hover:bg-foreground/60 transition-all">
               <MoreHorizontal className="h-3.5 w-3.5" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={onClick}>
-                <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open in editor
+                <ExternalLink className="mr-2 h-3.5 w-3.5" />{" "}
+                {ui("Open in editor")}{" "}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onRename}>
-                <Pencil className="mr-2 h-3.5 w-3.5" /> Rename
+                <Pencil className="mr-2 h-3.5 w-3.5" /> {ui("Rename")}{" "}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onDuplicate}>
-                <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate
+                <Copy className="mr-2 h-3.5 w-3.5" /> {ui("Duplicate")}{" "}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onStar()}>
-                <Star className="mr-2 h-3.5 w-3.5" /> {project.starred ? "Unstar" : "Star"}
+                <Star className="mr-2 h-3.5 w-3.5" />{" "}
+                {project.starred ? ui("Unstar") : ui("Star")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setShareDialogOpen(true)}>
                 <Compass className="mr-2 h-3.5 w-3.5" />
-                {isShared ? "Update Discover listing" : "Share to Discover"}
+                {isShared
+                  ? ui("Update Discover listing")
+                  : ui("Share to Discover")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={onDelete}>
-                <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
+              <DropdownMenuItem
+                className="text-red-400 focus:bg-red-500/10 focus:text-red-400"
+                onClick={onDelete}
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" /> {ui("Delete")}{" "}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -171,22 +206,27 @@ export function ProjectCard({
       {/* Info */}
       <div className="flex items-center gap-2.5 p-3">
         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[10px] font-semibold text-white">
-          {project.name?.charAt(0)?.toUpperCase() ?? "U"}
+          {project.name?.charAt(0)?.toUpperCase() ?? ui("U")}
         </div>
         <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-          <h3 className="text-sm font-medium text-foreground leading-tight line-clamp-1">{project.name}</h3>
+          <h3 className="text-sm font-medium text-foreground leading-tight line-clamp-1">
+            {project.name}
+          </h3>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] text-muted-foreground">{formatRelativeTime(project.updated_at)}</span>
-            <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${statusStyle.className}`}>
-              {statusStyle.label}
+            <span className="text-[11px] text-muted-foreground">
+              {formatRelativeTime(project.updated_at, ui.locale)}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${statusStyle.className}`}
+            >
+              {ui(statusStyle.label)}
             </span>
             {isShared && (
               <span
                 className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/40 px-1.5 py-0 text-[10px] font-medium text-emerald-400"
-                title="Shared to Discover"
+                title={ui("Shared to Discover")}
               >
-                <Compass className="h-2.5 w-2.5" />
-                Discover
+                <Compass className="h-2.5 w-2.5" /> {ui("Discover")}{" "}
               </span>
             )}
           </div>

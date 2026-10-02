@@ -1,4 +1,7 @@
 "use client";
+import { translateUiData } from "@/i18n/text";
+
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useMemo, type FormEvent, Suspense } from "react";
 import Link from "next/link";
@@ -47,6 +50,8 @@ function getPasswordCriteria(password: string) {
 }
 
 function ResetPasswordForm() {
+  const ui = useUiText();
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
@@ -59,8 +64,14 @@ function ResetPasswordForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const strength = useMemo(() => getPasswordStrength(password), [password]);
-  const criteria = useMemo(() => getPasswordCriteria(password), [password]);
+  const strength = useMemo(
+    () => translateUiData(getPasswordStrength(password), ui),
+    [ui, password],
+  );
+  const criteria = useMemo(
+    () => translateUiData(getPasswordCriteria(password), ui),
+    [ui, password],
+  );
 
   if (!token) {
     return (
@@ -69,16 +80,21 @@ function ResetPasswordForm() {
           <X className="h-6 w-6 text-red-600 dark:text-red-400" />
         </div>
         <h2 className="mb-2 text-xl font-semibold text-[hsl(var(--foreground))]">
-          Invalid reset link
+          {" "}
+          {ui("Invalid reset link")}{" "}
         </h2>
         <p className="mb-6 text-sm text-[hsl(var(--muted-foreground))]">
-          This password reset link is invalid or has expired. Please request a new one.
+          {" "}
+          {ui(
+            "This password reset link is invalid or has expired. Please request a new one.",
+          )}{" "}
         </p>
         <Link
           href="/forgot-password"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline"
         >
-          Request new reset link
+          {" "}
+          {ui("Request new reset link")}{" "}
         </Link>
       </div>
     );
@@ -91,16 +107,21 @@ function ResetPasswordForm() {
           <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
         </div>
         <h2 className="mb-2 text-xl font-semibold text-[hsl(var(--foreground))]">
-          Password reset successful
+          {" "}
+          {ui("Password reset successful")}{" "}
         </h2>
         <p className="mb-6 text-sm text-[hsl(var(--muted-foreground))]">
-          Your password has been updated. You can now sign in with your new password.
+          {" "}
+          {ui(
+            "Your password has been updated. You can now sign in with your new password.",
+          )}{" "}
         </p>
         <Button
           className="w-full rounded-xl bg-brand-700 text-white hover:bg-brand-800"
           onClick={() => router.push("/login")}
         >
-          Sign in
+          {" "}
+          {ui("Sign in")}{" "}
         </Button>
       </div>
     );
@@ -111,13 +132,15 @@ function ResetPasswordForm() {
     setError(null);
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(ui("Passwords do not match."));
       return;
     }
 
     if (strength.score < 2) {
       setError(
-        "Password is too weak. Use at least 8 characters with uppercase, lowercase, and numbers."
+        ui(
+          "Password is too weak. Use at least 8 characters with uppercase, lowercase, and numbers.",
+        ),
       );
       return;
     }
@@ -132,8 +155,10 @@ function ResetPasswordForm() {
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Request failed" }));
-        throw new Error(body.error ?? "Request failed");
+        const body = await res
+          .json()
+          .catch(() => ({ error: "Request failed" }));
+        throw new Error(body.error ?? ui("Request failed"));
       }
 
       setIsSuccess(true);
@@ -141,7 +166,7 @@ function ResetPasswordForm() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(ui("Something went wrong. Please try again."));
       }
     } finally {
       setIsLoading(false);
@@ -155,10 +180,14 @@ function ResetPasswordForm() {
           <Lock className="h-6 w-6 text-brand-700" />
         </div>
         <h2 className="text-xl font-semibold text-[hsl(var(--foreground))]">
-          Set new password
+          {" "}
+          {ui("Set new password")}{" "}
         </h2>
         <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
-          Your new password must be different from your previous password.
+          {" "}
+          {ui(
+            "Your new password must be different from your previous password.",
+          )}{" "}
         </p>
       </div>
 
@@ -172,17 +201,17 @@ function ResetPasswordForm() {
             >
               <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4.75a.75.75 0 011.5 0v3a.75.75 0 01-1.5 0v-3zM8 11a1 1 0 110 2 1 1 0 010-2z" />
             </svg>
-            <span>{error}</span>
+            <span>{ui(error)}</span>
           </div>
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="password">New password</Label>
+          <Label htmlFor="password">{ui("New password")}</Label>
           <div className="relative">
             <Input
               id="password"
               type={showPassword ? "text" : "password"}
-              placeholder="At least 8 characters"
+              placeholder={ui("At least 8 characters")}
               autoComplete="new-password"
               required
               minLength={8}
@@ -196,7 +225,9 @@ function ResetPasswordForm() {
               tabIndex={-1}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
               onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={
+                showPassword ? ui("Hide password") : ui("Show password")
+              }
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -221,7 +252,8 @@ function ResetPasswordForm() {
                   ))}
                 </div>
                 <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                  Password strength: {strength.label}
+                  {" "}
+                  {ui("Password strength:")} {strength.label}
                 </p>
               </div>
               <div className="space-y-1">
@@ -252,12 +284,12 @@ function ResetPasswordForm() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="confirmPassword">Confirm new password</Label>
+          <Label htmlFor="confirmPassword">{ui("Confirm new password")}</Label>
           <div className="relative">
             <Input
               id="confirmPassword"
               type={showConfirmPassword ? "text" : "password"}
-              placeholder="Re-enter your password"
+              placeholder={ui("Re-enter your password")}
               autoComplete="new-password"
               required
               disabled={isLoading}
@@ -271,7 +303,7 @@ function ResetPasswordForm() {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
               aria-label={
-                showConfirmPassword ? "Hide password" : "Show password"
+                showConfirmPassword ? ui("Hide password") : ui("Show password")
               }
             >
               {showConfirmPassword ? (
@@ -283,13 +315,13 @@ function ResetPasswordForm() {
           </div>
           {confirmPassword.length > 0 && confirmPassword !== password && (
             <p className="text-xs text-red-600 dark:text-red-400">
-              Passwords do not match
+              {" "}
+              {ui("Passwords do not match")}{" "}
             </p>
           )}
           {confirmPassword.length > 0 && confirmPassword === password && (
             <p className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-              <Check className="h-3 w-3" />
-              Passwords match
+              <Check className="h-3 w-3" /> {ui("Passwords match")}{" "}
             </p>
           )}
         </div>
@@ -301,11 +333,11 @@ function ResetPasswordForm() {
         >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Resetting password...
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+              {ui("Resetting password...")}{" "}
             </>
           ) : (
-            "Reset password"
+            ui("Reset password")
           )}
         </Button>
       </form>
@@ -315,8 +347,7 @@ function ResetPasswordForm() {
           href="/login"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back to sign in
+          <ArrowLeft className="h-4 w-4" /> {ui("Back to sign in")}{" "}
         </Link>
       </p>
     </>
@@ -324,6 +355,8 @@ function ResetPasswordForm() {
 }
 
 export default function ResetPasswordPage() {
+  const ui = useUiText();
+
   return (
     <Suspense
       fallback={
@@ -332,7 +365,8 @@ export default function ResetPasswordPage() {
             <Lock className="h-6 w-6 text-brand-700" />
           </div>
           <h2 className="text-xl font-semibold text-[hsl(var(--foreground))]">
-            Set new password
+            {" "}
+            {ui("Set new password")}{" "}
           </h2>
           <div className="mt-6 flex justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--muted-foreground))]" />

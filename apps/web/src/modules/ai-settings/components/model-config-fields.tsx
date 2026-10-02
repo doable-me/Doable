@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useRef } from "react";
 import type { ApiGitHubCopilotAccount, ApiAiProvider } from "@/lib/api";
@@ -20,13 +21,16 @@ import {
 // ─── HelpTooltip ────────────────────────────────────────────
 
 export function HelpTooltip({ text }: { text: string }) {
+  const ui = useUiText();
+
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -37,7 +41,7 @@ export function HelpTooltip({ text }: { text: string }) {
       <button
         onClick={() => setOpen(!open)}
         className="text-muted-foreground hover:text-foreground transition-colors"
-        aria-label="Help"
+        aria-label={ui("Help")}
       >
         <HelpCircle className="h-3.5 w-3.5" />
       </button>
@@ -53,11 +57,18 @@ export function HelpTooltip({ text }: { text: string }) {
 
 // ─── ModelCapabilityBadges ──────────────────────────────────
 
-export function ModelCapabilityBadges({ model }: { model?: ProviderModelInfo }) {
+export function ModelCapabilityBadges({
+  model,
+}: {
+  model?: ProviderModelInfo;
+}) {
+  const ui = useUiText();
+
   if (!model) return null;
   const badges: { label: string; icon: React.ElementType }[] = [];
-  if (model.supportsVision) badges.push({ label: "Vision", icon: Eye });
-  if (model.supportsTools) badges.push({ label: "Tool calling", icon: Wrench });
+  if (model.supportsVision) badges.push({ label: ui("Vision"), icon: Eye });
+  if (model.supportsTools)
+    badges.push({ label: ui("Tool calling"), icon: Wrench });
   if (badges.length === 0) return null;
 
   return (
@@ -105,12 +116,18 @@ export function InlineConfigFields({
   // "all" applies to personal overrides where personal providers are valid.
   scopeFilter?: "all" | "workspace";
 }) {
+  const ui = useUiText();
+
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
   const validAccounts = accounts.filter(
-    (a) => a.is_valid && (scopeFilter === "workspace" ? a.scope === "workspace" : true),
+    (a) =>
+      a.is_valid &&
+      (scopeFilter === "workspace" ? a.scope === "workspace" : true),
   );
   const validProviders = providers.filter(
-    (p) => p.is_valid && (scopeFilter === "workspace" ? p.scope === "workspace" : true),
+    (p) =>
+      p.is_valid &&
+      (scopeFilter === "workspace" ? p.scope === "workspace" : true),
   );
 
   const [customModelMode, setCustomModelMode] = useState(false);
@@ -131,7 +148,8 @@ export function InlineConfigFields({
       {/* Source toggle */}
       <div className="mb-4">
         <label className="block text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
-          Provider Source
+          {" "}
+          {ui("Provider Source")}{" "}
         </label>
         <div className="flex rounded-lg border border-border overflow-hidden w-fit">
           <button
@@ -142,7 +160,8 @@ export function InlineConfigFields({
                 : "bg-secondary text-muted-foreground hover:text-foreground"
             }`}
           >
-            GitHub Copilot
+            {" "}
+            {ui("GitHub Copilot")}{" "}
           </button>
           <button
             onClick={() => onChange({ ...state, source: "custom" })}
@@ -152,12 +171,15 @@ export function InlineConfigFields({
                 : "bg-secondary text-muted-foreground hover:text-foreground"
             }`}
           >
-            Custom Provider
+            {" "}
+            {ui("Custom Provider")}{" "}
           </button>
         </div>
         <p className="text-[10px] text-muted-foreground mt-1.5">
-          Both configurations are saved. Switching tabs only changes which one is active —
-          your other tab&apos;s selection is kept.
+          {" "}
+          {ui(
+            "Both configurations are saved. Switching tabs only changes which one is active — your other tab's selection is kept.",
+          )}{" "}
         </p>
       </div>
 
@@ -166,14 +188,18 @@ export function InlineConfigFields({
         {state.source === "copilot" ? (
           <>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Account</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                {ui("Account")}
+              </label>
               <div className="flex gap-2">
                 <select
                   value={state.copilotAccountId}
-                  onChange={(e) => onChange({ ...state, copilotAccountId: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...state, copilotAccountId: e.target.value })
+                  }
                   className="flex-1 min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                 >
-                  <option value="">Server Default</option>
+                  <option value="">{ui("Server Default")}</option>
                   {validAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.label} (@{a.github_login})
@@ -183,7 +209,7 @@ export function InlineConfigFields({
                 <a
                   href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
                   className="flex items-center gap-1 shrink-0 rounded-lg border border-input bg-background px-2.5 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
-                  title="Connect GitHub Account"
+                  title={ui("Connect GitHub Account")}
                 >
                   <Plus className="h-3 w-3" />
                   <Github className="h-3.5 w-3.5" />
@@ -191,26 +217,35 @@ export function InlineConfigFields({
               </div>
               {state.copilotAccountId === "" && (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Uses the server&apos;s built-in GitHub authentication. Connect your own account for more control.
+                  {" "}
+                  {ui(
+                    "Uses the server's built-in GitHub authentication. Connect your own account for more control.",
+                  )}{" "}
                 </p>
               )}
               {validAccounts.length === 0 && (
                 <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-                  No accounts connected.{" "}
+                  {" "}
+                  {ui("No accounts connected.")}{" "}
                   <a
                     href={`${API_URL}/auth/github/copilot${workspaceId ? `?workspaceId=${workspaceId}` : ""}`}
                     className="text-brand-400 hover:text-brand-300 underline"
                   >
-                    Connect one
+                    {" "}
+                    {ui("Connect one")}{" "}
                   </a>
                 </p>
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                {ui("Model")}
+              </label>
               <select
                 value={state.copilotModel}
-                onChange={(e) => onChange({ ...state, copilotModel: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...state, copilotModel: e.target.value })
+                }
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
               >
                 {copilotModels.map((m) => (
@@ -224,14 +259,22 @@ export function InlineConfigFields({
         ) : (
           <>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Provider</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                {ui("Provider")}
+              </label>
               <div className="flex gap-2">
                 <select
                   value={state.providerId}
-                  onChange={(e) => onChange({ ...state, providerId: e.target.value, providerModel: "" })}
+                  onChange={(e) =>
+                    onChange({
+                      ...state,
+                      providerId: e.target.value,
+                      providerModel: "",
+                    })
+                  }
                   className="flex-1 min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                 >
-                  <option value="">Select a provider...</option>
+                  <option value="">{ui("Select a provider...")}</option>
                   {validProviders.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.label} ({p.provider_type})
@@ -242,35 +285,41 @@ export function InlineConfigFields({
                   <button
                     onClick={onAddProviderClick}
                     className="flex items-center gap-1 shrink-0 rounded-lg border border-input bg-background px-2.5 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
-                    title="Add Provider"
+                    title={ui("Add Provider")}
                   >
-                    <Plus className="h-3 w-3" />
-                    Add
+                    <Plus className="h-3 w-3" /> {ui("Add")}{" "}
                   </button>
                 )}
               </div>
               {validProviders.length === 0 && onAddProviderClick && (
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  No providers configured.{" "}
+                  {" "}
+                  {ui("No providers configured.")}{" "}
                   <button
                     onClick={onAddProviderClick}
                     className="text-brand-400 hover:text-brand-300 underline"
                   >
-                    Add your first provider
+                    {" "}
+                    {ui("Add your first provider")}{" "}
                   </button>
                 </p>
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Model</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                {ui("Model")}
+              </label>
               {providerModelsLoading && state.providerId ? (
                 <div className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Loading models...
+                  <Loader2 className="h-3 w-3 animate-spin" />{" "}
+                  {ui("Loading models...")}{" "}
                 </div>
               ) : showModelDropdown ? (
                 <>
                   <select
-                    value={modelInList ? state.providerModel : CUSTOM_MODEL_SENTINEL}
+                    value={
+                      modelInList ? state.providerModel : CUSTOM_MODEL_SENTINEL
+                    }
                     onChange={(e) => {
                       if (e.target.value === CUSTOM_MODEL_SENTINEL) {
                         setCustomModelMode(true);
@@ -281,18 +330,24 @@ export function InlineConfigFields({
                     }}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand-500"
                   >
-                    <option value="">Select a model...</option>
+                    <option value="">{ui("Select a model...")}</option>
                     {providerModels.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name || m.id}
-                        {m.supportsVision ? " [vision]" : ""}
-                        {m.supportsTools ? " [tools]" : ""}
+                        {m.supportsVision ? ui("[vision]") : ""}
+                        {m.supportsTools ? ui("[tools]") : ""}
                       </option>
                     ))}
-                    <option value={CUSTOM_MODEL_SENTINEL}>Type custom model ID...</option>
+                    <option value={CUSTOM_MODEL_SENTINEL}>
+                      {ui("Type custom model ID...")}
+                    </option>
                   </select>
                   {state.providerModel && modelInList && (
-                    <ModelCapabilityBadges model={providerModels.find((m) => m.id === state.providerModel)} />
+                    <ModelCapabilityBadges
+                      model={providerModels.find(
+                        (m) => m.id === state.providerModel,
+                      )}
+                    />
                   )}
                 </>
               ) : (
@@ -300,8 +355,14 @@ export function InlineConfigFields({
                   <input
                     type="text"
                     value={state.providerModel}
-                    onChange={(e) => onChange({ ...state, providerModel: e.target.value })}
-                    placeholder={state.providerId ? "e.g. gpt-4o" : "Select a provider first"}
+                    onChange={(e) =>
+                      onChange({ ...state, providerModel: e.target.value })
+                    }
+                    placeholder={
+                      state.providerId
+                        ? "e.g. gpt-4o"
+                        : ui("Select a provider first")
+                    }
                     disabled={!state.providerId}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand-500 disabled:opacity-50"
                   />
@@ -310,7 +371,8 @@ export function InlineConfigFields({
                       onClick={() => setCustomModelMode(false)}
                       className="text-[10px] text-brand-400 hover:text-brand-300 mt-1"
                     >
-                      Back to model list
+                      {" "}
+                      {ui("Back to model list")}{" "}
                     </button>
                   )}
                 </>

@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useEditorStore } from "../hooks/use-editor-store";
 import { FileTree } from "./file-tree";
@@ -24,6 +26,9 @@ const tabs = [
 ];
 
 export function EditorSidebar() {
+  const ui = useUiText();
+  const i18n_tabs = useUiData(tabs);
+
   const { activeSidebarTab, setActiveSidebarTab, toggleSidebar, projectId } =
     useEditorStore();
 
@@ -38,7 +43,7 @@ export function EditorSidebar() {
       {/* Tab bar */}
       <div className="flex items-center border-b border-border">
         <div className="flex flex-1 overflow-x-auto">
-          {tabs.map(({ id, label, icon: Icon }) => (
+          {i18n_tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActiveSidebarTab(id)}
@@ -56,7 +61,7 @@ export function EditorSidebar() {
         <button
           onClick={toggleSidebar}
           className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground transition-colors mr-1"
-          title="Collapse sidebar"
+          title={ui("Collapse sidebar")}
         >
           <PanelLeftClose className="h-3.5 w-3.5" />
         </button>
@@ -72,7 +77,8 @@ export function EditorSidebar() {
         )}
         {activeSidebarTab === "knowledge" && !projectId && (
           <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">
-            No project selected.
+            {" "}
+            {ui("No project selected.")}{" "}
           </div>
         )}
         {activeSidebarTab === "skills" && workspaceId && (
@@ -83,7 +89,8 @@ export function EditorSidebar() {
         )}
         {activeSidebarTab === "skills" && !workspaceId && (
           <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">
-            No workspace selected.
+            {" "}
+            {ui("No workspace selected.")}{" "}
           </div>
         )}
       </div>

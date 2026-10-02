@@ -175,7 +175,9 @@ async function isPreviewHealthy(page: import("puppeteer").Page): Promise<boolean
         const visibleText = (document.body?.innerText ?? "").trim();
         if (rootEl2 && (rootEl2.children?.length ?? 0) === 0 && visibleText.length === 0) return true;
       }
-      // Check for scaffold placeholder — means the app hasn't been built yet
+      // Stable marker works independently of branding or translated welcome text.
+      if (document.querySelector('[data-doable-scaffold="true"]')) return true;
+      // Compatibility for existing, unmarked upstream templates.
       if (bodyText.includes("Dream it. Build it.") && bodyText.includes("pulse")) return true;
       if (bodyText.includes("Dream it. Build it.") && bodyText.includes("Doable")) return true;
       // Check for "Starting dev server" or loading states

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect, useRef, useCallback } from "react";
 import { useCollaboration } from "../collaboration-context";
@@ -18,6 +19,8 @@ interface CollabChatTypingProps {
 }
 
 export function CollabChatTyping({ keystrokeSignal }: CollabChatTypingProps) {
+  const ui = useUiText();
+
   const { sendAiTyping, aiTypingUsers, members } = useCollaboration();
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isBroadcastingRef = useRef(false);
@@ -70,11 +73,22 @@ export function CollabChatTyping({ keystrokeSignal }: CollabChatTypingProps) {
             <span className="text-[11px] text-zinc-400 italic truncate max-w-[140px]">
               {displayName}
             </span>
-            <span className="text-[11px] text-zinc-500 italic">is typing</span>
+            <span className="text-[11px] text-zinc-500 italic">
+              {ui("is typing")}
+            </span>
             <span className="inline-flex items-center gap-0.5 ml-0.5">
-              <span className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: "150ms" }} />
-              <span className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: "300ms" }} />
+              <span
+                className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce"
+                style={{ animationDelay: "0ms" }}
+              />
+              <span
+                className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce"
+                style={{ animationDelay: "150ms" }}
+              />
+              <span
+                className="h-1 w-1 rounded-full bg-zinc-500 animate-bounce"
+                style={{ animationDelay: "300ms" }}
+              />
             </span>
           </div>
         );

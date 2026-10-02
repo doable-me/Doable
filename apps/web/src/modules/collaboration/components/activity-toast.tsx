@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { X } from "lucide-react";
 
@@ -27,6 +28,8 @@ const EVENT_ICONS: Record<string, string> = {
 };
 
 export function ActivityToasts({ toasts, onDismiss }: Props) {
+  const ui = useUiText();
+
   if (toasts.length === 0) return null;
 
   return (
@@ -36,10 +39,14 @@ export function ActivityToasts({ toasts, onDismiss }: Props) {
           key={toast.id}
           className="flex items-center gap-3 rounded-lg border border-border bg-popover backdrop-blur-sm px-4 py-3 shadow-xl animate-in slide-in-from-right duration-300"
         >
-          <span className="text-base">{EVENT_ICONS[toast.eventType] ?? "📋"}</span>
+          <span className="text-base">
+            {EVENT_ICONS[toast.eventType] ?? "📋"}
+          </span>
           <div className="flex-1 min-w-0">
             <p className="text-sm text-foreground truncate">
-              <span className="font-medium">{toast.displayName ?? "Someone"}</span>{" "}
+              <span className="font-medium">
+                {toast.displayName ?? ui("Someone")}
+              </span>{" "}
               {toast.summary}
             </p>
           </div>

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect, useState } from "react";
 import { Loader2, AlertCircle, Server } from "lucide-react";
@@ -43,8 +44,12 @@ const STATE_STYLES: Record<string, string> = {
 };
 
 export default function RuntimeInstancesPage() {
+  const ui = useUiText();
+
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [instances, setInstances] = useState<ApiWorkspaceInstance[] | null>(null);
+  const [instances, setInstances] = useState<ApiWorkspaceInstance[] | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -66,7 +71,9 @@ export default function RuntimeInstancesPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load instances");
+          setError(
+            err instanceof Error ? err.message : ui("Failed to load instances"),
+          );
           setLoading(false);
         }
       }
@@ -77,10 +84,12 @@ export default function RuntimeInstancesPage() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [workspaceId]);
+  }, [ui, workspaceId]);
 
   const allMetricsUnavailable =
-    instances !== null && instances.length > 0 && instances.every((i) => i.source === "none");
+    instances !== null &&
+    instances.length > 0 &&
+    instances.every((i) => i.source === "none");
 
   return (
     <div className="mx-auto max-w-7xl px-3 sm:px-6 py-8">
@@ -89,98 +98,151 @@ export default function RuntimeInstancesPage() {
           <Server className="h-5 w-5 text-brand-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Running instances</h1>
+          <h1 className="text-2xl font-semibold text-foreground">
+            {ui("Running instances")}
+          </h1>
           <p className="text-xs text-muted-foreground">
-            Live runtime state across every published project in this workspace · poll {POLL_MS / 1000}s
+            {" "}
+            {ui(
+              "Live runtime state across every published project in this workspace · poll",
+            )}{" "}
+            {POLL_MS / 1000}
+            {ui("s")}{" "}
           </p>
         </div>
       </header>
 
       {!workspaceId && (
         <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-          Select a workspace from the sidebar to see its running instances.
+          {" "}
+          {ui(
+            "Select a workspace from the sidebar to see its running instances.",
+          )}{" "}
         </div>
       )}
 
       {workspaceId && loading && (
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
-          <p className="text-sm text-muted-foreground">Loading instances…</p>
+          <p className="text-sm text-muted-foreground">
+            {ui("Loading instances…")}
+          </p>
         </div>
       )}
 
       {workspaceId && error && (
         <div className="mb-6 rounded-lg border border-red-800/50 bg-red-900/20 px-4 py-3 text-sm text-red-400 flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          {error}
+          {ui(error)}
         </div>
       )}
 
-      {workspaceId && !loading && !error && instances && instances.length === 0 && (
-        <div className="rounded-lg border border-border bg-card p-12 text-center">
-          <Server className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">
-            No running instances yet. Publish a project to see it here.
-          </p>
-        </div>
-      )}
-
-      {workspaceId && !loading && !error && instances && instances.length > 0 && (
-        <>
-          {allMetricsUnavailable && (
-            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-300/90">
-              Runtime metrics are collected on the production server (systemd + cgroup). In dev they show as
-              &quot;unknown&quot; with empty memory/CPU values.
-            </div>
-          )}
-          <div className="overflow-hidden rounded-xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-card">
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">Project</th>
-                  <th className="px-4 py-3 text-left font-medium">State</th>
-                  <th className="px-4 py-3 text-right font-medium">Uptime</th>
-                  <th className="px-4 py-3 text-right font-medium">Memory</th>
-                  <th className="px-4 py-3 text-right font-medium">CPU</th>
-                  <th className="px-4 py-3 text-right font-medium">Last active</th>
-                </tr>
-              </thead>
-              <tbody>
-                {instances.map((inst) => {
-                  const stateClass =
-                    STATE_STYLES[inst.state] ?? STATE_STYLES.unknown;
-                  return (
-                    <tr key={inst.projectId} className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">{inst.projectName}</div>
-                        <div className="text-xs text-muted-foreground">{inst.projectSlug}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${stateClass}`}
-                        >
-                          {inst.state}
-                        </span>
-                        {inst.failCount > 0 && (
-                          <span className="ml-2 text-[11px] text-red-400">
-                            {inst.failCount} fail{inst.failCount === 1 ? "" : "s"}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right text-foreground">{formatUptime(inst.uptimeMs)}</td>
-                      <td className="px-4 py-3 text-right text-foreground">{formatBytes(inst.memoryBytes)}</td>
-                      <td className="px-4 py-3 text-right text-foreground">
-                        {inst.cpuPct === null ? "—" : `${inst.cpuPct.toFixed(1)}%`}
-                      </td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">{formatLastActive(inst.lastActiveAt)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {workspaceId &&
+        !loading &&
+        !error &&
+        instances &&
+        instances.length === 0 && (
+          <div className="rounded-lg border border-border bg-card p-12 text-center">
+            <Server className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">
+              {" "}
+              {ui(
+                "No running instances yet. Publish a project to see it here.",
+              )}{" "}
+            </p>
           </div>
-        </>
-      )}
+        )}
+
+      {workspaceId &&
+        !loading &&
+        !error &&
+        instances &&
+        instances.length > 0 && (
+          <>
+            {allMetricsUnavailable && (
+              <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-300/90">
+                {" "}
+                {ui(
+                  'Runtime metrics are collected on the production server (systemd + cgroup). In dev they show as "unknown" with empty memory/CPU values.',
+                )}{" "}
+              </div>
+            )}
+            <div className="overflow-hidden rounded-xl border border-border">
+              <table className="w-full text-sm">
+                <thead className="bg-card">
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="px-4 py-3 text-left font-medium">
+                      {ui("Project")}
+                    </th>
+                    <th className="px-4 py-3 text-left font-medium">
+                      {ui("State")}
+                    </th>
+                    <th className="px-4 py-3 text-right font-medium">
+                      {ui("Uptime")}
+                    </th>
+                    <th className="px-4 py-3 text-right font-medium">
+                      {ui("Memory")}
+                    </th>
+                    <th className="px-4 py-3 text-right font-medium">
+                      {ui("CPU")}
+                    </th>
+                    <th className="px-4 py-3 text-right font-medium">
+                      {ui("Last active")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {instances.map((inst) => {
+                    const stateClass =
+                      STATE_STYLES[inst.state] ?? STATE_STYLES.unknown;
+                    return (
+                      <tr
+                        key={inst.projectId}
+                        className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors"
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-foreground">
+                            {inst.projectName}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {inst.projectSlug}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${stateClass}`}
+                          >
+                            {inst.state}
+                          </span>
+                          {inst.failCount > 0 && (
+                            <span className="ml-2 text-[11px] text-red-400">
+                              {inst.failCount} {ui("fail")}
+                              {inst.failCount === 1 ? "" : ui("s")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right text-foreground">
+                          {formatUptime(inst.uptimeMs)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-foreground">
+                          {formatBytes(inst.memoryBytes)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-foreground">
+                          {inst.cpuPct === null
+                            ? "—"
+                            : `${inst.cpuPct.toFixed(1)}%`}
+                        </td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">
+                          {formatLastActive(inst.lastActiveAt)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
     </div>
   );
 }

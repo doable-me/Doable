@@ -1,4 +1,7 @@
 "use client";
+import { translateUiData } from "@/i18n/text";
+
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback, useRef } from "react";
 import {
@@ -15,7 +18,12 @@ import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import { useChat } from "../hooks/use-chat";
 import type { Finding, ScanPhase, ScanResponse } from "./security-panel-types";
-import { computeScore, buildCategories, getSeverityCount, SCAN_PHASES } from "./security-panel-types";
+import {
+  computeScore,
+  buildCategories,
+  getSeverityCount,
+  SCAN_PHASES,
+} from "./security-panel-types";
 import {
   EmptyState,
   ScanAnimation,
@@ -35,11 +43,15 @@ interface Props {
 
 // ─── Component ──────────────────────────────────────────────
 export function SecurityPanel({ projectId, onClose }: Props) {
+  const ui = useUiText();
+
   const [hasScanned, setHasScanned] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanPhase, setScanPhase] = useState<ScanPhase | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
-  const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
+  const [expandedFindings, setExpandedFindings] = useState<Set<string>>(
+    new Set(),
+  );
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
   const [scanDuration, setScanDuration] = useState(0);
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -51,7 +63,9 @@ export function SecurityPanel({ projectId, onClose }: Props) {
 
   const activeFindings = findings.filter((f) => !f.dismissed);
   const score = hasScanned ? computeScore(findings) : 0;
-  const categories = hasScanned ? buildCategories(findings) : [];
+  const categories = hasScanned
+    ? translateUiData(buildCategories(findings), ui)
+    : [];
 
   const scoreColor =
     score >= 80
@@ -95,12 +109,14 @@ export function SecurityPanel({ projectId, onClose }: Props) {
     try {
       const result = await apiFetch<ScanResponse>(
         `/projects/${projectId}/security/scan`,
-        { method: "POST" }
+        { method: "POST" },
       );
 
       setFindings(result.findings);
       setFilesScanned(result.filesScanned ?? result.scan?.filesScanned ?? 0);
-      setScanDuration(Math.round(((result.duration ?? result.scan?.duration ?? 0)) / 1000));
+      setScanDuration(
+        Math.round((result.duration ?? result.scan?.duration ?? 0) / 1000),
+      );
       setLastScanTime(new Date());
       setHasScanned(true);
     } catch (err) {
@@ -129,43 +145,42 @@ export function SecurityPanel({ projectId, onClose }: Props) {
         : `Fix security issue: ${finding.title} in ${finding.filePath ?? "the project"}.`;
       void sendMessage(msg);
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   const handleMoveToEnv = useCallback(
     (finding: Finding) => {
       void sendMessage(
         `Move the hardcoded secret found in ${finding.filePath ?? "source code"}${finding.lineNumber ? `:${finding.lineNumber}` : ""} ` +
-          `to environment variables. Update the code to read from process.env and add the variable name to .env.example.`
+          `to environment variables. Update the code to read from process.env and add the variable name to .env.example.`,
       );
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   const handleDismiss = useCallback(
     async (findingId: string) => {
       try {
-        await apiFetch(
-          `/projects/${projectId}/security/dismiss/${findingId}`,
-          { method: "POST" }
-        );
+        await apiFetch(`/projects/${projectId}/security/dismiss/${findingId}`, {
+          method: "POST",
+        });
         setFindings((prev) =>
-          prev.map((f) =>
-            f.id === findingId ? { ...f, dismissed: true } : f
-          )
+          prev.map((f) => (f.id === findingId ? { ...f, dismissed: true } : f)),
         );
       } catch (err) {
         console.error("[SecurityPanel] Dismiss failed:", err);
       }
     },
-    [projectId]
+    [projectId],
   );
 
   // ─── Render ─────────────────────────────────────────────
 
   const depFindings = activeFindings.filter((f) => f.category === "dependency");
   const secretFindings = activeFindings.filter((f) => f.category === "secret");
-  const codeFindings = activeFindings.filter((f) => f.category === "code-quality");
+  const codeFindings = activeFindings.filter(
+    (f) => f.category === "code-quality",
+  );
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -174,7 +189,8 @@ export function SecurityPanel({ projectId, onClose }: Props) {
         <div className="flex items-center gap-2">
           <Shield className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-semibold text-foreground">
-            Security
+            {" "}
+            {ui("Security")}{" "}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -185,11 +201,11 @@ export function SecurityPanel({ projectId, onClose }: Props) {
               "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
               isScanning
                 ? "cursor-not-allowed bg-muted text-muted-foreground"
-                : "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
             )}
           >
             <Play className="h-3 w-3" />
-            {isScanning ? "Scanning..." : "Run scan"}
+            {isScanning ? ui("Scanning...") : ui("Run scan")}
           </button>
           <button
             onClick={onClose}
@@ -214,12 +230,13 @@ export function SecurityPanel({ projectId, onClose }: Props) {
           <div className="p-4">
             <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 text-center">
               <ShieldAlert className="mx-auto h-6 w-6 text-red-400" />
-              <p className="mt-2 text-sm text-red-400">{error}</p>
+              <p className="mt-2 text-sm text-red-400">{ui(error)}</p>
               <button
                 onClick={runScan}
                 className="mt-3 text-xs text-primary hover:underline"
               >
-                Try again
+                {" "}
+                {ui("Try again")}{" "}
               </button>
             </div>
           </div>
@@ -234,12 +251,17 @@ export function SecurityPanel({ projectId, onClose }: Props) {
         {hasScanned && !isScanning && !error && (
           <div className="space-y-0">
             {/* Score */}
-            <SecurityScore score={score} scoreColor={scoreColor} trackColor={scoreTrackColor} />
+            <SecurityScore
+              score={score}
+              scoreColor={scoreColor}
+              trackColor={scoreTrackColor}
+            />
 
             {/* Category cards */}
             <div className="border-b border-border px-4 py-4">
               <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Scan Results
+                {" "}
+                {ui("Scan Results")}{" "}
               </h4>
               <div className="grid grid-cols-2 gap-2">
                 {categories.map((cat) => (
@@ -253,13 +275,26 @@ export function SecurityPanel({ projectId, onClose }: Props) {
               <div className="border-b border-border px-4 py-4">
                 <div className="mb-3 flex items-center justify-between">
                   <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Vulnerabilities
+                    {" "}
+                    {ui("Vulnerabilities")}{" "}
                   </h4>
                   <div className="flex items-center gap-1.5">
-                    <SeverityPill severity="critical" count={getSeverityCount(findings, "critical")} />
-                    <SeverityPill severity="high" count={getSeverityCount(findings, "high")} />
-                    <SeverityPill severity="medium" count={getSeverityCount(findings, "medium")} />
-                    <SeverityPill severity="low" count={getSeverityCount(findings, "low")} />
+                    <SeverityPill
+                      severity="critical"
+                      count={getSeverityCount(findings, "critical")}
+                    />
+                    <SeverityPill
+                      severity="high"
+                      count={getSeverityCount(findings, "high")}
+                    />
+                    <SeverityPill
+                      severity="medium"
+                      count={getSeverityCount(findings, "medium")}
+                    />
+                    <SeverityPill
+                      severity="low"
+                      count={getSeverityCount(findings, "low")}
+                    />
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -281,7 +316,8 @@ export function SecurityPanel({ projectId, onClose }: Props) {
             {secretFindings.length > 0 && (
               <div className="border-b border-border px-4 py-4">
                 <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Secrets Detected
+                  {" "}
+                  {ui("Secrets Detected")}{" "}
                 </h4>
                 <div className="space-y-1.5">
                   {secretFindings.map((finding) => (
@@ -300,7 +336,8 @@ export function SecurityPanel({ projectId, onClose }: Props) {
             {codeFindings.length > 0 && (
               <div className="border-b border-border px-4 py-4">
                 <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Code Quality Issues
+                  {" "}
+                  {ui("Code Quality Issues")}{" "}
                 </h4>
                 <div className="space-y-1.5">
                   {codeFindings.map((finding) => (
@@ -321,9 +358,12 @@ export function SecurityPanel({ projectId, onClose }: Props) {
             {activeFindings.length === 0 && (
               <div className="px-4 py-8 text-center">
                 <ShieldCheck className="mx-auto h-8 w-8 text-emerald-400" />
-                <p className="mt-2 text-sm font-medium text-foreground">All clear!</p>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {ui("All clear!")}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  No security issues found in your project.
+                  {" "}
+                  {ui("No security issues found in your project.")}{" "}
                 </p>
               </div>
             )}
@@ -335,8 +375,9 @@ export function SecurityPanel({ projectId, onClose }: Props) {
                   <div className="flex items-center gap-1.5">
                     <Clock className="h-3 w-3" />
                     <span>
-                      Last scan:{" "}
-                      {lastScanTime.toLocaleTimeString([], {
+                      {" "}
+                      {ui("Last scan:")}{" "}
+                      {lastScanTime.toLocaleTimeString(ui.locale, {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
@@ -344,11 +385,16 @@ export function SecurityPanel({ projectId, onClose }: Props) {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Sparkles className="h-3 w-3" />
-                    <span>Duration: {scanDuration}s</span>
+                    <span>
+                      {ui("Duration:")} {scanDuration}
+                      {ui("s")}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <FileSearch className="h-3 w-3" />
-                    <span>{filesScanned} files scanned</span>
+                    <span>
+                      {filesScanned} {ui("files scanned")}
+                    </span>
                   </div>
                 </div>
               </div>

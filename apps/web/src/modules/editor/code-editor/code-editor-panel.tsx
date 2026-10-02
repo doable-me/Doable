@@ -1,18 +1,12 @@
 "use client";
+import { UiText } from "@/i18n/ui-text";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { useProjectFiles } from "../hooks/use-project-files";
-import {
-  X,
-  FileCode2,
-  Circle,
-  Code2,
-  Lock,
-  Sparkles,
-  Map,
-} from "lucide-react";
+import { X, FileCode2, Circle, Code2, Lock, Sparkles, Map } from "lucide-react";
 import type { MonacoEditorWrapperProps } from "./monaco-editor-wrapper";
 import { useCollaboration } from "@/modules/collaboration/collaboration-context";
 import { RemoteCursorManager } from "@/modules/collaboration/cursors";
@@ -27,7 +21,9 @@ const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
       <div className="flex h-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-brand-400" />
-          <span className="text-xs text-muted-foreground">Loading editor...</span>
+          <span className="text-xs text-muted-foreground">
+            <UiText>Loading editor...</UiText>
+          </span>
         </div>
       </div>
     ),
@@ -39,6 +35,8 @@ const AUTOSAVE_DELAY_MS = 1500;
 
 // ─── Component ────────────────────────────────────────────────
 export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
+  const ui = useUiText();
+
   const { openTabs, activeFilePath, activeFileContent } = useEditorStore();
   const projectId = useEditorStore((s) => s.projectId);
   const closeTab = useEditorStore((s) => s.closeTab);
@@ -213,7 +211,7 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
               <button
                 onClick={(e) => handleCloseTab(e, tab.path)}
                 className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all"
-                title="Close (Ctrl+W)"
+                title={ui("Close (Ctrl+W)")}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -230,7 +228,7 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
                 ? "text-brand-400 bg-secondary"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            title={showMinimap ? "Hide minimap" : "Show minimap"}
+            title={showMinimap ? ui("Hide minimap") : ui("Show minimap")}
           >
             <Map className="h-3 w-3" />
           </button>
@@ -251,11 +249,11 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
         <div className="flex items-center gap-2 border-b border-amber-800/30 bg-amber-950/20 px-3 py-1.5">
           <Lock className="h-3 w-3 text-amber-500" />
           <span className="text-[11px] text-amber-400">
-            Read-only mode.
+            {" "}
+            {ui("Read-only mode.")}{" "}
           </span>
           <button className="ml-auto flex items-center gap-1 rounded-md bg-brand-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-brand-500 transition-colors">
-            <Sparkles className="h-3 w-3" />
-            Upgrade to edit
+            <Sparkles className="h-3 w-3" /> {ui("Upgrade to edit")}{" "}
           </button>
         </div>
       )}
@@ -284,22 +282,26 @@ export function CodeEditorPanel({ readOnly = false }: { readOnly?: boolean }) {
 
 // ─── Empty state ────────────────────────────────────────────
 function EmptyEditor() {
+  const ui = useUiText();
+
   return (
     <div className="flex h-full flex-col items-center justify-center text-center bg-background">
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-3">
         <Code2 className="h-6 w-6 text-muted-foreground" />
       </div>
       <p className="text-sm text-muted-foreground mb-1">
-        Select a file to view its code
+        {" "}
+        {ui("Select a file to view its code")}{" "}
       </p>
       <p className="text-xs text-muted-foreground">
-        Use the file explorer or chat with AI to generate files
+        {" "}
+        {ui("Use the file explorer or chat with AI to generate files")}{" "}
       </p>
       <div className="mt-4 flex flex-col gap-1 text-[11px] text-muted-foreground">
-        <span>Ctrl+S to save</span>
-        <span>Ctrl+F to search</span>
-        <span>Ctrl+H to replace</span>
-        <span>Ctrl+W to close tab</span>
+        <span>{ui("Ctrl+S to save")}</span>
+        <span>{ui("Ctrl+F to search")}</span>
+        <span>{ui("Ctrl+H to replace")}</span>
+        <span>{ui("Ctrl+W to close tab")}</span>
       </div>
     </div>
   );

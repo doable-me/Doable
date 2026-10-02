@@ -1,3 +1,5 @@
+import {extractToolArguments, isExternalToolAcknowledgement} from "../../ai/sse-mapper.js";
+import {startTool, finishTool} from "./execution-state.js";
 /**
  * Shared SDK tool-event → traceCollector / state bookkeeping.
  *
@@ -9,11 +11,9 @@
  * `tool.execution_start` while event-processor also matched `tool.running`,
  * causing tool events from auto-continue rounds to vanish from the trace.
  *
- * The helpers are pure dispatchers: they look at `evtType` and conditionally
- * forward to `recordAssistantToolCall` and `state.traceCollector` only when
- * the event is a real tool start/end with a usable name. Idempotency is
- * guaranteed by the SDK only emitting one start + one end event per
- * (toolCallId), so callers may invoke these unconditionally on every event.
+ * SDK transport events can mirror execution events for the same toolCallId.
+ * The invocation ledger deduplicates both accounting and display; dispatch-only
+ * acknowledgements never complete a tool or reset the assistant text buffer.
  */
 import type { ChatStreamState } from "./types.js";
 
@@ -21,6 +21,7 @@ import type { ChatStreamState } from "./types.js";
 const TOOL_START_EVENT_TYPES = new Set([
   "tool.execution_start",
   "tool.running",
+  "external_tool.requested",
 ]);
 
 /** SDK event types that signal a tool invocation has finished. */
@@ -43,12 +44,15 @@ export function recordToolEventForTrace(
   state: ChatStreamState,
   event: Record<string, unknown>,
   recordAssistantToolCall: (name?: string, args?: unknown) => void,
-): { handled: boolean; phase: "start" | "end" | null; toolName?: string; toolArgs?: Record<string, unknown> } {
+): { handled: boolean; phase: "start" | "end" | null; suppressDisplay?: boolean; toolName?: string; toolArgs?: Record<string, unknown> } {
   const evtType = event.type as string | undefined;
   if (!evtType) return { handled: false, phase: null };
 
   const evtData = event.data as Record<string, unknown> | undefined;
   if (!evtData) return { handled: false, phase: null };
+
+  if (evtType === "external_tool.completed" && isExternalToolAcknowledgement(evtData))
+    return { handled: true, phase: null, suppressDisplay: true };
 
   if (TOOL_START_EVENT_TYPES.has(evtType)) {
     const tcName = (evtData.toolName ?? evtData.name) as string | undefined;
@@ -57,21 +61,33 @@ export function recordToolEventForTrace(
     // Some SDK channels wrap the real tool args under .arguments
     // ({ toolName, arguments: {...real args...}, toolCallId }); unwrap so
     // downstream code finds path/command directly.
-    const toolArgs = ((evtData as { arguments?: Record<string, unknown> }).arguments ?? evtData) as Record<string, unknown>;
+    const toolArgs = extractToolArguments(evtData);
 
     const tcId = evtData.toolCallId as string | undefined;
     if (tcId && tcName) state.toolCallIdMap.set(tcId, tcName);
 
-    recordAssistantToolCall(tcName, toolArgs);
+    const existing = tcId ? state.assistantToolCalls.find(r => r.callId === tcId) : undefined;
+    if (existing) {
+      if (!existing.arguments && toolArgs) existing.arguments = toolArgs;
+      return { handled: true, phase: null, suppressDisplay: true, toolName: tcName, toolArgs };
+    }
+    startTool(state, tcName, toolArgs, tcId);
     state.traceCollector?.onToolStart(tcName, toolArgs);
     state.hadToolCalls = true;
     return { handled: true, phase: "start", toolName: tcName, toolArgs };
   }
 
   if (TOOL_END_EVENT_TYPES.has(evtType)) {
-    const tcName = (evtData.toolName ?? evtData.name) as string | undefined;
+    const tcName = (evtData.toolName ?? evtData.name ?? state.toolCallIdMap.get(String(evtData.toolCallId))) as string | undefined;
     if (!tcName) return { handled: true, phase: "end" };
+    // The mapper also needs the resolved name for ID-only end events.
+    evtData.toolName ??= tcName;
+    const prior = state.assistantToolCalls.find(r => r.callId === evtData.toolCallId);
+    const priorStatus = prior?.status;
+    const observation = finishTool(state,tcName,extractToolArguments(evtData),evtData.result ?? evtData.output,evtData.success as boolean | undefined,evtData.toolCallId as string | undefined);
 
+    if (priorStatus && priorStatus !== "running" && priorStatus !== "unknown" && observation.status === priorStatus)
+      return { handled: true, phase: null, suppressDisplay: true, toolName: tcName };
     state.traceCollector?.onToolEnd(tcName, evtData, evtData.result ?? evtData.output ?? null);
     return { handled: true, phase: "end", toolName: tcName };
   }

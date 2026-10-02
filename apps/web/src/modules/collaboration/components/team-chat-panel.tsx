@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useRef, useEffect, type KeyboardEvent } from "react";
 import { Send, Users } from "lucide-react";
@@ -24,7 +25,17 @@ interface Props {
   hideHeader?: boolean;
 }
 
-export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping, currentUserId, hideHeader }: Props) {
+export function TeamChatPanel({
+  messages,
+  typingUsers,
+  members,
+  onSend,
+  onTyping,
+  currentUserId,
+  hideHeader,
+}: Props) {
+  const ui = useUiText();
+
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -69,9 +80,11 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
       {!hideHeader && (
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <Users className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">Team Chat</span>
+          <span className="text-sm font-medium text-foreground">
+            {ui("Team Chat")}
+          </span>
           <span className="text-[11px] text-muted-foreground">
-            {members.length} online
+            {members.length} {ui("online")}{" "}
           </span>
         </div>
       )}
@@ -81,8 +94,12 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Users className="h-8 w-8 text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">No messages yet</p>
-            <p className="text-xs text-muted-foreground mt-1">Start a conversation with your team</p>
+            <p className="text-sm text-muted-foreground">
+              {ui("No messages yet")}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {ui("Start a conversation with your team")}
+            </p>
           </div>
         )}
         {messages.map((msg) => {
@@ -98,10 +115,16 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
 
           const member = memberForUser(msg.userId);
           const isMe = msg.userId === currentUserId;
-          const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const time = new Date(msg.createdAt).toLocaleTimeString(ui.locale, {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
 
           return (
-            <div key={msg.id} className={`flex gap-2.5 ${isMe ? "flex-row-reverse" : ""}`}>
+            <div
+              key={msg.id}
+              className={`flex gap-2.5 ${isMe ? "flex-row-reverse" : ""}`}
+            >
               <div
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
                 style={{ backgroundColor: member?.color ?? "#666" }}
@@ -111,9 +134,11 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
               <div className={`max-w-[75%] ${isMe ? "text-right" : ""}`}>
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-xs font-medium text-foreground">
-                    {isMe ? "You" : msg.displayName ?? "User"}
+                    {isMe ? ui("You") : (msg.displayName ?? ui("User"))}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">{time}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {time}
+                  </span>
                 </div>
                 <div
                   className={`rounded-lg px-3 py-1.5 text-sm ${
@@ -135,7 +160,9 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
       {typingNames.length > 0 && (
         <div className="px-4 py-1">
           <span className="text-[11px] text-muted-foreground italic">
-            {typingNames.join(", ")} {typingNames.length === 1 ? "is" : "are"} typing...
+            {typingNames.join(", ")}{" "}
+            {typingNames.length === 1 ? ui("is") : ui("are")}{" "}
+            {ui("typing...")}{" "}
           </span>
         </div>
       )}
@@ -148,7 +175,7 @@ export function TeamChatPanel({ messages, typingUsers, members, onSend, onTyping
             value={input}
             onChange={(e) => handleInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message your team..."
+            placeholder={ui("Message your team...")}
             rows={1}
             className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-0"
             style={{ maxHeight: "100px" }}

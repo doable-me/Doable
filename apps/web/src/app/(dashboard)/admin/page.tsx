@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -26,16 +27,16 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ToastContainer } from "@/components/ui/toast-container";
 import { useToasts } from "@/hooks/use-toasts";
-import {
-  PLAN_LABELS,
-  ROLE_LABELS,
-} from "@doable/shared";
+import { PLAN_LABELS, ROLE_LABELS } from "@doable/shared";
 import type { UserAiAllocation } from "./admin-shared";
 import { getCreditSummary } from "./admin-shared";
 import { FeatureRow } from "./admin-components";
 import { ThumbnailsPanel, CopilotSessionsPanel } from "./admin-panels";
 import { EmailPanel } from "./email-panel";
-import { UserManagementPanel, type BulkApplyPayload } from "./user-management-panel";
+import {
+  UserManagementPanel,
+  type BulkApplyPayload,
+} from "./user-management-panel";
 import { ToolsConfigPanel } from "./tools-config-panel";
 import { PlanDefaultsPanel } from "./plan-defaults-panel";
 import { PlanLimitsPanel } from "./plan-limits-panel";
@@ -49,6 +50,8 @@ import { DnsConfigPanel } from "./dns-config-panel";
 // ─── Admin Page ─────────────────────────────────────────────
 
 export default function AdminPage() {
+  const ui = useUiText();
+
   const router = useRouter();
   const { user } = useAuth();
   const {
@@ -66,17 +69,44 @@ export default function AdminPage() {
   } = usePlatformAdmin();
 
   const { toasts, addToast, dismissToast } = useToasts();
-  const [activeTab, setActiveTab] = useState<"features" | "users" | "tools" | "plans" | "thumbnails" | "copilot" | "email" | "integrations" | "mfa" | "signups" | "dns">(() => {
+  const [activeTab, setActiveTab] = useState<
+    | "features"
+    | "users"
+    | "tools"
+    | "plans"
+    | "thumbnails"
+    | "copilot"
+    | "email"
+    | "integrations"
+    | "mfa"
+    | "signups"
+    | "dns"
+  >(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab === "email" || tab === "features" || tab === "users" || tab === "tools" || tab === "plans" || tab === "thumbnails" || tab === "copilot" || tab === "integrations" || tab === "mfa" || tab === "signups" || tab === "dns") return tab;
+      if (
+        tab === "email" ||
+        tab === "features" ||
+        tab === "users" ||
+        tab === "tools" ||
+        tab === "plans" ||
+        tab === "thumbnails" ||
+        tab === "copilot" ||
+        tab === "integrations" ||
+        tab === "mfa" ||
+        tab === "signups" ||
+        tab === "dns"
+      )
+        return tab;
       // Legacy redirects
       if (tab === "planLimits" || tab === "planDefaults") return "plans";
     }
     return "features";
   });
-  const [plansSubTab, setPlansSubTab] = useState<"limits" | "defaults" | "embedding">("limits");
+  const [plansSubTab, setPlansSubTab] = useState<
+    "limits" | "defaults" | "embedding"
+  >("limits");
 
   // AI allocations state
   const [allocations, setAllocations] = useState<UserAiAllocation[]>([]);
@@ -112,31 +142,47 @@ export default function AdminPage() {
     }
   }, [activeTab, isPlatformAdmin, loadAllocations]);
 
-  async function handleAllocate(userId: string, data: {
-    source?: "copilot" | "custom";
-    copilotAccountId?: string | null;
-    copilotModel?: string | null;
-    providerId?: string | null;
-    providerModel?: string | null;
-  }) {
+  async function handleAllocate(
+    userId: string,
+    data: {
+      source?: "copilot" | "custom";
+      copilotAccountId?: string | null;
+      copilotModel?: string | null;
+      providerId?: string | null;
+      providerModel?: string | null;
+    },
+  ) {
     try {
-      await apiFetch(`/admin/users/${userId}/ai-allocation`, { method: "PUT", body: JSON.stringify(data) });
+      await apiFetch(`/admin/users/${userId}/ai-allocation`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
       await loadAllocations();
-      addToast("success", "AI settings saved");
-    } catch { addToast("error", "Failed to save AI settings"); }
+      addToast("success", ui("AI settings saved"));
+    } catch {
+      addToast("error", ui("Failed to save AI settings"));
+    }
   }
 
   async function handleReset(userId: string) {
     try {
-      await apiFetch(`/admin/users/${userId}/ai-allocation`, { method: "DELETE" });
+      await apiFetch(`/admin/users/${userId}/ai-allocation`, {
+        method: "DELETE",
+      });
       await loadAllocations();
-      addToast("success", "AI settings reset");
-    } catch { addToast("error", "Failed to reset AI settings"); }
+      addToast("success", ui("AI settings reset"));
+    } catch {
+      addToast("error", ui("Failed to reset AI settings"));
+    }
   }
 
   async function handleBulkApply(userIds: string[], payload: BulkApplyPayload) {
-    let modelOk = 0, modelFail = 0, quotaOk = 0, quotaFail = 0;
-    let roleUpdated = 0, planUpdated = 0;
+    let modelOk = 0,
+      modelFail = 0,
+      quotaOk = 0,
+      quotaFail = 0;
+    let roleUpdated = 0,
+      planUpdated = 0;
     let rolePlanFailed = false;
 
     // Build a quick lookup for existing credit totals
@@ -150,11 +196,15 @@ export default function AdminPage() {
             body: JSON.stringify(payload.model),
           });
           modelOk++;
-        } catch { modelFail++; }
+        } catch {
+          modelFail++;
+        }
       }
       if (payload.addQuota) {
         const row = byId.get(userId);
-        const c = row ? getCreditSummary(row) : { dailyTotal: 0, monthlyTotal: 0, rollover: 0 };
+        const c = row
+          ? getCreditSummary(row)
+          : { dailyTotal: 0, monthlyTotal: 0, rollover: 0 };
         try {
           await apiFetch(`/admin/users/${userId}/credits`, {
             method: "PATCH",
@@ -165,13 +215,18 @@ export default function AdminPage() {
             }),
           });
           quotaOk++;
-        } catch { quotaFail++; }
+        } catch {
+          quotaFail++;
+        }
       }
     }
 
     if (payload.role || payload.plan) {
       try {
-        const res = await bulkUpdateUsers(userIds, { role: payload.role, plan: payload.plan }) as { data?: { roleUpdated?: number; planUpdated?: number } };
+        const res = (await bulkUpdateUsers(userIds, {
+          role: payload.role,
+          plan: payload.plan,
+        })) as { data?: { roleUpdated?: number; planUpdated?: number } };
         roleUpdated = res?.data?.roleUpdated ?? 0;
         planUpdated = res?.data?.planUpdated ?? 0;
       } catch {
@@ -182,39 +237,82 @@ export default function AdminPage() {
     await loadAllocations();
 
     const parts: string[] = [];
-    if (payload.model) parts.push(`model: ${modelOk} ok${modelFail ? `, ${modelFail} failed` : ""}`);
-    if (payload.addQuota) parts.push(`quota: ${quotaOk} ok${quotaFail ? `, ${quotaFail} failed` : ""}`);
-    if (payload.role) parts.push(rolePlanFailed ? `role: failed` : `role: ${roleUpdated} updated`);
-    if (payload.plan) parts.push(rolePlanFailed ? `plan: failed` : `plan: ${planUpdated} updated`);
+    if (payload.model)
+      parts.push(
+        `model: ${modelOk} ok${modelFail ? `, ${modelFail} failed` : ""}`,
+      );
+    if (payload.addQuota)
+      parts.push(
+        `quota: ${quotaOk} ok${quotaFail ? `, ${quotaFail} failed` : ""}`,
+      );
+    if (payload.role)
+      parts.push(
+        rolePlanFailed ? `role: failed` : `role: ${roleUpdated} updated`,
+      );
+    if (payload.plan)
+      parts.push(
+        rolePlanFailed ? `plan: failed` : `plan: ${planUpdated} updated`,
+      );
     const allFailed =
       (payload.model && modelOk === 0 && modelFail > 0) ||
       (payload.addQuota && quotaOk === 0 && quotaFail > 0) ||
-      ((payload.role || payload.plan) && rolePlanFailed && !payload.model && !payload.addQuota);
-    addToast(allFailed ? "error" : "success", `Bulk applied to ${userIds.length} users — ${parts.join(" · ")}`);
+      ((payload.role || payload.plan) &&
+        rolePlanFailed &&
+        !payload.model &&
+        !payload.addQuota);
+    addToast(
+      allFailed ? "error" : "success",
+      ui("Bulk applied to {v0} users — {v1}", {
+        v0: userIds.length,
+        v1: parts.join(" · "),
+      }),
+    );
   }
 
   async function handleChangeRole(userId: string, role: string) {
     const prev = allocations;
-    setAllocations((a) => a.map((u) =>
-      u.user_id === userId ? { ...u, platform_role: role, is_platform_admin: role === "admin" || role === "owner" } : u
-    ));
+    setAllocations((a) =>
+      a.map((u) =>
+        u.user_id === userId
+          ? {
+              ...u,
+              platform_role: role,
+              is_platform_admin: role === "admin" || role === "owner",
+            }
+          : u,
+      ),
+    );
     try {
       await setUserRole(userId, role);
-      const name = prev.find((u) => u.user_id === userId)?.display_name ?? "User";
-      addToast("success", `${name} → ${ROLE_LABELS[role]}`);
-    } catch { setAllocations(prev); addToast("error", "Failed to update role"); }
+      const name =
+        prev.find((u) => u.user_id === userId)?.display_name ?? "User";
+      addToast(
+        "success",
+        ui("{v0} → {v1}", { v0: name, v1: ROLE_LABELS[role] }),
+      );
+    } catch {
+      setAllocations(prev);
+      addToast("error", ui("Failed to update role"));
+    }
   }
 
   async function handleChangePlan(userId: string, plan: string) {
     const prev = allocations;
-    setAllocations((a) => a.map((u) =>
-      u.user_id === userId ? { ...u, workspace_plan: plan } : u
-    ));
+    setAllocations((a) =>
+      a.map((u) => (u.user_id === userId ? { ...u, workspace_plan: plan } : u)),
+    );
     try {
       await setUserPlan(userId, plan);
-      const name = prev.find((u) => u.user_id === userId)?.display_name ?? "User";
-      addToast("success", `${name} → ${PLAN_LABELS[plan]} plan`);
-    } catch { setAllocations(prev); addToast("error", "Failed to update plan"); }
+      const name =
+        prev.find((u) => u.user_id === userId)?.display_name ?? "User";
+      addToast(
+        "success",
+        ui("{v0} → {v1} plan", { v0: name, v1: PLAN_LABELS[plan] }),
+      );
+    } catch {
+      setAllocations(prev);
+      addToast("error", ui("Failed to update plan"));
+    }
   }
 
   // Redirect non-admins
@@ -222,9 +320,18 @@ export default function AdminPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Shield className="h-12 w-12 text-muted-foreground" />
-        <h2 className="text-lg font-semibold text-foreground">Access Denied</h2>
-        <p className="text-sm text-muted-foreground">Platform admin access required.</p>
-        <Button onClick={() => router.push("/dashboard")} className="bg-brand-600 text-white hover:bg-brand-500">Back to Dashboard</Button>
+        <h2 className="text-lg font-semibold text-foreground">
+          {ui("Access Denied")}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {ui("Platform admin access required.")}
+        </p>
+        <Button
+          onClick={() => router.push("/dashboard")}
+          className="bg-brand-600 text-white hover:bg-brand-500"
+        >
+          {ui("Back to Dashboard")}
+        </Button>
       </div>
     );
   }
@@ -237,98 +344,149 @@ export default function AdminPage() {
     );
   }
 
-  const displayUsers: UserAiAllocation[] = allocations.length > 0
-    ? allocations
-    : users.map((u) => ({
-        user_id: u.id, email: u.email, display_name: u.display_name, avatar_url: null,
-        is_platform_admin: u.is_platform_admin, platform_role: u.platform_role ?? "member",
-        role: null, workspace_plan: null, source: null, copilot_account_id: null,
-        copilot_account_label: null, copilot_model: null, provider_id: null, provider_label: null,
-        provider_type: null, provider_model: null, model: null, preference_updated_at: null,
-        daily_credits: null, daily_credits_used: null, monthly_credits: null,
-        monthly_credits_used: null, rollover_credits: null, enforce_ai: null,
-        enforced_model: null, default_source: null, default_copilot_model: null,
-        default_provider_model: null, ws_default_copilot_account_id: null, ws_default_provider_id: null,
-      }));
+  const displayUsers: UserAiAllocation[] =
+    allocations.length > 0
+      ? allocations
+      : users.map((u) => ({
+          user_id: u.id,
+          email: u.email,
+          display_name: u.display_name,
+          avatar_url: null,
+          is_platform_admin: u.is_platform_admin,
+          platform_role: u.platform_role ?? "member",
+          role: null,
+          workspace_plan: null,
+          source: null,
+          copilot_account_id: null,
+          copilot_account_label: null,
+          copilot_model: null,
+          provider_id: null,
+          provider_label: null,
+          provider_type: null,
+          provider_model: null,
+          model: null,
+          preference_updated_at: null,
+          daily_credits: null,
+          daily_credits_used: null,
+          monthly_credits: null,
+          monthly_credits_used: null,
+          rollover_credits: null,
+          enforce_ai: null,
+          enforced_model: null,
+          default_source: null,
+          default_copilot_model: null,
+          default_provider_model: null,
+          ws_default_copilot_account_id: null,
+          ws_default_provider_id: null,
+        }));
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       {/* Header */}
       <div className="mb-8">
-        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4">
-          <ArrowLeft className="h-4 w-4" /> Back to Dashboard
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+        >
+          <ArrowLeft className="h-4 w-4" /> {ui("Back to Dashboard")}{" "}
         </button>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600/20">
             <Shield className="h-5 w-5 text-brand-400" />
           </div>
           <div className="flex-1">
-            <h1 className="text-xl font-semibold text-foreground">System Administration</h1>
-            <p className="text-sm text-muted-foreground">Manage platform features, users, AI tools, and access controls</p>
+            <h1 className="text-xl font-semibold text-foreground">
+              {ui("System Administration")}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {ui(
+                "Manage platform features, users, AI tools, and access controls",
+              )}
+            </p>
           </div>
           <Link
             href="/admin/projects"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            title="All projects (drafts + published) with framework, owner, chat activity"
+            title={ui(
+              "All projects (drafts + published) with framework, owner, chat activity",
+            )}
           >
-            <Activity className="h-3.5 w-3.5 text-brand-400" />
-            Projects
+            <Activity className="h-3.5 w-3.5 text-brand-400" />{" "}
+            {ui("Projects")}{" "}
           </Link>
           <Link
             href="/admin/runtime"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            title="Published apps + live dev servers — CPU, memory, uptime, controls"
+            title={ui(
+              "Published apps + live dev servers — CPU, memory, uptime, controls",
+            )}
           >
-            <Activity className="h-3.5 w-3.5 text-brand-400" />
-            Runtime
+            <Activity className="h-3.5 w-3.5 text-brand-400" />{" "}
+            {ui("Runtime")}{" "}
           </Link>
           <Link
             href="/admin/chat"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            title="All AI chat sessions (redacted, audit-logged) — for training & abuse review"
+            title={ui(
+              "All AI chat sessions (redacted, audit-logged) — for training & abuse review",
+            )}
           >
-            <Activity className="h-3.5 w-3.5 text-brand-400" />
-            Chat
+            <Activity className="h-3.5 w-3.5 text-brand-400" />{" "}
+            {ui("Chat")}{" "}
           </Link>
           <Link
             href="/admin/audit"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            title="Prompt & conversation audit (enterprise)"
+            title={ui("Prompt & conversation audit (enterprise)")}
           >
-            <Activity className="h-3.5 w-3.5 text-brand-400" />
-            Audit
+            <Activity className="h-3.5 w-3.5 text-brand-400" />{" "}
+            {ui("Audit")}{" "}
           </Link>
           <Link
             href="/admin/moderation"
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-            title="Marketplace moderation queue & reports"
+            title={ui("Marketplace moderation queue & reports")}
           >
-            <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />
-            Moderation
+            <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />{" "}
+            {ui("Moderation")}{" "}
           </Link>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-6 border-b border-border pb-px overflow-x-auto">
-        {([
-          { key: "features" as const, label: "Feature Flags", icon: Settings2 },
-          { key: "dns" as const, label: "DNS", icon: Globe },
-          { key: "signups" as const, label: "Signups", icon: UserCheck },
-          { key: "users" as const, label: "Users & AI", icon: Users },
-          { key: "integrations" as const, label: "Integrations", icon: Plug },
-          { key: "plans" as const, label: "Plans", icon: CreditCard },
-          { key: "tools" as const, label: "AI Tools", icon: Wrench },
-          { key: "mfa" as const, label: "MFA", icon: ShieldCheck },
-          { key: "thumbnails" as const, label: "Thumbnails", icon: ImageIcon },
-          { key: "copilot" as const, label: "Sessions", icon: Activity },
-          { key: "email" as const, label: "Email", icon: Mail },
-        ]).map((tab) => (
+        {[
+          {
+            key: "features" as const,
+            label: ui("Feature Flags"),
+            icon: Settings2,
+          },
+          { key: "dns" as const, label: ui("DNS"), icon: Globe },
+          { key: "signups" as const, label: ui("Signups"), icon: UserCheck },
+          { key: "users" as const, label: ui("Users & AI"), icon: Users },
+          {
+            key: "integrations" as const,
+            label: ui("Integrations"),
+            icon: Plug,
+          },
+          { key: "plans" as const, label: ui("Plans"), icon: CreditCard },
+          { key: "tools" as const, label: ui("AI Tools"), icon: Wrench },
+          { key: "mfa" as const, label: ui("MFA"), icon: ShieldCheck },
+          {
+            key: "thumbnails" as const,
+            label: ui("Thumbnails"),
+            icon: ImageIcon,
+          },
+          { key: "copilot" as const, label: ui("Sessions"), icon: Activity },
+          { key: "email" as const, label: ui("Email"), icon: Mail },
+        ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
-              activeTab === tab.key ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
+              activeTab === tab.key
+                ? "text-foreground border-b-2 border-brand-500"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <tab.icon className="h-4 w-4" /> {tab.label}
@@ -337,7 +495,9 @@ export default function AdminPage() {
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-800/50 bg-red-900/20 px-4 py-2 text-sm text-red-400">{error}</div>
+        <div className="mb-4 rounded-lg border border-red-800/50 bg-red-900/20 px-4 py-2 text-sm text-red-400">
+          {ui(error)}
+        </div>
       )}
 
       {/* Feature Flags Tab */}
@@ -348,12 +508,23 @@ export default function AdminPage() {
 
           {/* Feature Flags */}
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground mb-4">Toggle features on/off globally. Set minimum plan or workspace role requirements.</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              {ui(
+                "Toggle features on/off globally. Set minimum plan or workspace role requirements.",
+              )}
+            </p>
             {features.map((f) => (
-              <FeatureRow key={f.feature_key} feature={f} onToggle={toggleFeature} onUpdate={updateFeature} />
+              <FeatureRow
+                key={f.feature_key}
+                feature={f}
+                onToggle={toggleFeature}
+                onUpdate={updateFeature}
+              />
             ))}
             {features.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">No feature flags configured.</p>
+              <p className="text-sm text-muted-foreground text-center py-8">
+                {ui("No feature flags configured.")}
+              </p>
             )}
           </div>
         </div>
@@ -379,8 +550,10 @@ export default function AdminPage() {
           onReset={handleReset}
           onSetCredits={async (userId, data) => {
             await setUserCredits(userId, data);
-            const name = allocations.find((a) => a.user_id === userId)?.display_name ?? "User";
-            addToast("success", `Credits updated for ${name}`);
+            const name =
+              allocations.find((a) => a.user_id === userId)?.display_name ??
+              "User";
+            addToast("success", ui("Credits updated for {v0}", { v0: name }));
             await loadAllocations();
           }}
           onChangeRole={handleChangeRole}
@@ -396,26 +569,35 @@ export default function AdminPage() {
             <button
               onClick={() => setPlansSubTab("limits")}
               className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
-                plansSubTab === "limits" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
+                plansSubTab === "limits"
+                  ? "text-foreground border-b-2 border-brand-500"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Plan Limits
+              {" "}
+              {ui("Plan Limits")}{" "}
             </button>
             <button
               onClick={() => setPlansSubTab("defaults")}
               className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
-                plansSubTab === "defaults" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
+                plansSubTab === "defaults"
+                  ? "text-foreground border-b-2 border-brand-500"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Plan Defaults
+              {" "}
+              {ui("Plan Defaults")}{" "}
             </button>
             <button
               onClick={() => setPlansSubTab("embedding")}
               className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
-                plansSubTab === "embedding" ? "text-foreground border-b-2 border-brand-500" : "text-muted-foreground hover:text-foreground"
+                plansSubTab === "embedding"
+                  ? "text-foreground border-b-2 border-brand-500"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Embedding Model
+              {" "}
+              {ui("Embedding Model")}{" "}
             </button>
           </div>
           {plansSubTab === "limits" && <PlanLimitsPanel />}

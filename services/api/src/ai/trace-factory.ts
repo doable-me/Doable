@@ -360,7 +360,7 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
   function setModel(model: string): void { ctx.model = model; }
 
   async function complete(
-    status: "completed" | "error" | "aborted" | "stalled",
+    status: "completed" | "error" | "aborted" | "stalled" | "waiting",
     usage?: TraceUsageSummary,
   ): Promise<string | null> {
     const turnEndedAt = Date.now();
@@ -380,7 +380,7 @@ export function createTraceCollector(ctx: TraceCollectorContext) {
     removeActiveTrace(ctx.projectId);
 
     try {
-      const errorMessages = status === "error"
+      const errorMessages = status === "error" || status === "stalled"
         ? events.filter(e => e.type === "error").map(e => {
             const data = e.data as { message?: string; category?: string };
             return data.category ? `[${data.category}] ${data.message}` : data.message;

@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useState } from "react";
 import { Flag, Loader2, CheckCircle2, X, AlertTriangle } from "lucide-react";
@@ -29,7 +31,7 @@ const REASONS = [
   { id: "other", label: "Other" },
 ] as const;
 
-type Reason = typeof REASONS[number]["id"];
+type Reason = (typeof REASONS)[number]["id"];
 
 export interface ReportListingDialogProps {
   open: boolean;
@@ -44,6 +46,9 @@ export function ReportListingDialog({
   listingId,
   listingTitle,
 }: ReportListingDialogProps) {
+  const ui = useUiText();
+  const i18n_REASONS = useUiData(REASONS);
+
   const [reason, setReason] = useState<Reason>("spam");
   const [detail, setDetail] = useState("");
   const [busy, setBusy] = useState(false);
@@ -72,7 +77,9 @@ export function ReportListingDialog({
         reset();
       }, 800);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to file report");
+      setError(
+        err instanceof Error ? err.message : ui("Failed to file report"),
+      );
     } finally {
       setBusy(false);
     }
@@ -89,19 +96,24 @@ export function ReportListingDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Flag className="h-5 w-5 text-destructive" />
-            Report this listing
+            <Flag className="h-5 w-5 text-destructive" />{" "}
+            {ui("Report this listing")}{" "}
           </DialogTitle>
           <DialogDescription>
-            Tell us what's wrong with &ldquo;{listingTitle}&rdquo;. Reports are reviewed by moderators.
+            {" "}
+            {ui("Tell us what's wrong with “")}
+            {listingTitle}
+            {ui("”. Reports are reviewed by moderators.")}{" "}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-2">
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Reason</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              {ui("Reason")}
+            </label>
             <div className="grid grid-cols-1 gap-1">
-              {REASONS.map((r) => {
+              {i18n_REASONS.map((r) => {
                 const active = reason === r.id;
                 return (
                   <button
@@ -122,13 +134,17 @@ export function ReportListingDialog({
 
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">
-              Details <span className="text-muted-foreground/70">(optional)</span>
+              {" "}
+              {ui("Details")}{" "}
+              <span className="text-muted-foreground/70">
+                {ui("(optional)")}
+              </span>
             </label>
             <Textarea
               rows={3}
               value={detail}
               onChange={(e) => setDetail(e.target.value)}
-              placeholder="Anything that helps moderators triage…"
+              placeholder={ui("Anything that helps moderators triage…")}
               maxLength={2000}
             />
           </div>
@@ -136,28 +152,43 @@ export function ReportListingDialog({
           {error && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
+              <span>{ui(error)}</span>
             </div>
           )}
           {done && (
             <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-400">
               <CheckCircle2 className="h-4 w-4" />
-              <span>Report received — thanks.</span>
+              <span>{ui("Report received — thanks.")}</span>
             </div>
           )}
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            <X className="mr-1 h-3.5 w-3.5" /> Cancel
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            <X className="mr-1 h-3.5 w-3.5" /> {ui("Cancel")}{" "}
           </Button>
-          <Button onClick={submit} disabled={busy || done} variant="destructive">
+          <Button
+            onClick={submit}
+            disabled={busy || done}
+            variant="destructive"
+          >
             {busy ? (
-              <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Sending...</>
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />{" "}
+                {ui("Sending...")}
+              </>
             ) : done ? (
-              <><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Sent</>
+              <>
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> {ui("Sent")}
+              </>
             ) : (
-              <><Flag className="mr-1.5 h-3.5 w-3.5" /> Submit report</>
+              <>
+                <Flag className="mr-1.5 h-3.5 w-3.5" /> {ui("Submit report")}
+              </>
             )}
           </Button>
         </DialogFooter>

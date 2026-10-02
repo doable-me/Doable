@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useMemo, useCallback } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
@@ -8,6 +9,8 @@ import { formatDuration } from "./analytics-types";
 // ─── Top Pages Table ────────────────────────────────────────
 
 export function TopPagesTable({ pages }: { pages: PageData[] }) {
+  const ui = useUiText();
+
   const [sortCol, setSortCol] = useState<SortColumn>("views");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
 
@@ -20,7 +23,7 @@ export function TopPagesTable({ pages }: { pages: PageData[] }) {
         setSortDir("desc");
       }
     },
-    [sortCol]
+    [sortCol],
   );
 
   const sorted = useMemo(() => {
@@ -65,9 +68,13 @@ export function TopPagesTable({ pages }: { pages: PageData[] }) {
     return (
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
-          <h3 className="text-sm font-semibold text-foreground">Top Pages</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            {ui("Top Pages")}
+          </h3>
         </div>
-        <p className="p-4 text-center text-xs text-muted-foreground">No page data available yet.</p>
+        <p className="p-4 text-center text-xs text-muted-foreground">
+          {ui("No page data available yet.")}
+        </p>
       </div>
     );
   }
@@ -75,17 +82,19 @@ export function TopPagesTable({ pages }: { pages: PageData[] }) {
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h3 className="text-sm font-semibold text-foreground">Top Pages</h3>
+        <h3 className="text-sm font-semibold text-foreground">
+          {ui("Top Pages")}
+        </h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border text-left">
               {[
-                { key: "path" as SortColumn, label: "Page" },
-                { key: "views" as SortColumn, label: "Views" },
-                { key: "visitors" as SortColumn, label: "Unique Visitors" },
-                { key: "avgDuration" as SortColumn, label: "Avg. Time" },
+                { key: "path" as SortColumn, label: ui("Page") },
+                { key: "views" as SortColumn, label: ui("Views") },
+                { key: "visitors" as SortColumn, label: ui("Unique Visitors") },
+                { key: "avgDuration" as SortColumn, label: ui("Avg. Time") },
               ].map(({ key, label }) => (
                 <th
                   key={key}
@@ -106,10 +115,18 @@ export function TopPagesTable({ pages }: { pages: PageData[] }) {
                 key={page.path}
                 className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
               >
-                <td className="px-4 py-2.5 font-mono text-foreground">{page.path}</td>
-                <td className="px-4 py-2.5 text-muted-foreground">{page.views.toLocaleString()}</td>
-                <td className="px-4 py-2.5 text-muted-foreground">{page.visitors.toLocaleString()}</td>
-                <td className="px-4 py-2.5 text-muted-foreground">{formatDuration(page.avgDuration)}</td>
+                <td className="px-4 py-2.5 font-mono text-foreground">
+                  {page.path}
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground">
+                  {page.views.toLocaleString(ui.locale)}
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground">
+                  {page.visitors.toLocaleString(ui.locale)}
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground">
+                  {formatDuration(page.avgDuration)}
+                </td>
               </tr>
             ))}
           </tbody>

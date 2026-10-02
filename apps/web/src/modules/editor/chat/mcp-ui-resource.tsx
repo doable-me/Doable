@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { McpUiResource } from "../hooks/use-editor-store";
@@ -87,7 +88,17 @@ interface ParentMessage {
  * to keep it dependency-light and to serve as a reference implementation
  * of the spec.
  */
-export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, isStreaming, statusLines, completedText }: Props) {
+export function McpUiResourceCard({
+  resource,
+  projectId,
+  onResource,
+  onPrompt,
+  isStreaming,
+  statusLines,
+  completedText,
+}: Props) {
+  const ui = useUiText();
+
   const [error, setError] = useState<string | null>(null);
   const [iframeHeight, setIframeHeight] = useState<number>(280);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -97,8 +108,10 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   const hostReadyRef = useRef<boolean>(false);
 
   // Observe the host page's dark/light theme so iframe cards stay in sync.
-  const [isDark, setIsDark] = useState(() =>
-    typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  const [isDark, setIsDark] = useState(
+    () =>
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark"),
   );
   useEffect(() => {
     const root = document.documentElement;
@@ -108,7 +121,8 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
     return () => obs.disconnect();
   }, []);
 
-  const html = typeof resource.resource.text === "string" ? resource.resource.text : "";
+  const html =
+    typeof resource.resource.text === "string" ? resource.resource.text : "";
 
   // Inject theme info into the iframe HTML so MCP cards can adapt their
   // styles to dark/light mode.
@@ -127,7 +141,10 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   const themeResetStyle = `<style>:root{color-scheme:${isDark ? "dark" : "light"};}html,body{background:transparent !important;margin:0 !important;}html{padding:0 !important;}body{padding:0 !important;}</style>`;
   const themedHtml = html
     ? (() => {
-        let h = html.replace(/<html(?=[>\s])/i, `<html data-theme="${isDark ? "dark" : "light"}"`);
+        let h = html.replace(
+          /<html(?=[>\s])/i,
+          `<html data-theme="${isDark ? "dark" : "light"}"`,
+        );
         // Inject theme reset + listener script — prefer before the LAST
         // `</body>`, fallback to end. Using `lastIndexOf` avoids
         // corrupting MCP cards whose own scripts contain a literal
@@ -152,27 +169,37 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   const handleToolCall = useCallback(
     async (toolName: string, params: Record<string, unknown>) => {
       const token =
-        typeof window !== "undefined" ? localStorage.getItem("doable_access_token") : null;
+        typeof window !== "undefined"
+          ? localStorage.getItem("doable_access_token")
+          : null;
       try {
-        const res = await fetch(`${API_URL}/projects/${projectId}/chat/mcp-call`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        const res = await fetch(
+          `${API_URL}/projects/${projectId}/chat/mcp-call`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              connectorId: resource.connectorId,
+              toolName,
+              params,
+            }),
           },
-          body: JSON.stringify({
-            connectorId: resource.connectorId,
-            toolName,
-            params,
-          }),
-        });
+        );
         const json = (await res.json()) as {
           success?: boolean;
           error?: string;
-          content?: Array<{ type: string; resource?: McpUiResource["resource"] }>;
+          content?: Array<{
+            type: string;
+            resource?: McpUiResource["resource"];
+          }>;
         };
         if (!res.ok || !json.success) {
-          setError(json.error ?? `Tool call failed (${res.status})`);
+          setError(
+            json.error ?? ui("Tool call failed ({v0})", { v0: res.status }),
+          );
           return;
         }
         if (onResource && Array.isArray(json.content)) {
@@ -197,13 +224,14 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [projectId, resource.connectorId, resource.toolCallId, onResource],
+    [ui, projectId, resource.connectorId, resource.toolCallId, onResource],
   );
 
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       // Only accept messages from our iframe.
-      if (!iframeRef.current || ev.source !== iframeRef.current.contentWindow) return;
+      if (!iframeRef.current || ev.source !== iframeRef.current.contentWindow)
+        return;
       const data = ev.data as ParentMessage | undefined;
       if (!data || typeof data !== "object") return;
 
@@ -213,7 +241,8 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
 
       if (type === "tool") {
         const toolName = payload.toolName as string | undefined;
-        const params = (payload.params as Record<string, unknown> | undefined) ?? {};
+        const params =
+          (payload.params as Record<string, unknown> | undefined) ?? {};
         if (toolName) void handleToolCall(toolName, params);
         return;
       }
@@ -222,11 +251,14 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
         // and continues from there. Used by MCP App pickers that need the AI
         // to generate creative content (e.g. presentation builder picker that
         // hands off skill instructions for HTML/PPTX generation).
-        const text = (payload.prompt as string | undefined)
-          ?? (payload.text as string | undefined)
-          ?? (payload.message as string | undefined);
+        const text =
+          (payload.prompt as string | undefined) ??
+          (payload.text as string | undefined) ??
+          (payload.message as string | undefined);
         const displayText = payload.displayText as string | undefined;
-        console.log(`[McpUiResource][Trace] prompt message received (${text?.length ?? 0} chars, display="${displayText?.slice(0, 50)}")`);
+        console.log(
+          `[McpUiResource][Trace] prompt message received (${text?.length ?? 0} chars, display="${displayText?.slice(0, 50)}")`,
+        );
         if (text && onPrompt) onPrompt(text, displayText);
         return;
       }
@@ -239,7 +271,8 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
       }
       if (type === "size") {
         const h = Number(payload.height);
-        if (Number.isFinite(h) && h > 0 && h < 4000) setIframeHeight(Math.ceil(h));
+        if (Number.isFinite(h) && h > 0 && h < 4000)
+          setIframeHeight(Math.ceil(h));
         return;
       }
       // 'notify' and unknown types: no-op (iframe can surface its own UI).
@@ -258,7 +291,9 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   // the auto-build flow stalls forever.
   const handleIframeLoad = useCallback(() => {
     if (isStreaming) {
-      console.log("[McpUiResource][Trace] handleIframeLoad skipped — isStreaming=true");
+      console.log(
+        "[McpUiResource][Trace] handleIframeLoad skipped — isStreaming=true",
+      );
       return; // will be fired by the isStreaming-gated effect below
     }
     const target = iframeRef.current?.contentWindow;
@@ -279,10 +314,14 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
   useEffect(() => {
     if (!html) return;
     if (isStreaming) {
-      console.log("[McpUiResource][Trace] idle-effect skipped — isStreaming=true");
+      console.log(
+        "[McpUiResource][Trace] idle-effect skipped — isStreaming=true",
+      );
       return; // wait for idle
     }
-    console.log("[McpUiResource][Trace] idle-effect firing — isStreaming=false, scheduling host-ready retries");
+    console.log(
+      "[McpUiResource][Trace] idle-effect firing — isStreaming=false, scheduling host-ready retries",
+    );
     let cancelled = false;
     const send = () => {
       const target = iframeRef.current?.contentWindow;
@@ -343,7 +382,10 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
     const target = iframeRef.current?.contentWindow;
     if (!target) return;
     try {
-      target.postMessage({ type: "deck-ready", payload: { text: completedText } }, "*");
+      target.postMessage(
+        { type: "deck-ready", payload: { text: completedText } },
+        "*",
+      );
     } catch {
       /* ignore */
     }
@@ -355,14 +397,20 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
     const target = iframeRef.current?.contentWindow;
     if (!target) return;
     try {
-      target.postMessage({ type: "theme", payload: { theme: isDark ? "dark" : "light" } }, "*");
-    } catch { /* ignore */ }
+      target.postMessage(
+        { type: "theme", payload: { theme: isDark ? "dark" : "light" } },
+        "*",
+      );
+    } catch {
+      /* ignore */
+    }
   }, [isDark]);
 
   if (!themedHtml) {
     return (
       <div className="not-prose w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 shadow-sm dark:border-amber-400/50 dark:bg-amber-950/80 dark:text-amber-200">
-        MCP UI resource has no HTML payload.
+        {" "}
+        {ui("MCP UI resource has no HTML payload.")}{" "}
       </div>
     );
   }
@@ -371,7 +419,7 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
     <div className="not-prose w-full">
       <iframe
         ref={iframeRef}
-        title={`mcp-app:${resource.toolName}`}
+        title={ui("mcp-app:{v0}", { v0: resource.toolName })}
         sandbox="allow-scripts allow-forms allow-downloads allow-popups"
         srcDoc={themedHtml}
         onLoad={handleIframeLoad}
@@ -385,7 +433,7 @@ export function McpUiResourceCard({ resource, projectId, onResource, onPrompt, i
       />
       {error && (
         <div className="mt-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 shadow-sm dark:border-red-400/50 dark:bg-red-950/80 dark:text-red-200">
-          {error}
+          {ui(error)}
         </div>
       )}
     </div>

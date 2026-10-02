@@ -8,6 +8,11 @@ import type { SSEStreamingApi } from "hono/streaming";
 
 /** Mutable state bag shared across all stream phases. */
 export interface ChatStreamState {
+  recoveryCycle?: number;
+  timeoutRecoveryAttempted?: boolean;
+  taskReport?: import("./execution-state.js").TaskReport;
+  runOutcome?: import("./execution-state.js").RunOutcome;
+  deferredErrorCode?: string;
   assistantContent: string;
   assistantThinking: string;
   hadToolCalls: boolean;
@@ -18,6 +23,8 @@ export interface ChatStreamState {
   lastCapturedMsgId: string | undefined;
   lastMsgIdSepEmitted: boolean;
   msgIdDeltaStart: number;
+  /** Raw ordinary-text delta length for the current SDK message, before routing. */
+  currentMessageTextLength: number;
   assistantMessageId: string | undefined;
   lastFlushLen: number;
   /** Track last thinking_content flush length — mirrors lastFlushLen so a
@@ -109,6 +116,7 @@ export function createInitialState(): ChatStreamState {
     lastCapturedMsgId: undefined,
     lastMsgIdSepEmitted: false,
     msgIdDeltaStart: 0,
+    currentMessageTextLength: 0,
     assistantMessageId: undefined,
     lastFlushLen: 0,
     lastThinkingFlushLen: 0,

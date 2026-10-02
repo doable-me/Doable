@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useCallback } from "react";
 import { Loader2 } from "lucide-react";
@@ -36,6 +37,8 @@ export function AddProjectsToFolderDialog({
   workspaceId,
   onAdd,
 }: AddProjectsToFolderDialogProps) {
+  const ui = useUiText();
+
   const [projects, setProjects] = useState<ApiProject[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
@@ -49,11 +52,11 @@ export function AddProjectsToFolderDialog({
       const res = await apiListProjects({ workspaceId, pageSize: 100 });
       setProjects(res.data.filter((p) => p.folder_id !== folderId));
     } catch (err) {
-      console.error("Failed to load projects for folder:", err);
+      console.error(ui("Failed to load projects for folder:"), err);
     } finally {
       setIsLoading(false);
     }
-  }, [workspaceId, folderId]);
+  }, [ui, workspaceId, folderId]);
 
   useEffect(() => {
     if (open) {
@@ -78,7 +81,7 @@ export function AddProjectsToFolderDialog({
       await onAdd(Array.from(selected));
       onOpenChange(false);
     } catch (err) {
-      console.error("Failed to add projects to folder:", err);
+      console.error(ui("Failed to add projects to folder:"), err);
     } finally {
       setIsSaving(false);
     }
@@ -88,21 +91,27 @@ export function AddProjectsToFolderDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add projects to {folderName ?? "this folder"}</DialogTitle>
+          <DialogTitle>
+            {ui("Add projects to")} {folderName ?? ui("this folder")}
+          </DialogTitle>
           <DialogDescription>
-            Select projects to move into this folder. You can move them back out
-            at any time from each project&apos;s menu.
+            {" "}
+            {ui(
+              "Select projects to move into this folder. You can move them back out at any time from each project's menu.",
+            )}{" "}
           </DialogDescription>
         </DialogHeader>
 
         <div className="max-h-80 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading projects…
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+              {ui("Loading projects…")}{" "}
             </div>
           ) : projects.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No other projects to add. Create one instead.
+              {" "}
+              {ui("No other projects to add. Create one instead.")}{" "}
             </p>
           ) : (
             projects.map((p) => (
@@ -123,16 +132,30 @@ export function AddProjectsToFolderDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
-            Cancel
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={isSaving}
+          >
+            {" "}
+            {ui("Cancel")}{" "}
           </Button>
-          <Button onClick={handleAdd} disabled={selected.size === 0 || isSaving}>
+          <Button
+            onClick={handleAdd}
+            disabled={selected.size === 0 || isSaving}
+          >
             {isSaving ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Adding…
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                {ui("Adding…")}{" "}
               </>
             ) : (
-              `Add${selected.size > 0 ? ` ${selected.size} project${selected.size === 1 ? "" : "s"}` : ""}`
+              ui("Add{v0}", {
+                v0:
+                  selected.size > 0
+                    ? ` ${selected.size} project${selected.size === 1 ? "" : "s"}`
+                    : "",
+              })
             )}
           </Button>
         </DialogFooter>

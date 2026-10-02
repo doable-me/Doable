@@ -1,12 +1,7 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useMemo,
-} from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   useCollaboration,
   type RemoteVisualSelection,
@@ -21,7 +16,9 @@ interface RemoteSelectionOverlaysProps {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
 }
 
-export function RemoteSelectionOverlays({ iframeRef }: RemoteSelectionOverlaysProps) {
+export function RemoteSelectionOverlays({
+  iframeRef,
+}: RemoteSelectionOverlaysProps) {
   const { remoteSelections } = useCollaboration();
   const [positions, setPositions] = useState<
     Map<string, { x: number; y: number; width: number; height: number }>
@@ -122,7 +119,8 @@ export function RemoteSelectionOverlays({ iframeRef }: RemoteSelectionOverlaysPr
             height: rect.height,
             border: `2px solid ${selection.color}`,
             backgroundColor: `${selection.color}30`,
-            transition: "left 150ms ease, top 150ms ease, width 150ms ease, height 150ms ease",
+            transition:
+              "left 150ms ease, top 150ms ease, width 150ms ease, height 150ms ease",
           }}
         >
           {/* Name label above the top-left corner */}
@@ -208,7 +206,11 @@ interface VisualEditConflictWarningProps {
   selectedSelector: string | null;
 }
 
-export function VisualEditConflictWarning({ selectedSelector }: VisualEditConflictWarningProps) {
+export function VisualEditConflictWarning({
+  selectedSelector,
+}: VisualEditConflictWarningProps) {
+  const ui = useUiText();
+
   const { remoteSelections } = useCollaboration();
 
   const conflict = useMemo(() => {
@@ -226,9 +228,7 @@ export function VisualEditConflictWarning({ selectedSelector }: VisualEditConfli
   if (!conflict) return null;
 
   return (
-    <div
-      className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-200"
-    >
+    <div className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-200">
       <div
         className="flex items-center gap-2 rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-xl backdrop-blur"
         style={{ borderColor: conflict.color }}
@@ -238,8 +238,10 @@ export function VisualEditConflictWarning({ selectedSelector }: VisualEditConfli
           style={{ backgroundColor: conflict.color }}
         />
         <span className="text-foreground">
-          <span className="font-semibold text-foreground">{conflict.displayName}</span>{" "}
-          is editing this element
+          <span className="font-semibold text-foreground">
+            {conflict.displayName}
+          </span>{" "}
+          {ui("is editing this element")}{" "}
         </span>
       </div>
     </div>
@@ -254,9 +256,16 @@ interface UseVisualEditBroadcastOptions {
 }
 
 interface UseVisualEditBroadcastReturn {
-  broadcastSelect: (selector: string, boundingRect: { x: number; y: number; width: number; height: number }) => void;
+  broadcastSelect: (
+    selector: string,
+    boundingRect: { x: number; y: number; width: number; height: number },
+  ) => void;
   broadcastDeselect: () => void;
-  broadcastStyleChange: (selector: string, property: string, value: string) => void;
+  broadcastStyleChange: (
+    selector: string,
+    property: string,
+    value: string,
+  ) => void;
   broadcastTextChange: (selector: string, newText: string) => void;
   handlePreviewMouseMove: (e: React.MouseEvent | MouseEvent) => void;
 }
@@ -276,7 +285,10 @@ export function useVisualEditBroadcast({
   const lastCursorSendRef = useRef(0);
 
   const broadcastSelect = useCallback(
-    (selector: string, boundingRect: { x: number; y: number; width: number; height: number }) => {
+    (
+      selector: string,
+      boundingRect: { x: number; y: number; width: number; height: number },
+    ) => {
       sendVisualEditSelect(selector, boundingRect);
     },
     [sendVisualEditSelect],
@@ -323,7 +335,6 @@ export function useVisualEditBroadcast({
     return () => {
       sendVisualEditDeselect();
     };
-     
   }, []);
 
   return {
@@ -334,4 +345,3 @@ export function useVisualEditBroadcast({
     handlePreviewMouseMove,
   };
 }
-

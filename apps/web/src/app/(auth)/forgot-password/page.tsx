@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -10,6 +11,8 @@ import { ArrowLeft, Loader2, Mail } from "lucide-react";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export default function ForgotPasswordPage() {
+  const ui = useUiText();
+
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,8 +31,10 @@ export default function ForgotPasswordPage() {
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Request failed" }));
-        throw new Error(body.error ?? "Request failed");
+        const body = await res
+          .json()
+          .catch(() => ({ error: "Request failed" }));
+        throw new Error(body.error ?? ui("Request failed"));
       }
 
       setIsSubmitted(true);
@@ -37,7 +42,7 @@ export default function ForgotPasswordPage() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(ui("Something went wrong. Please try again."));
       }
     } finally {
       setIsLoading(false);
@@ -51,14 +56,18 @@ export default function ForgotPasswordPage() {
           <Mail className="h-6 w-6 text-green-600 dark:text-green-400" />
         </div>
         <h2 className="mb-2 text-xl font-semibold text-[hsl(var(--foreground))]">
-          Check your email
+          {" "}
+          {ui("Check your email")}{" "}
         </h2>
         <p className="mb-6 text-sm text-[hsl(var(--muted-foreground))]">
-          If an account exists for <strong className="text-[hsl(var(--foreground))]">{email}</strong>,
-          we&apos;ve sent password reset instructions to your inbox.
+          {" "}
+          {ui("If an account exists for")}{" "}
+          <strong className="text-[hsl(var(--foreground))]">{email}</strong>
+          {ui(", we've sent password reset instructions to your inbox.")}{" "}
         </p>
         <p className="mb-6 text-xs text-[hsl(var(--muted-foreground))]">
-          Didn&apos;t receive the email? Check your spam folder or{" "}
+          {" "}
+          {ui("Didn't receive the email? Check your spam folder or")}{" "}
           <button
             type="button"
             onClick={() => {
@@ -67,15 +76,15 @@ export default function ForgotPasswordPage() {
             }}
             className="font-medium text-brand-700 hover:underline"
           >
-            try again
+            {" "}
+            {ui("try again")}{" "}
           </button>
         </p>
         <Link
           href="/login"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back to sign in
+          <ArrowLeft className="h-4 w-4" /> {ui("Back to sign in")}{" "}
         </Link>
       </div>
     );
@@ -88,10 +97,14 @@ export default function ForgotPasswordPage() {
           <Mail className="h-6 w-6 text-brand-700" />
         </div>
         <h2 className="text-xl font-semibold text-[hsl(var(--foreground))]">
-          Forgot your password?
+          {" "}
+          {ui("Forgot your password?")}{" "}
         </h2>
         <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
-          No worries. Enter your email and we&apos;ll send you reset instructions.
+          {" "}
+          {ui(
+            "No worries. Enter your email and we'll send you reset instructions.",
+          )}{" "}
         </p>
       </div>
 
@@ -105,16 +118,16 @@ export default function ForgotPasswordPage() {
             >
               <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4.75a.75.75 0 011.5 0v3a.75.75 0 01-1.5 0v-3zM8 11a1 1 0 110 2 1 1 0 010-2z" />
             </svg>
-            <span>{error}</span>
+            <span>{ui(error)}</span>
           </div>
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="email">Email address</Label>
+          <Label htmlFor="email">{ui("Email address")}</Label>
           <Input
             id="email"
             type="email"
-            placeholder="you@example.com"
+            placeholder={ui("you@example.com")}
             autoComplete="email"
             required
             disabled={isLoading}
@@ -131,11 +144,11 @@ export default function ForgotPasswordPage() {
         >
           {isLoading ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Sending...
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+              {ui("Sending...")}{" "}
             </>
           ) : (
-            "Send reset instructions"
+            ui("Send reset instructions")
           )}
         </Button>
       </form>
@@ -145,8 +158,7 @@ export default function ForgotPasswordPage() {
           href="/login"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back to sign in
+          <ArrowLeft className="h-4 w-4" /> {ui("Back to sign in")}{" "}
         </Link>
       </p>
     </>

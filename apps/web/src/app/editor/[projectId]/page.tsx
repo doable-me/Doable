@@ -1,17 +1,62 @@
 "use client";
+import { usePlanSync } from "@/modules/editor/hooks/use-plan-sync";
+import { acceptPlanSnapshot } from "@/modules/editor/chat/plan/plan-state";
+import { LanguageSwitcher } from "@/i18n/locale-provider";
+import { UiText } from "@/i18n/ui-text";
+import type { UiTranslator } from "@/i18n/text";
+import {
+  translateProgress,
+  translatePlatformPrompt,
+  translateThinkingPrefix,
+} from "@/i18n/progress";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
-import { useState, useRef, useCallback, useEffect, memo, Suspense } from "react";
+import { BrandLogo } from "@/components/brand-logo";
+
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  memo,
+  Suspense,
+} from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getStoredTokens, apiFetch, apiUpdateProject, apiDeleteProject, apiDuplicateProject, apiGetProject, apiGetEffectiveAiConfig, apiRecordProjectView, apiListAiProviders, apiGetShareStats, apiListCollaborators, apiRemoveCollaborator, type ApiEffectiveAiConfig, type ApiAiProvider, type ApiCollaborator } from "@/lib/api";
-import { consumeBridge, hasBridge, type BridgeSSEEvent } from "@/lib/prompt-bridge";
+import {
+  getStoredTokens,
+  apiFetch,
+  apiUpdateProject,
+  apiDeleteProject,
+  apiDuplicateProject,
+  apiGetProject,
+  apiGetEffectiveAiConfig,
+  apiRecordProjectView,
+  apiListAiProviders,
+  apiGetShareStats,
+  apiListCollaborators,
+  apiRemoveCollaborator,
+  type ApiEffectiveAiConfig,
+  type ApiAiProvider,
+  type ApiCollaborator,
+} from "@/lib/api";
+import {
+  consumeBridge,
+  hasBridge,
+  type BridgeSSEEvent,
+} from "@/lib/prompt-bridge";
 import { cn } from "@/lib/utils";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useAuth } from "@/hooks/use-auth";
 import { CollaborationProvider } from "@/modules/collaboration";
 import { CollabHeaderItems } from "@/modules/collaboration/components/collab-header-items";
 import { CollabActivityOverlay } from "@/modules/collaboration/components/collab-activity-overlay";
-import { RemoteSelectionOverlays, RemoteVisualCursors, VisualEditConflictWarning } from "@/modules/collaboration/components/visual-edit-collab";
+import {
+  RemoteSelectionOverlays,
+  RemoteVisualCursors,
+  VisualEditConflictWarning,
+} from "@/modules/collaboration/components/visual-edit-collab";
 import { CollabPreviewSync } from "@/modules/collaboration/components/collab-preview-sync";
 import { ChatPopout } from "@/modules/collaboration/components/chat-popout";
 import { ChatMessageToasts } from "@/modules/collaboration/components/chat-message-toast";
@@ -26,8 +71,15 @@ import { GitHubConnectDialog } from "@/modules/editor/components/github-connect-
 import { GitHubButton } from "@/modules/editor/toolbar/github-button";
 import { RuntimePanel } from "@/modules/editor/components/runtime-panel";
 import { CollabChatTyping } from "@/modules/collaboration/components/collab-chat-typing";
-import { useAttachments, ACCEPTED_EXTENSIONS, type Attachment } from "@/hooks/use-attachments";
-import { EditorModelSelector, type ModelOption } from "@/modules/ai-settings/components/editor-model-selector";
+import {
+  useAttachments,
+  ACCEPTED_EXTENSIONS,
+  type Attachment,
+} from "@/hooks/use-attachments";
+import {
+  EditorModelSelector,
+  type ModelOption,
+} from "@/modules/ai-settings/components/editor-model-selector";
 import {
   ArrowUp,
   ArrowLeft,
@@ -120,12 +172,22 @@ import { useVisualEdit } from "@/modules/editor/visual-edit/use-visual-edit";
 import { VisualEditToolbar } from "@/modules/editor/visual-edit/visual-edit-toolbar";
 import { DesignCommentsLayer } from "@/modules/editor/visual-edit/sticky-notes/design-comments-layer";
 import type { ClarificationQuestion, Plan } from "@doable/shared/types/ai";
-import { ClarificationFlow, PlanCard, PlanProgress } from "@/modules/editor/chat/plan";
+import {
+  ClarificationFlow,
+  PlanCard,
+  PlanProgress,
+} from "@/modules/editor/chat/plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
 import { IntegrationConnectDialog } from "@/modules/integrations/integration-connect-dialog";
-import { useEditorStore, type McpUiResource } from "@/modules/editor/hooks/use-editor-store";
+import {
+  useEditorStore,
+  type McpUiResource,
+} from "@/modules/editor/hooks/use-editor-store";
 import { McpUiResourceCard } from "@/modules/editor/chat/mcp-ui-resource";
-import { useSkillManifest, SkillPickerButton } from "@/modules/skills/skill-picker";
+import {
+  useSkillManifest,
+  SkillPickerButton,
+} from "@/modules/skills/skill-picker";
 import { BuildPanel } from "@/modules/editor/build/BuildPanel";
 
 // ─── Dynamically import Monaco (browser-only) ───────────────
@@ -140,7 +202,9 @@ const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
       <div className="flex h-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-brand-400" />
-          <span className="text-xs text-muted-foreground">Loading editor...</span>
+          <span className="text-xs text-muted-foreground">
+            <UiText>Loading editor...</UiText>
+          </span>
         </div>
       </div>
     ),
@@ -148,16 +212,76 @@ const MonacoEditorWrapper = dynamic<MonacoEditorWrapperProps>(
 );
 
 // ─── Dynamic panel imports ──────────────────────────────────
-const CodePanel = dynamic(() => import("@/modules/editor/panels/code-panel").then(m => ({ default: m.CodePanel })), { ssr: false });
-const DesignPanel = dynamic(() => import("@/modules/editor/panels/design-panel").then(m => ({ default: m.DesignPanel })), { ssr: false });
-const FilesPanel = dynamic(() => import("@/modules/editor/panels/files-panel").then(m => ({ default: m.FilesPanel })), { ssr: false });
-const CloudPanel = dynamic(() => import("@/modules/editor/panels/cloud-panel").then(m => ({ default: m.CloudPanel })), { ssr: false });
-const AnalyticsPanel = dynamic(() => import("@/modules/editor/panels/analytics-panel").then(m => ({ default: m.AnalyticsPanel })), { ssr: false });
-const SecurityPanel = dynamic(() => import("@/modules/editor/panels/security-panel").then(m => ({ default: m.SecurityPanel })), { ssr: false });
-const SpeedPanel = dynamic(() => import("@/modules/editor/panels/speed-panel").then(m => ({ default: m.SpeedPanel })), { ssr: false });
-const HistoryPanel = dynamic(() => import("@/modules/editor/panels/history-panel").then(m => ({ default: m.HistoryPanel })), { ssr: false });
-const EnvironmentsPanel = dynamic(() => import("@/modules/environments/environments-panel").then(m => ({ default: m.EnvironmentsPanel })), { ssr: false });
-const SkillsPanel = dynamic(() => import("@/modules/skills/skills-panel").then(m => ({ default: m.SkillsPanel })), { ssr: false });
+const CodePanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/code-panel").then((m) => ({
+      default: m.CodePanel,
+    })),
+  { ssr: false },
+);
+const DesignPanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/design-panel").then((m) => ({
+      default: m.DesignPanel,
+    })),
+  { ssr: false },
+);
+const FilesPanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/files-panel").then((m) => ({
+      default: m.FilesPanel,
+    })),
+  { ssr: false },
+);
+const CloudPanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/cloud-panel").then((m) => ({
+      default: m.CloudPanel,
+    })),
+  { ssr: false },
+);
+const AnalyticsPanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/analytics-panel").then((m) => ({
+      default: m.AnalyticsPanel,
+    })),
+  { ssr: false },
+);
+const SecurityPanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/security-panel").then((m) => ({
+      default: m.SecurityPanel,
+    })),
+  { ssr: false },
+);
+const SpeedPanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/speed-panel").then((m) => ({
+      default: m.SpeedPanel,
+    })),
+  { ssr: false },
+);
+const HistoryPanel = dynamic(
+  () =>
+    import("@/modules/editor/panels/history-panel").then((m) => ({
+      default: m.HistoryPanel,
+    })),
+  { ssr: false },
+);
+const EnvironmentsPanel = dynamic(
+  () =>
+    import("@/modules/environments/environments-panel").then((m) => ({
+      default: m.EnvironmentsPanel,
+    })),
+  { ssr: false },
+);
+const SkillsPanel = dynamic(
+  () =>
+    import("@/modules/skills/skills-panel").then((m) => ({
+      default: m.SkillsPanel,
+    })),
+  { ssr: false },
+);
 
 // ─── Constants ──────────────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -179,18 +303,33 @@ function extractErrorMessage(data: unknown): string {
 }
 
 // ─── Types ──────────────────────────────────────────────────
-type ActiveTab = "chat" | "code" | "preview" | "history" | "design" | "cloud" | "analytics" | "files" | "security" | "speed" | "team" | "environment" | "skills" | "build";
+type ActiveTab =
+  | "chat"
+  | "code"
+  | "preview"
+  | "history"
+  | "design"
+  | "cloud"
+  | "analytics"
+  | "files"
+  | "security"
+  | "speed"
+  | "team"
+  | "environment"
+  | "skills"
+  | "build";
 type ChatMode = "agent" | "plan" | "visual-edit";
 type DeviceMode = "desktop" | "tablet" | "mobile";
 
 interface ToolAction {
   id: string;
+  callId?: string;
   toolName: string;
   description: string;
   isExpanded: boolean;
   isBookmarked?: boolean;
   filePath?: string;
-  status?: "running" | "completed" | "failed";
+  status?: "running" | "completed" | "failed" | "unknown";
 }
 
 interface ChatMsg {
@@ -200,15 +339,34 @@ interface ChatMsg {
   timestamp: string;
   isStreaming?: boolean;
   isError?: boolean;
+  runFailed?: boolean;
+  runError?: string;
   toolActions?: ToolAction[];
   feedbackGiven?: "up" | "down" | null;
-  suggestions?: string[];  // AI-generated next-step suggestions
-  attachments?: { type: string; data: string; name: string; preview?: string; fileType?: string }[];
+  suggestions?: string[]; // AI-generated next-step suggestions
+  attachments?: {
+    type: string;
+    data: string;
+    name: string;
+    preview?: string;
+    fileType?: string;
+  }[];
   thinkingContent?: string;
-  senderInfo?: { userId: string; displayName: string; color: string; isRemote: boolean };
+  senderInfo?: {
+    userId: string;
+    displayName: string;
+    color: string;
+    isRemote: boolean;
+  };
   liveStatus?: string;
   mcpResources?: Record<string, McpUiResource>;
-  artifacts?: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }[];
+  artifacts?: {
+    url: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    toolName?: string;
+  }[];
   hidden?: boolean;
 }
 
@@ -221,12 +379,7 @@ interface FileTreeNode {
   children?: FileTreeNode[];
 }
 
-type ScaffoldStatus =
-  | "idle"
-  | "scaffolding"
-  | "starting"
-  | "ready"
-  | "error";
+type ScaffoldStatus = "idle" | "scaffolding" | "starting" | "ready" | "error";
 
 interface OpenFileTab {
   path: string;
@@ -261,7 +414,17 @@ function detectLanguage(filename: string): string {
 const AUTOSAVE_DELAY_MS = 1500;
 
 /** Tabs that render a full panel (replacing the preview pane) */
-const PANEL_TABS: ActiveTab[] = ["history", "cloud", "analytics", "files", "security", "speed", "environment", "skills", "build"];
+const PANEL_TABS: ActiveTab[] = [
+  "history",
+  "cloud",
+  "analytics",
+  "files",
+  "security",
+  "speed",
+  "environment",
+  "skills",
+  "build",
+];
 
 /** All items available in the triple-dots "More" menu */
 interface MoreMenuItem {
@@ -323,14 +486,22 @@ async function scaffoldProject(projectId: string): Promise<string | null> {
   const maxRetries = 3;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const json = await apiFetch<{ data: { previewUrl?: string | null } }>(`/projects/${projectId}/scaffold`, {
-        method: "POST",
-      });
+      const json = await apiFetch<{ data: { previewUrl?: string | null } }>(
+        `/projects/${projectId}/scaffold`,
+        {
+          method: "POST",
+        },
+      );
       return toAbsolutePreviewUrl(json.data.previewUrl ?? null);
     } catch (err) {
       // On network failures (Failed to fetch), retry with backoff
       const msg = err instanceof Error ? err.message : "";
-      if (attempt < maxRetries - 1 && (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("ERR_FAILED"))) {
+      if (
+        attempt < maxRetries - 1 &&
+        (msg.includes("Failed to fetch") ||
+          msg.includes("NetworkError") ||
+          msg.includes("ERR_FAILED"))
+      ) {
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
         continue;
       }
@@ -341,14 +512,18 @@ async function scaffoldProject(projectId: string): Promise<string | null> {
 }
 
 async function fetchPreviewUrl(projectId: string): Promise<string | null> {
-  const json = await apiFetch<{ data: { url: string | null; running: boolean } }>(`/projects/${projectId}/preview-url`);
+  const json = await apiFetch<{
+    data: { url: string | null; running: boolean };
+  }>(`/projects/${projectId}/preview-url`);
   // Return null if the server isn't running yet — caller will retry
   if (!json.data.url || !json.data.running) return null;
   return toAbsolutePreviewUrl(json.data.url);
 }
 
 async function fetchFileList(projectId: string): Promise<string[]> {
-  const json = await apiFetch<{ data: string[] }>(`/projects/${projectId}/files`);
+  const json = await apiFetch<{ data: string[] }>(
+    `/projects/${projectId}/files`,
+  );
   return json.data;
 }
 
@@ -367,10 +542,13 @@ async function saveFileContent(
   filePath: string,
   content: string,
 ): Promise<void> {
-  await apiFetch(`/projects/${projectId}/files/${encodeURIComponent(filePath)}`, {
-    method: "PUT",
-    body: JSON.stringify({ content }),
-  });
+  await apiFetch(
+    `/projects/${projectId}/files/${encodeURIComponent(filePath)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    },
+  );
 }
 
 // ─── Build file tree from flat paths ────────────────────────
@@ -430,8 +608,17 @@ async function streamChat(
   onChunk: (text: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
-  onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void,
-  onToolStarted?: (toolName: string, args: Record<string, unknown>) => void,
+  onToolCompleted?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    success?: boolean,
+    callId?: string,
+  ) => void,
+  onToolStarted?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    callId?: string,
+  ) => void,
   signal?: AbortSignal,
   onThinking?: (text: string) => void,
   onStatusChange?: (status: string, phase?: string) => void,
@@ -444,11 +631,22 @@ async function streamChat(
   onPlanStepUpdate?: (stepId: string, status: string) => void,
   onProvisionSupabase?: (req: { name: string; reason: string }) => void,
   onMcpUiResource?: (resource: McpUiResource) => void,
-  onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void,
+  onArtifactReady?: (artifact: {
+    url: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    toolName?: string;
+  }) => void,
   displayContent?: string,
   onReclassify?: (text: string) => void,
   onUserInputRequest?: (req: UserInputRequestPayload) => void,
-  onIntegrationRequired?: (req: { integrationId: string; displayName: string; logoUrl?: string; reason: string }) => void,
+  onIntegrationRequired?: (req: {
+    integrationId: string;
+    displayName: string;
+    logoUrl?: string;
+    reason: string;
+  }) => void,
 ) {
   let currentToken = getStoredTokens().accessToken;
 
@@ -466,7 +664,9 @@ async function streamChat(
         ...(attachments?.length ? { attachments } : {}),
         ...(modelOverride ? { model: modelOverride } : {}),
         ...(providerIdOverride ? { providerId: providerIdOverride } : {}),
-        ...(copilotAccountIdOverride ? { copilotAccountId: copilotAccountIdOverride } : {}),
+        ...(copilotAccountIdOverride
+          ? { copilotAccountId: copilotAccountIdOverride }
+          : {}),
       }),
       signal,
     });
@@ -484,7 +684,9 @@ async function streamChat(
         const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken: getStoredTokens().refreshToken }),
+          body: JSON.stringify({
+            refreshToken: getStoredTokens().refreshToken,
+          }),
         });
         if (refreshRes.ok) {
           const data = await refreshRes.json();
@@ -510,7 +712,7 @@ async function streamChat(
     } catch {
       if (signal?.aborted) return;
       onError(
-        "Connection to AI failed — the server may be restarting. Please try again in a moment."
+        "Connection to AI failed — the server may be restarting. Please try again in a moment.",
       );
       return;
     }
@@ -519,7 +721,7 @@ async function streamChat(
   if (!res.ok) {
     const errorText = await res.text().catch(() => "");
     onError(
-      `Server error (${res.status}): ${errorText || "Something went wrong. Please try again."}`
+      `Server error (${res.status}): ${errorText || "Something went wrong. Please try again."}`,
     );
     return;
   }
@@ -576,7 +778,11 @@ async function streamChat(
           // Handle tool_call events — show "in progress" card immediately
           if (parsed.type === "tool_call" && onToolStarted) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            const toolName =
+              (d?.name as string) ??
+              (d?.toolName as string) ??
+              parsed.name ??
+              "";
             let toolArgs: Record<string, unknown> = {};
             const rawArgs = d?.arguments ?? d?.args;
             if (typeof rawArgs === "string" && rawArgs.trim()) {
@@ -590,41 +796,60 @@ async function streamChat(
             }
             if (toolName) {
               pendingToolNames.push(toolName);
-              onToolStarted(toolName, toolArgs);
+              onToolStarted(
+                toolName,
+                toolArgs,
+                d?.toolCallId as string | undefined,
+              );
             }
           }
-          
+
           // Handle tool_executing events — tool arguments are fully available before completing
           if (parsed.type === "tool_executing" && onToolStarted) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            const toolName =
+              (d?.name as string) ??
+              (d?.toolName as string) ??
+              parsed.name ??
+              "";
             let toolArgs: Record<string, unknown> = {};
             const rawArgs = d?.arguments ?? d?.args;
             if (typeof rawArgs === "string" && rawArgs.trim()) {
-              try { toolArgs = JSON.parse(rawArgs); } catch { toolArgs = {}; }
+              try {
+                toolArgs = JSON.parse(rawArgs);
+              } catch {
+                toolArgs = {};
+              }
             } else if (typeof rawArgs === "object" && rawArgs !== null) {
               toolArgs = rawArgs as Record<string, unknown>;
             }
             if (toolName) {
-              onToolStarted(toolName, toolArgs);
+              onToolStarted(
+                toolName,
+                toolArgs,
+                d?.toolCallId as string | undefined,
+              );
             }
           }
 
           // Handle tool completion events — triggers file tree / content refresh
-          if (parsed.type === "tool.completed" && onToolCompleted) {
-            const toolName = parsed.name ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).name as string : "");
-            const toolArgs = parsed.args ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).args as Record<string, unknown> : {});
-            onToolCompleted(toolName ?? "", toolArgs ?? {});
-          }
 
           // Handle tool_result events — tool finished executing, update card to completed
-          if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && onToolCompleted) {
+          if (
+            (parsed.type === "tool_result" ||
+              parsed.type === "tool.completed") &&
+            onToolCompleted
+          ) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            let toolName =
+              (d?.name as string) ??
+              (d?.toolName as string) ??
+              parsed.name ??
+              "";
             let toolArgs: Record<string, unknown> = {};
             // Prefer the request args (so file-name extraction works) and fall
             // back to the result payload only if args are missing.
-            const rawArgs = d?.arguments ?? d?.args ?? d?.result;
+            const rawArgs = d?.arguments ?? d?.args ?? parsed.args ?? d?.result;
             if (typeof rawArgs === "string" && rawArgs.trim()) {
               try {
                 toolArgs = JSON.parse(rawArgs);
@@ -643,18 +868,31 @@ async function streamChat(
             // If tool_result lacks a name, use the name from the last tool_call
             if (!toolName && pendingToolNames.length > 0) {
               toolName = pendingToolNames.shift()!;
-            } else if (toolName && pendingToolNames.length > 0 && pendingToolNames[0] === toolName) {
+            } else if (
+              toolName &&
+              pendingToolNames.length > 0 &&
+              pendingToolNames[0] === toolName
+            ) {
               pendingToolNames.shift();
             }
             if (toolName) {
-              onToolCompleted(toolName, toolArgs);
+              onToolCompleted(
+                toolName,
+                toolArgs,
+                typeof d?.success === "boolean" ? d.success : undefined,
+                d?.toolCallId as string | undefined,
+              );
             }
             // Inline artifacts attached to tool_result (resilient
             // alternative to standalone artifact_ready / mcp_ui_resource
             // events that can be dropped by Cloudflare Tunnel).
             if (Array.isArray(d?.artifacts) && onArtifactReady) {
               for (const a of d!.artifacts as Array<Record<string, unknown>>) {
-                if (typeof a?.url === "string" && typeof a?.fileName === "string" && typeof a?.mimeType === "string") {
+                if (
+                  typeof a?.url === "string" &&
+                  typeof a?.fileName === "string" &&
+                  typeof a?.mimeType === "string"
+                ) {
                   onArtifactReady({
                     url: a.url as string,
                     fileName: a.fileName as string,
@@ -673,14 +911,16 @@ async function streamChat(
             const filePath = (d?.filePath as string) ?? "";
             const action = (d?.action as string) ?? "edit";
             if (filePath) {
-              onToolCompleted(`${action}_file`, { path: filePath });
+              onToolCompleted(`${action}_file`, { path: filePath }, true);
             }
           }
 
           // Handle plan mode events
           if (parsed.type === "clarification" && onClarification) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const questions = d?.questions as ClarificationQuestion[] | undefined;
+            const questions = d?.questions as
+              | ClarificationQuestion[]
+              | undefined;
             if (Array.isArray(questions) && questions.length > 0) {
               onClarification(questions);
             }
@@ -696,9 +936,10 @@ async function streamChat(
 
           if (parsed.type === "plan_step_update" && onPlanStepUpdate) {
             const d = parsed.data as Record<string, unknown> | undefined;
+            if (d?.plan && onPlan) onPlan(d.plan as Plan);
             const stepId = d?.stepId as string | undefined;
             const status = d?.status as string | undefined;
-            if (stepId && status) {
+            if (!d?.plan && stepId && status) {
               onPlanStepUpdate(stepId, status);
             }
           }
@@ -706,7 +947,10 @@ async function streamChat(
           // Phase 2A: Supabase provisioning request — fired when the AI
           // calls `provision_supabase`. Opens the org/region picker dialog
           // via the page-level `supabaseProvisionRequest` state.
-          if (parsed.type === "provision_supabase_required" && onProvisionSupabase) {
+          if (
+            parsed.type === "provision_supabase_required" &&
+            onProvisionSupabase
+          ) {
             const d = parsed.data as Record<string, unknown> | undefined;
             const name = (d?.name as string | undefined) ?? "";
             const reason = (d?.reason as string | undefined) ?? "";
@@ -724,7 +968,9 @@ async function streamChat(
                 requestId,
                 prompt,
                 kind: d?.kind as string | undefined,
-                choices: Array.isArray(d?.choices) ? (d!.choices as { label: string; value: string }[]) : undefined,
+                choices: Array.isArray(d?.choices)
+                  ? (d!.choices as { label: string; value: string }[])
+                  : undefined,
                 allowFreeform: d?.allowFreeform !== false,
               });
             }
@@ -735,19 +981,38 @@ async function streamChat(
           // ElevenLabs). Opens the connect dialog via `pendingIntegrationRequest`.
           if (parsed.type === "integration_required" && onIntegrationRequired) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const integrationId = (d?.integrationId as string | undefined) ?? "";
-            const displayName = (d?.displayName as string | undefined) ?? integrationId;
+            const integrationId =
+              (d?.integrationId as string | undefined) ?? "";
+            const displayName =
+              (d?.displayName as string | undefined) ?? integrationId;
             const logoUrl = d?.logoUrl as string | undefined;
             const reason = (d?.reason as string | undefined) ?? "";
-            if (integrationId) onIntegrationRequired({ integrationId, displayName, logoUrl, reason });
+            if (integrationId)
+              onIntegrationRequired({
+                integrationId,
+                displayName,
+                logoUrl,
+                reason,
+              });
           }
 
           // Small dedicated download notification — emitted alongside the
           // mcp_ui_resource event by the API so the user always gets a
           // clickable download even if the larger UI resource event is
           // dropped/buffered upstream (e.g. by Cloudflare Tunnel).
-          if ((parsed.type === "artifact_ready" || parsed.type === "artifact") && onArtifactReady) {
-            const d = parsed.data as { url?: string; fileName?: string; mimeType?: string; sizeBytes?: number; toolName?: string } | undefined;
+          if (
+            (parsed.type === "artifact_ready" || parsed.type === "artifact") &&
+            onArtifactReady
+          ) {
+            const d = parsed.data as
+              | {
+                  url?: string;
+                  fileName?: string;
+                  mimeType?: string;
+                  sizeBytes?: number;
+                  toolName?: string;
+                }
+              | undefined;
             if (d?.url && d?.fileName && d?.mimeType) {
               onArtifactReady({
                 url: d.url,
@@ -762,8 +1027,21 @@ async function streamChat(
           // MCP-Apps UI resource — surface a sandboxed iframe to the user
           if (parsed.type === "mcp_ui_resource") {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const r = d?.resource as { uri?: string; mimeType?: string; text?: string; blob?: string } | undefined;
-            if (onMcpUiResource && d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType) {
+            const r = d?.resource as
+              | {
+                  uri?: string;
+                  mimeType?: string;
+                  text?: string;
+                  blob?: string;
+                }
+              | undefined;
+            if (
+              onMcpUiResource &&
+              d &&
+              typeof d.toolCallId === "string" &&
+              r?.uri &&
+              r?.mimeType
+            ) {
               onMcpUiResource({
                 toolCallId: d.toolCallId as string,
                 connectorId: (d.connectorId as string) ?? "",
@@ -781,7 +1059,8 @@ async function streamChat(
 
           // Forward thinking events for live status display
           if (parsed.type === "thinking" && onThinking) {
-            const thinkingContent = typeof parsed.data === "string" ? parsed.data : "";
+            const thinkingContent =
+              typeof parsed.data === "string" ? parsed.data : "";
             if (thinkingContent) {
               onThinking(thinkingContent);
             }
@@ -838,7 +1117,11 @@ async function streamChat(
             // Full message event: {type:"assistant.message", data:{content:"..."}}
             const d = parsed.data as Record<string, unknown> | undefined;
             text = typeof d?.content === "string" ? d.content : "";
-          } else if (parsed.type === "text_delta" || !parsed.type || parsed.type === "content") {
+          } else if (
+            parsed.type === "text_delta" ||
+            !parsed.type ||
+            parsed.type === "content"
+          ) {
             if (typeof parsed.data === "string") {
               text = parsed.data;
             } else if (typeof parsed.content === "string") {
@@ -853,7 +1136,11 @@ async function streamChat(
           // Non-JSON payloads are likely raw text from legacy providers.
           // Skip payloads that look like internal SDK event names to
           // prevent leaked metadata from appearing as chat text.
-          if (payload && !payload.startsWith("{") && !payload.includes("model_call")) {
+          if (
+            payload &&
+            !payload.startsWith("{") &&
+            !payload.includes("model_call")
+          ) {
             onChunk(payload);
             lastMeaningfulEvent = Date.now();
           }
@@ -869,7 +1156,7 @@ async function streamChat(
   } catch (err: unknown) {
     if (signal?.aborted) return;
     onError(
-      "Connection interrupted — the server may have restarted. Please send your message again."
+      "Connection interrupted — the server may have restarted. Please send your message again.",
     );
     return;
   }
@@ -900,17 +1187,37 @@ interface BridgeCallbacks {
   onDone: () => void;
   onError: (error: string) => void;
   onUserInputRequest?: (req: UserInputRequestPayload) => void;
-  onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void;
-  onToolStarted?: (toolName: string, args: Record<string, unknown>) => void;
+  onToolCompleted?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    success?: boolean,
+    callId?: string,
+  ) => void;
+  onToolStarted?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    callId?: string,
+  ) => void;
   onThinking?: (text: string) => void;
   onStatusChange?: (status: string, phase?: string) => void;
   onClarification?: (questions: ClarificationQuestion[]) => void;
   onPlan?: (plan: Plan) => void;
   onPlanStepUpdate?: (stepId: string, status: string) => void;
   onProvisionSupabase?: (req: { name: string; reason: string }) => void;
-  onIntegrationRequired?: (req: { integrationId: string; displayName: string; logoUrl?: string; reason: string }) => void;
+  onIntegrationRequired?: (req: {
+    integrationId: string;
+    displayName: string;
+    logoUrl?: string;
+    reason: string;
+  }) => void;
   onMcpUiResource?: (resource: McpUiResource) => void;
-  onArtifactReady?: (artifact: { url: string; fileName: string; mimeType: string; sizeBytes: number; toolName?: string }) => void;
+  onArtifactReady?: (artifact: {
+    url: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    toolName?: string;
+  }) => void;
   onReclassify?: (text: string) => void;
 }
 
@@ -935,37 +1242,61 @@ function processOneSSEPayload(
 
     if (parsed.type === "tool_call" && cb.onToolStarted) {
       const d = parsed.data as Record<string, unknown> | undefined;
-      const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+      const toolName =
+        (d?.name as string) ?? (d?.toolName as string) ?? parsed.name ?? "";
       const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
       if (toolName) {
         pendingToolNames.push(toolName);
-        cb.onToolStarted(toolName, toolArgs);
+        cb.onToolStarted(
+          toolName,
+          toolArgs,
+          d?.toolCallId as string | undefined,
+        );
       }
     }
 
-    if (parsed.type === "tool.completed" && cb.onToolCompleted) {
-      const toolName = parsed.name ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).name as string : "");
-      const toolArgs = parsed.args ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).args as Record<string, unknown> : {});
-      cb.onToolCompleted(toolName ?? "", toolArgs ?? {});
-    }
-
-    if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && cb.onToolCompleted) {
+    if (
+      (parsed.type === "tool_result" || parsed.type === "tool.completed") &&
+      cb.onToolCompleted
+    ) {
       const d = parsed.data as Record<string, unknown> | undefined;
-      let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+      let toolName =
+        (d?.name as string) ?? (d?.toolName as string) ?? parsed.name ?? "";
       // Prefer request args so the file name is visible on the card.
-      let toolArgs = ((d?.arguments as Record<string, unknown>) ?? (d?.args as Record<string, unknown>) ?? (d?.result as Record<string, unknown>)) ?? {};
-      if (typeof d?.path === "string" && !(toolArgs as Record<string, unknown>).path) {
+      let toolArgs =
+        (d?.arguments as Record<string, unknown>) ??
+        (d?.args as Record<string, unknown>) ??
+        (d?.result as Record<string, unknown>) ??
+        {};
+      if (
+        typeof d?.path === "string" &&
+        !(toolArgs as Record<string, unknown>).path
+      ) {
         toolArgs = { ...toolArgs, path: d.path };
       }
       if (!toolName && pendingToolNames.length > 0) {
         toolName = pendingToolNames.shift()!;
-      } else if (toolName && pendingToolNames.length > 0 && pendingToolNames[0] === toolName) {
+      } else if (
+        toolName &&
+        pendingToolNames.length > 0 &&
+        pendingToolNames[0] === toolName
+      ) {
         pendingToolNames.shift();
       }
-      if (toolName) cb.onToolCompleted(toolName, toolArgs);
+      if (toolName)
+        cb.onToolCompleted(
+          toolName,
+          toolArgs,
+          typeof d?.success === "boolean" ? d.success : undefined,
+          d?.toolCallId as string | undefined,
+        );
       if (Array.isArray(d?.artifacts) && cb.onArtifactReady) {
         for (const a of d!.artifacts as Array<Record<string, unknown>>) {
-          if (typeof a?.url === "string" && typeof a?.fileName === "string" && typeof a?.mimeType === "string") {
+          if (
+            typeof a?.url === "string" &&
+            typeof a?.fileName === "string" &&
+            typeof a?.mimeType === "string"
+          ) {
             cb.onArtifactReady({
               url: a.url as string,
               fileName: a.fileName as string,
@@ -982,13 +1313,15 @@ function processOneSSEPayload(
       const d = parsed.data as Record<string, unknown> | undefined;
       const filePath = (d?.filePath as string) ?? "";
       const action = (d?.action as string) ?? "edit";
-      if (filePath) cb.onToolCompleted(`${action}_file`, { path: filePath });
+      if (filePath)
+        cb.onToolCompleted(`${action}_file`, { path: filePath }, true);
     }
 
     if (parsed.type === "clarification" && cb.onClarification) {
       const d = parsed.data as Record<string, unknown> | undefined;
       const questions = d?.questions as ClarificationQuestion[] | undefined;
-      if (Array.isArray(questions) && questions.length > 0) cb.onClarification(questions);
+      if (Array.isArray(questions) && questions.length > 0)
+        cb.onClarification(questions);
     }
 
     if (parsed.type === "user_input_request" && cb.onUserInputRequest) {
@@ -1000,7 +1333,9 @@ function processOneSSEPayload(
           requestId,
           prompt,
           kind: d?.kind as string | undefined,
-          choices: Array.isArray(d?.choices) ? (d!.choices as { label: string; value: string }[]) : undefined,
+          choices: Array.isArray(d?.choices)
+            ? (d!.choices as { label: string; value: string }[])
+            : undefined,
           allowFreeform: d?.allowFreeform !== false,
         });
       }
@@ -1014,12 +1349,16 @@ function processOneSSEPayload(
 
     if (parsed.type === "plan_step_update" && cb.onPlanStepUpdate) {
       const d = parsed.data as Record<string, unknown> | undefined;
+      if (d?.plan && cb.onPlan) cb.onPlan(d.plan as Plan);
       const stepId = d?.stepId as string | undefined;
       const status = d?.status as string | undefined;
-      if (stepId && status) cb.onPlanStepUpdate(stepId, status);
+      if (!d?.plan && stepId && status) cb.onPlanStepUpdate(stepId, status);
     }
 
-    if (parsed.type === "provision_supabase_required" && cb.onProvisionSupabase) {
+    if (
+      parsed.type === "provision_supabase_required" &&
+      cb.onProvisionSupabase
+    ) {
       const d = parsed.data as Record<string, unknown> | undefined;
       const name = (d?.name as string | undefined) ?? "";
       const reason = (d?.reason as string | undefined) ?? "";
@@ -1029,14 +1368,32 @@ function processOneSSEPayload(
     if (parsed.type === "integration_required" && cb.onIntegrationRequired) {
       const d = parsed.data as Record<string, unknown> | undefined;
       const integrationId = (d?.integrationId as string | undefined) ?? "";
-      const displayName = (d?.displayName as string | undefined) ?? integrationId;
+      const displayName =
+        (d?.displayName as string | undefined) ?? integrationId;
       const logoUrl = d?.logoUrl as string | undefined;
       const reason = (d?.reason as string | undefined) ?? "";
-      if (integrationId) cb.onIntegrationRequired({ integrationId, displayName, logoUrl, reason });
+      if (integrationId)
+        cb.onIntegrationRequired({
+          integrationId,
+          displayName,
+          logoUrl,
+          reason,
+        });
     }
 
-    if ((parsed.type === "artifact_ready" || parsed.type === "artifact") && cb.onArtifactReady) {
-      const d = parsed.data as { url?: string; fileName?: string; mimeType?: string; sizeBytes?: number; toolName?: string } | undefined;
+    if (
+      (parsed.type === "artifact_ready" || parsed.type === "artifact") &&
+      cb.onArtifactReady
+    ) {
+      const d = parsed.data as
+        | {
+            url?: string;
+            fileName?: string;
+            mimeType?: string;
+            sizeBytes?: number;
+            toolName?: string;
+          }
+        | undefined;
       if (d?.url && d?.fileName && d?.mimeType) {
         cb.onArtifactReady({
           url: d.url,
@@ -1050,7 +1407,9 @@ function processOneSSEPayload(
 
     if (parsed.type === "mcp_ui_resource" && cb.onMcpUiResource) {
       const d = parsed.data as Record<string, unknown> | undefined;
-      const r = d?.resource as { uri?: string; mimeType?: string; text?: string; blob?: string } | undefined;
+      const r = d?.resource as
+        | { uri?: string; mimeType?: string; text?: string; blob?: string }
+        | undefined;
       if (d && typeof d.toolCallId === "string" && r?.uri && r?.mimeType) {
         cb.onMcpUiResource({
           toolCallId: d.toolCallId as string,
@@ -1068,7 +1427,8 @@ function processOneSSEPayload(
     }
 
     if (parsed.type === "thinking" && cb.onThinking) {
-      const thinkingContent = typeof parsed.data === "string" ? parsed.data : "";
+      const thinkingContent =
+        typeof parsed.data === "string" ? parsed.data : "";
       if (thinkingContent) cb.onThinking(thinkingContent);
     }
 
@@ -1077,7 +1437,8 @@ function processOneSSEPayload(
     }
 
     if (parsed.type === "thinking_to_text" && cb.onReclassify) {
-      const reclassifiedText = typeof parsed.data === "string" ? parsed.data : "";
+      const reclassifiedText =
+        typeof parsed.data === "string" ? parsed.data : "";
       if (reclassifiedText) cb.onReclassify(reclassifiedText);
     }
 
@@ -1114,7 +1475,11 @@ function processOneSSEPayload(
     }
     if (text) cb.onChunk(text);
   } catch {
-    if (payload && !payload.startsWith("{") && !payload.includes("model_call")) {
+    if (
+      payload &&
+      !payload.startsWith("{") &&
+      !payload.includes("model_call")
+    ) {
       cb.onChunk(payload);
     }
   }
@@ -1164,14 +1529,18 @@ async function resumeBridgeStream(
   let lastChunkTime = Date.now();
   let receivedAnyData = false;
   let watchdogReject: ((e: Error) => void) | null = null;
-  const watchdogPromise = new Promise<ReadableStreamReadResult<Uint8Array>>((_resolve, reject) => {
-    watchdogReject = reject;
-  });
+  const watchdogPromise = new Promise<ReadableStreamReadResult<Uint8Array>>(
+    (_resolve, reject) => {
+      watchdogReject = reject;
+    },
+  );
   const watchdogId = window.setInterval(() => {
     const elapsed = Date.now() - lastChunkTime;
     const timeout = receivedAnyData ? STALE_CHUNK_TIMEOUT : FIRST_CHUNK_TIMEOUT;
     if (elapsed > timeout && watchdogReject) {
-      console.warn(`[Bridge] Watchdog: no data for ${elapsed}ms (receivedAny=${receivedAnyData}) — forcing rejection`);
+      console.warn(
+        `[Bridge] Watchdog: no data for ${elapsed}ms (receivedAny=${receivedAnyData}) — forcing rejection`,
+      );
       const fn = watchdogReject;
       watchdogReject = null; // prevent double-fire
       fn(new Error("bridge-watchdog-timeout"));
@@ -1182,9 +1551,14 @@ async function resumeBridgeStream(
     while (true) {
       if (signal.aborted) break;
 
-      const { done, value } = await Promise.race([reader.read(), watchdogPromise]);
+      const { done, value } = await Promise.race([
+        reader.read(),
+        watchdogPromise,
+      ]);
       if (done) {
-        console.log(`[Bridge] reader.read() done, receivedAny=${receivedAnyData}`);
+        console.log(
+          `[Bridge] reader.read() done, receivedAny=${receivedAnyData}`,
+        );
         break;
       }
 
@@ -1221,7 +1595,9 @@ async function resumeBridgeStream(
     window.clearInterval(watchdogId);
   }
 
-  console.log(`[Bridge] Stream ended — calling onDone (receivedAny=${receivedAnyData})`);
+  console.log(
+    `[Bridge] Stream ended — calling onDone (receivedAny=${receivedAnyData})`,
+  );
   cb.onDone();
 }
 
@@ -1244,7 +1620,11 @@ async function resumeBridgeStream(
 // handler used by the initial-page-load bridge stream — so behavior stays
 // identical to the live /chat/send path.
 
-type StreamResumeTerminal = "complete" | "already_complete" | "no_buffer" | "resume_timeout";
+type StreamResumeTerminal =
+  | "complete"
+  | "already_complete"
+  | "no_buffer"
+  | "resume_timeout";
 
 async function consumeStreamResume(
   projectId: string,
@@ -1278,16 +1658,22 @@ async function consumeStreamResume(
   let lastChunkTime = Date.now();
   let receivedAnyData = false;
   let watchdogReject: ((e: Error) => void) | null = null;
-  const watchdogPromise = new Promise<ReadableStreamReadResult<Uint8Array>>((_resolve, reject) => {
-    watchdogReject = reject;
-  });
+  const watchdogPromise = new Promise<ReadableStreamReadResult<Uint8Array>>(
+    (_resolve, reject) => {
+      watchdogReject = reject;
+    },
+  );
   const watchdogId =
     typeof window !== "undefined"
       ? window.setInterval(() => {
           const elapsed = Date.now() - lastChunkTime;
-          const timeout = receivedAnyData ? STALE_CHUNK_TIMEOUT : FIRST_CHUNK_TIMEOUT;
+          const timeout = receivedAnyData
+            ? STALE_CHUNK_TIMEOUT
+            : FIRST_CHUNK_TIMEOUT;
           if (elapsed > timeout && watchdogReject) {
-            console.warn(`[StreamResume] Watchdog: no data for ${elapsed}ms — forcing rejection`);
+            console.warn(
+              `[StreamResume] Watchdog: no data for ${elapsed}ms — forcing rejection`,
+            );
             const fn = watchdogReject;
             watchdogReject = null;
             fn(new Error("stream-resume-watchdog-timeout"));
@@ -1298,7 +1684,10 @@ async function consumeStreamResume(
   try {
     while (true) {
       if (signal.aborted) throw new DOMException("aborted", "AbortError");
-      const { done, value } = await Promise.race([reader.read(), watchdogPromise]);
+      const { done, value } = await Promise.race([
+        reader.read(),
+        watchdogPromise,
+      ]);
       if (done) break;
 
       receivedAnyData = true;
@@ -1324,7 +1713,10 @@ async function consumeStreamResume(
             seq?: number;
             data?: unknown;
           };
-          if (typeof parsed.seq === "number" && parsed.seq > lastSeqRef.current) {
+          if (
+            typeof parsed.seq === "number" &&
+            parsed.seq > lastSeqRef.current
+          ) {
             lastSeqRef.current = parsed.seq;
           }
           if (
@@ -1410,21 +1802,32 @@ function formatContent(content: string) {
 
     const textLines = part.split("\n");
     const elements: React.ReactNode[] = [];
-    let listBuffer: { ordered: boolean; items: React.ReactNode[] } | null = null;
+    let listBuffer: { ordered: boolean; items: React.ReactNode[] } | null =
+      null;
 
     const flushList = () => {
       if (!listBuffer) return;
       if (listBuffer.ordered) {
         elements.push(
-          <ol key={`ol-${elements.length}`} className="my-1.5 ml-4 list-decimal space-y-0.5 text-foreground">
-            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
-          </ol>
+          <ol
+            key={`ol-${elements.length}`}
+            className="my-1.5 ml-4 list-decimal space-y-0.5 text-foreground"
+          >
+            {listBuffer.items.map((item, idx) => (
+              <li key={idx}>{item}</li>
+            ))}
+          </ol>,
         );
       } else {
         elements.push(
-          <ul key={`ul-${elements.length}`} className="my-1.5 ml-4 list-disc space-y-0.5 text-foreground">
-            {listBuffer.items.map((item, idx) => (<li key={idx}>{item}</li>))}
-          </ul>
+          <ul
+            key={`ul-${elements.length}`}
+            className="my-1.5 ml-4 list-disc space-y-0.5 text-foreground"
+          >
+            {listBuffer.items.map((item, idx) => (
+              <li key={idx}>{item}</li>
+            ))}
+          </ul>,
         );
       }
       listBuffer = null;
@@ -1436,10 +1839,16 @@ function formatContent(content: string) {
       const olMatch = line.match(/^\s*\d+\.\s+(.*)/);
 
       if (ulMatch) {
-        if (!listBuffer || listBuffer.ordered) { flushList(); listBuffer = { ordered: false, items: [] }; }
+        if (!listBuffer || listBuffer.ordered) {
+          flushList();
+          listBuffer = { ordered: false, items: [] };
+        }
         listBuffer.items.push(formatInlineStatic(ulMatch[1] ?? ""));
       } else if (olMatch) {
-        if (!listBuffer || !listBuffer.ordered) { flushList(); listBuffer = { ordered: true, items: [] }; }
+        if (!listBuffer || !listBuffer.ordered) {
+          flushList();
+          listBuffer = { ordered: true, items: [] };
+        }
         listBuffer.items.push(formatInlineStatic(olMatch[1] ?? ""));
       } else {
         flushList();
@@ -1447,7 +1856,7 @@ function formatContent(content: string) {
           <span key={`line-${i}-${li}`} className="whitespace-pre-wrap">
             {formatInlineStatic(line)}
             {li < textLines.length - 1 ? "\n" : ""}
-          </span>
+          </span>,
         );
       }
     }
@@ -1457,7 +1866,11 @@ function formatContent(content: string) {
 }
 
 /** Memoized message content renderer — prevents re-parsing markdown for unchanged messages */
-const MemoizedMessageContent = memo(function MemoizedMessageContent({ content }: { content: string }) {
+const MemoizedMessageContent = memo(function MemoizedMessageContent({
+  content,
+}: {
+  content: string;
+}) {
   return <>{formatContent(content)}</>;
 });
 
@@ -1474,16 +1887,33 @@ function deriveProjectName(prompt: string): string {
 }
 
 /** Generate a human-readable description for a tool action */
-function describeToolAction(toolName: string, args?: Record<string, unknown>): string {
+function describeToolAction(
+  toolName: string,
+  args?: Record<string, unknown>,
+): string {
   // Some SDK channels deliver { toolName, arguments: {...real args...}, toolCallId };
   // unwrap so the file-name extraction below finds the real path field.
-  const a0 = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
-  const a = (typeof (a0 as { arguments?: unknown }).arguments === "object" && (a0 as { arguments?: unknown }).arguments !== null)
-    ? (a0 as { arguments: Record<string, unknown> }).arguments
-    : a0;
-  const fileName = a?.path ?? a?.filePath ?? a?.file ?? a?.file_path ?? a?.fileName ?? a?.name ?? a?.target ?? "";
+  const a0 = (args && typeof args === "object" ? args : {}) as Record<
+    string,
+    unknown
+  >;
+  const a =
+    typeof (a0 as { arguments?: unknown }).arguments === "object" &&
+    (a0 as { arguments?: unknown }).arguments !== null
+      ? (a0 as { arguments: Record<string, unknown> }).arguments
+      : a0;
+  const fileName =
+    a?.path ??
+    a?.filePath ??
+    a?.file ??
+    a?.file_path ??
+    a?.fileName ??
+    a?.name ??
+    a?.target ??
+    "";
   // Only show the filename, never full paths (sanitize PII/server paths)
-  const shortName = typeof fileName === "string" ? fileName.split(/[\\/]/).pop() ?? "" : "";
+  const shortName =
+    typeof fileName === "string" ? (fileName.split(/[\\/]/).pop() ?? "") : "";
 
   // Internal SDK tools — give them human-friendly names
   if (toolName === "report_intent") return "Planning";
@@ -1492,9 +1922,15 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
 
   // Shell-ish tools: surface the actual command being run (strip paths from commands)
   const lower0 = toolName.toLowerCase();
-  if (lower0.includes("bash") || lower0.includes("shell") || lower0.includes("powershell")
-      || lower0.includes("cmd") || lower0.includes("exec") || lower0.includes("run_command")
-      || lower0.includes("terminal")) {
+  if (
+    lower0.includes("bash") ||
+    lower0.includes("shell") ||
+    lower0.includes("powershell") ||
+    lower0.includes("cmd") ||
+    lower0.includes("exec") ||
+    lower0.includes("run_command") ||
+    lower0.includes("terminal")
+  ) {
     let cmd: string | undefined;
     const rawCmd = a?.command ?? a?.cmd ?? a?.input;
     if (typeof rawCmd === "string" && rawCmd.trim()) {
@@ -1504,35 +1940,60 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
       // Strip absolute paths and UUIDs from commands
       cmd = cmd.replace(/\/[\w.\-/]+\/([\w.\-]+)/g, "$1");
       cmd = cmd.replace(/[A-Za-z]:\\[\w.\\-]+\\([\w.\-]+)/g, "$1");
-      cmd = cmd.replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, "***");
+      cmd = cmd.replace(
+        /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi,
+        "***",
+      );
       if (cmd.length > 80) cmd = cmd.slice(0, 77) + "\u2026";
       return `$ ${cmd}`;
     }
     return "Running command";
   }
 
-  if (toolName.toLowerCase().includes("create") || toolName.toLowerCase().includes("write")) {
+  if (
+    toolName.toLowerCase().includes("create") ||
+    toolName.toLowerCase().includes("write")
+  ) {
     return shortName ? `Creating ${shortName}` : "Creating file";
   }
-  if (toolName.toLowerCase().includes("edit") || toolName.toLowerCase().includes("update") || toolName.toLowerCase().includes("patch")) {
+  if (
+    toolName.toLowerCase().includes("edit") ||
+    toolName.toLowerCase().includes("update") ||
+    toolName.toLowerCase().includes("patch")
+  ) {
     return shortName ? `Updating ${shortName}` : "Updating file";
   }
-  if (toolName.toLowerCase().includes("delete") || toolName.toLowerCase().includes("remove")) {
+  if (
+    toolName.toLowerCase().includes("delete") ||
+    toolName.toLowerCase().includes("remove")
+  ) {
     return shortName ? `Removing ${shortName}` : "Removing file";
   }
   if (toolName.toLowerCase().includes("rename")) {
     return shortName ? `Renaming ${shortName}` : "Renaming file";
   }
-  if (toolName.toLowerCase().includes("read") || toolName.toLowerCase() === "view" || toolName.toLowerCase() === "cat" || toolName.toLowerCase() === "open") {
+  if (
+    toolName.toLowerCase().includes("read") ||
+    toolName.toLowerCase() === "view" ||
+    toolName.toLowerCase() === "cat" ||
+    toolName.toLowerCase() === "open"
+  ) {
     return shortName ? `Reading ${shortName}` : "Reading file";
   }
-  if (toolName.toLowerCase().includes("search") || toolName.toLowerCase().includes("find") || toolName.toLowerCase().includes("grep")) {
+  if (
+    toolName.toLowerCase().includes("search") ||
+    toolName.toLowerCase().includes("find") ||
+    toolName.toLowerCase().includes("grep")
+  ) {
     return "Searching files";
   }
   if (toolName.toLowerCase().includes("list")) {
     return "Scanning project structure";
   }
-  if (toolName.toLowerCase().includes("install") || toolName.toLowerCase().includes("package")) {
+  if (
+    toolName.toLowerCase().includes("install") ||
+    toolName.toLowerCase().includes("package")
+  ) {
     const pkgs = a?.packages ?? a?.name ?? "";
     if (typeof pkgs === "string" && pkgs) {
       const first = pkgs.split(/\s+/)[0] ?? pkgs;
@@ -1546,9 +2007,27 @@ function describeToolAction(toolName: string, args?: Record<string, unknown>): s
   // MCP tools: extract action name from the prefixed tool name
   if (toolName.startsWith("mcp_")) {
     const parts = toolName.slice(4).split("_");
-    const verbIdx = parts.findIndex(p => ["get", "list", "search", "create", "update", "delete", "query", "manage", "run", "download", "cancel", "save", "new"].includes(p));
+    const verbIdx = parts.findIndex((p) =>
+      [
+        "get",
+        "list",
+        "search",
+        "create",
+        "update",
+        "delete",
+        "query",
+        "manage",
+        "run",
+        "download",
+        "cancel",
+        "save",
+        "new",
+      ].includes(p),
+    );
     const toolParts = verbIdx > 0 ? parts.slice(verbIdx) : parts;
-    return toolParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+    return toolParts
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+      .join(" ");
   }
   // Filter out technical jargon - never show raw tool names like "powershell"
   const cleaned = toolName
@@ -1573,7 +2052,9 @@ function humanizeThinking(text: string): string {
   // Truncate at a word boundary
   const truncated = clean.slice(0, 77);
   const lastSpace = truncated.lastIndexOf(" ");
-  return (lastSpace > 40 ? truncated.slice(0, lastSpace) : truncated) + "\u2026";
+  return (
+    (lastSpace > 40 ? truncated.slice(0, lastSpace) : truncated) + "\u2026"
+  );
 }
 
 type NormalizedFunctionStep = {
@@ -1583,7 +2064,9 @@ type NormalizedFunctionStep = {
   filePath?: string;
 };
 
-function tryParseFunctionParams(rawParams?: string): Record<string, unknown> | undefined {
+function tryParseFunctionParams(
+  rawParams?: string,
+): Record<string, unknown> | undefined {
   if (!rawParams) return undefined;
   const normalized = rawParams
     .replace(/\\n/g, "\n")
@@ -1602,7 +2085,8 @@ function tryParseFunctionParams(rawParams?: string): Record<string, unknown> | u
 
 function extractFunctionSteps(text: string): NormalizedFunctionStep[] {
   if (!text) return [];
-  const re = /<function\s+name="([^"]+)"(?:\s+parameters=(\{[\s\S]*?\}))?\s*><\/function>/gi;
+  const re =
+    /<function\s+name="([^"]+)"(?:\s+parameters=(\{[\s\S]*?\}))?\s*><\/function>/gi;
   const steps: NormalizedFunctionStep[] = [];
   let m: RegExpExecArray | null;
 
@@ -1611,9 +2095,11 @@ function extractFunctionSteps(text: string): NormalizedFunctionStep[] {
     if (!name) continue;
     const rawArgs = tryParseFunctionParams(m[2]);
     // Unwrap SDK envelope { toolName, arguments: {...real args...}, toolCallId }
-    const args = (rawArgs && typeof (rawArgs as Record<string, unknown>).arguments === "object")
-      ? (rawArgs as { arguments: Record<string, unknown> }).arguments
-      : rawArgs;
+    const args =
+      rawArgs &&
+      typeof (rawArgs as Record<string, unknown>).arguments === "object"
+        ? (rawArgs as { arguments: Record<string, unknown> }).arguments
+        : rawArgs;
     const fileName = args?.path ?? args?.filePath ?? args?.file;
     steps.push({
       id: `${name}-${steps.length}`,
@@ -1628,7 +2114,10 @@ function extractFunctionSteps(text: string): NormalizedFunctionStep[] {
 
 function stripFunctionMarkup(text: string): string {
   if (!text) return "";
-  let stripped = text.replace(/<function\s+name="[^"]+"(?:\s+parameters=\{[\s\S]*?\})?\s*><\/function>/gi, "");
+  let stripped = text.replace(
+    /<function\s+name="[^"]+"(?:\s+parameters=\{[\s\S]*?\})?\s*><\/function>/gi,
+    "",
+  );
   // Collapse injected MCP widget selection prompt (keep only a short "Selected: <label>" line).
   // Any user message that contains the MCP continuation sentinel — regardless of where
   // the "I selected" prefix sits — gets replaced so the raw tool instructions never
@@ -1646,15 +2135,23 @@ function stripFunctionMarkup(text: string): string {
   }
   // Also strip stray MCP skill dumps (no prefix at all) that include the mandatory
   // output protocol heading — collapse to a neutral label so chat stays clean.
-  if (/MANDATORY OUTPUT PROTOCOL|SKILL\.md|web-slides-generator/i.test(stripped) &&
-      stripped.length > 400) {
+  if (
+    /MANDATORY OUTPUT PROTOCOL|SKILL\.md|web-slides-generator/i.test(
+      stripped,
+    ) &&
+    stripped.length > 400
+  ) {
     stripped = "Selected: (tool instructions)";
   }
   // Collapse excessive newlines (3 or more down to 2) and trim
   return stripped.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function renderFunctionStepList(content: string, compact = false): React.ReactNode {
+function renderFunctionStepList(
+  content: string,
+  ui: UiTranslator,
+  compact = false,
+): React.ReactNode {
   const steps = extractFunctionSteps(content);
   if (steps.length === 0) {
     return <span>{content}</span>;
@@ -1664,16 +2161,21 @@ function renderFunctionStepList(content: string, compact = false): React.ReactNo
     <div className={compact ? "space-y-2 mt-1" : "space-y-3 mt-2"}>
       <div className="text-[12px] font-medium text-brand-700 dark:text-brand-300 flex items-center gap-2">
         <Sparkles className="h-3.5 w-3.5 animate-pulse" />
-        Planning these actions:
+        <UiText>Planning these actions:</UiText>
       </div>
       <div className="flex flex-col gap-2">
         {steps.map((step, idx) => (
-          <div key={step.id} className="flex items-center gap-3 animate-in slide-in-from-bottom-2 fade-in duration-300 rounded-lg bg-foreground/15 border border-border p-2 hover:bg-foreground/30 hover:border-border transition-colors">
+          <div
+            key={step.id}
+            className="flex items-center gap-3 animate-in slide-in-from-bottom-2 fade-in duration-300 rounded-lg bg-foreground/15 border border-border p-2 hover:bg-foreground/30 hover:border-border transition-colors"
+          >
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500/20 text-brand-700 dark:text-brand-400 font-bold text-[10px]">
               {idx + 1}
             </div>
             <div className="flex-1 min-w-0 flex flex-col">
-              <span className="text-[13px] font-medium text-foreground truncate">{step.description}</span>
+              <span className="text-[13px] font-medium text-foreground truncate">
+                {translateProgress(step.description, ui)}
+              </span>
               {step.filePath && (
                 <span
                   className="text-[10px] text-muted-foreground font-mono truncate"
@@ -1709,17 +2211,20 @@ async function fetchAISuggestions(
 ): Promise<string[]> {
   try {
     const { accessToken } = getStoredTokens();
-    const res = await fetch(`${API_URL}/projects/${projectId}/chat/suggestions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    const res = await fetch(
+      `${API_URL}/projects/${projectId}/chat/suggestions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({
+          userPrompt: userPrompt.slice(0, 4000),
+          lastAssistantMessage: lastAssistantMessage.slice(0, 4000),
+        }),
       },
-      body: JSON.stringify({
-        userPrompt: userPrompt.slice(0, 4000),
-        lastAssistantMessage: lastAssistantMessage.slice(0, 4000),
-      }),
-    });
+    );
     if (!res.ok) return FALLBACK_SUGGESTIONS;
     const json = (await res.json()) as { data: string[] };
     return json.data.length > 0 ? json.data : FALLBACK_SUGGESTIONS;
@@ -1741,6 +2246,9 @@ function nowTimestamp(): string {
 
 // ─── Component ──────────────────────────────────────────────
 function EditorPageInner() {
+  const ui = useUiText();
+  const i18n_MORE_MENU_ITEMS = useUiData(MORE_MENU_ITEMS);
+
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1752,10 +2260,12 @@ function EditorPageInner() {
     if (rawProjectId !== "new") return rawProjectId;
     // Check sessionStorage first — if user refreshes, reuse the same project
     const storageKey = "doable_new_project_id";
-    const stored = typeof window !== "undefined" ? sessionStorage.getItem(storageKey) : null;
+    const stored =
+      typeof window !== "undefined" ? sessionStorage.getItem(storageKey) : null;
     if (stored) return stored;
     const newId = generateProjectId();
-    if (typeof window !== "undefined") sessionStorage.setItem(storageKey, newId);
+    if (typeof window !== "undefined")
+      sessionStorage.setItem(storageKey, newId);
     return newId;
   });
   const isNewProject = rawProjectId === "new";
@@ -1788,7 +2298,11 @@ function EditorPageInner() {
       // (send-handler awaits scaffoldAndStartDev before connecting). The
       // mount-effect's previewUrl poll will independently flip us to
       // "ready" once it gets a URL; until then keep "starting".
-      if (phase === "thinking" || phase === "connecting" || phase === "building") {
+      if (
+        phase === "thinking" ||
+        phase === "connecting" ||
+        phase === "building"
+      ) {
         return prev === "idle" || prev === "scaffolding" ? "starting" : prev;
       }
       return prev;
@@ -1802,7 +2316,8 @@ function EditorPageInner() {
 
   // ─── Workspace / AI enforcement state ────────────────────
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [effectiveAiConfig, setEffectiveAiConfig] = useState<ApiEffectiveAiConfig | null>(null);
+  const [effectiveAiConfig, setEffectiveAiConfig] =
+    useState<ApiEffectiveAiConfig | null>(null);
 
   // ─── File tree state ──────────────────────────────────────
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
@@ -1829,7 +2344,9 @@ function EditorPageInner() {
   const [chatMode, setChatMode] = useState<ChatMode>(() => {
     if (typeof window === "undefined") return "agent";
     const saved = localStorage.getItem("doable_chat_mode");
-    return saved === "plan" || saved === "agent" ? (saved as ChatMode) : "agent";
+    return saved === "plan" || saved === "agent"
+      ? (saved as ChatMode)
+      : "agent";
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1838,38 +2355,51 @@ function EditorPageInner() {
 
   // Plan Mode V2 state
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
-  const [planPhase, setPlanPhase] = useState<"idle" | "clarifying" | "planning" | "reviewing" | "building">("idle");
-  const [pendingQuestions, setPendingQuestions] = useState<ClarificationQuestion[] | null>(null);
+  const [planPhase, setPlanPhase] = useState<
+    "idle" | "clarifying" | "planning" | "reviewing" | "building"
+  >("idle");
+  const [pendingQuestions, setPendingQuestions] = useState<
+    ClarificationQuestion[] | null
+  >(null);
 
   // Phase 2A — Supabase provisioning request state. Set when the AI fires
   // the `provision_supabase` tool and chat.ts forwards a
   // `provision_supabase_required` SSE frame; reset when the dialog closes
   // (either user cancelled or provisioning completed). The dialog itself
   // is rendered at the bottom of the component tree. See bugs/bug-16.
-  const [supabaseProvisionRequest, setSupabaseProvisionRequest] = useState<
-    { name: string; reason: string } | null
-  >(null);
+  const [supabaseProvisionRequest, setSupabaseProvisionRequest] = useState<{
+    name: string;
+    reason: string;
+  } | null>(null);
 
   // Blocking "ask the user" prompt raised by a paused tool (NotebookLM
   // duplicate-notebook / infographic-reuse fork). Rendered as a choice card.
-  const [pendingUserInput, setPendingUserInput] = useState<UserInputRequestPayload | null>(null);
+  const [pendingUserInput, setPendingUserInput] =
+    useState<UserInputRequestPayload | null>(null);
 
   // Pending third-party integration connect request (e.g. ElevenLabs), set by
   // the `integration_required` SSE frame; reset when the connect dialog closes.
-  const [pendingIntegrationRequest, setPendingIntegrationRequest] = useState<
-    { integrationId: string; displayName: string; logoUrl?: string; reason: string } | null
-  >(null);
+  const [pendingIntegrationRequest, setPendingIntegrationRequest] = useState<{
+    integrationId: string;
+    displayName: string;
+    logoUrl?: string;
+    reason: string;
+  } | null>(null);
 
   // ── AI Model Selection ──
   const [selectedModelId, setSelectedModelId] = useState(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("doable_selected_model") ?? "";
   });
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("doable_selected_provider_id") ?? null;
-  });
-  const [selectedCopilotAccountId, setSelectedCopilotAccountId] = useState<string | null>(() => {
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+    () => {
+      if (typeof window === "undefined") return null;
+      return localStorage.getItem("doable_selected_provider_id") ?? null;
+    },
+  );
+  const [selectedCopilotAccountId, setSelectedCopilotAccountId] = useState<
+    string | null
+  >(() => {
     if (typeof window === "undefined") return null;
     return localStorage.getItem("doable_selected_copilot_account") ?? null;
   });
@@ -1880,27 +2410,50 @@ function EditorPageInner() {
     (async () => {
       try {
         // Fetch copilot models
-        const json = await apiFetch<{ data: { id: string; name: string }[] }>("/ai/models");
+        const json = await apiFetch<{ data: { id: string; name: string }[] }>(
+          "/ai/models",
+        );
         if (cancelled) return;
         const fetched = json.data ?? [];
-        const copilotOpts: ModelOption[] = fetched.length > 0
-          ? fetched.map((m) => ({ id: m.id, label: m.name, group: "copilot" as const }))
-          : [];
+        const copilotOpts: ModelOption[] =
+          fetched.length > 0
+            ? fetched.map((m) => ({
+                id: m.id,
+                label: m.name,
+                group: "copilot" as const,
+              }))
+            : [];
 
         // Fetch custom provider models if workspace is available
         let providerOpts: ModelOption[] = [];
         if (workspaceId) {
           try {
-            const provRes = await apiListAiProviders(workspaceId, resolvedProjectId);
+            const provRes = await apiListAiProviders(
+              workspaceId,
+              resolvedProjectId,
+            );
             if (!cancelled) {
               const providers: ApiAiProvider[] = provRes.data ?? [];
               for (const p of providers) {
                 if (!p.is_valid) continue;
                 const isLocal = p.preset_id
-                  ? ["ollama", "lm-studio", "llamacpp", "localai", "jan", "gpt4all", "koboldcpp", "vllm-local", "text-gen-webui"].includes(p.preset_id)
-                  : (p.base_url ?? "").includes("localhost") || (p.base_url ?? "").includes("127.0.0.1");
+                  ? [
+                      "ollama",
+                      "lm-studio",
+                      "llamacpp",
+                      "localai",
+                      "jan",
+                      "gpt4all",
+                      "koboldcpp",
+                      "vllm-local",
+                      "text-gen-webui",
+                    ].includes(p.preset_id)
+                  : (p.base_url ?? "").includes("localhost") ||
+                    (p.base_url ?? "").includes("127.0.0.1");
                 // Use cached models if available, otherwise add provider as a single option
-                const cachedModels = Array.isArray(p.models_cache) ? p.models_cache : [];
+                const cachedModels = Array.isArray(p.models_cache)
+                  ? p.models_cache
+                  : [];
                 if (cachedModels.length > 0) {
                   for (const m of cachedModels) {
                     providerOpts.push({
@@ -1909,11 +2462,15 @@ function EditorPageInner() {
                       group: "custom",
                       providerId: p.id,
                       providerName: p.label,
-                      healthStatus: (p.health_status as ModelOption["healthStatus"]) ?? "unknown",
+                      healthStatus:
+                        (p.health_status as ModelOption["healthStatus"]) ??
+                        "unknown",
                       healthLatencyMs: p.health_latency_ms ?? undefined,
                       isLocal,
-                      supportsVision: m.supports_vision ?? p.supports_vision ?? false,
-                      supportsTools: m.supports_tools ?? p.supports_tools ?? true,
+                      supportsVision:
+                        m.supports_vision ?? p.supports_vision ?? false,
+                      supportsTools:
+                        m.supports_tools ?? p.supports_tools ?? true,
                     });
                   }
                 } else {
@@ -1924,7 +2481,9 @@ function EditorPageInner() {
                     group: "custom",
                     providerId: p.id,
                     providerName: p.label,
-                    healthStatus: (p.health_status as ModelOption["healthStatus"]) ?? "unknown",
+                    healthStatus:
+                      (p.health_status as ModelOption["healthStatus"]) ??
+                      "unknown",
                     healthLatencyMs: p.health_latency_ms ?? undefined,
                     isLocal,
                     supportsVision: p.supports_vision ?? false,
@@ -1933,29 +2492,47 @@ function EditorPageInner() {
                 }
               }
             }
-          } catch { /* ignore provider fetch failure */ }
+          } catch {
+            /* ignore provider fetch failure */
+          }
         }
 
         if (!cancelled) {
           setAvailableModels([...copilotOpts, ...providerOpts]);
         }
-      } catch { /* use fallback */ }
+      } catch {
+        /* use fallback */
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceId]);
 
-  const handleModelSelect = useCallback((modelId: string, providerId: string | null, copilotAccountId: string | null) => {
-    // Block user changes when AI enforcement is active
-    if (effectiveAiConfig?.enforce_ai) return;
-    setSelectedModelId(modelId);
-    setSelectedProviderId(providerId);
-    setSelectedCopilotAccountId(copilotAccountId);
-    localStorage.setItem("doable_selected_model", modelId);
-    if (providerId) localStorage.setItem("doable_selected_provider_id", providerId);
-    else localStorage.removeItem("doable_selected_provider_id");
-    if (copilotAccountId) localStorage.setItem("doable_selected_copilot_account", copilotAccountId);
-    else localStorage.removeItem("doable_selected_copilot_account");
-  }, [effectiveAiConfig?.enforce_ai]);
+  const handleModelSelect = useCallback(
+    (
+      modelId: string,
+      providerId: string | null,
+      copilotAccountId: string | null,
+    ) => {
+      // Block user changes when AI enforcement is active
+      if (effectiveAiConfig?.enforce_ai) return;
+      setSelectedModelId(modelId);
+      setSelectedProviderId(providerId);
+      setSelectedCopilotAccountId(copilotAccountId);
+      localStorage.setItem("doable_selected_model", modelId);
+      if (providerId)
+        localStorage.setItem("doable_selected_provider_id", providerId);
+      else localStorage.removeItem("doable_selected_provider_id");
+      if (copilotAccountId)
+        localStorage.setItem(
+          "doable_selected_copilot_account",
+          copilotAccountId,
+        );
+      else localStorage.removeItem("doable_selected_copilot_account");
+    },
+    [effectiveAiConfig?.enforce_ai],
+  );
 
   const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
   const [messages, setMessages] = useState<ChatMsg[]>(() => {
@@ -1975,10 +2552,34 @@ function EditorPageInner() {
   });
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const receivePlanSnapshot = useCallback(
+    (plan: Plan | null) => {
+      setActivePlan((prev) =>
+        acceptPlanSnapshot(prev, plan, resolvedProjectId),
+      );
+    },
+    [resolvedProjectId],
+  );
+  useEffect(() => {
+    if (activePlan)
+      setPlanPhase(
+        activePlan.status === "draft" && chatMode === "plan"
+          ? "reviewing"
+          : activePlan.status !== "draft"
+            ? "building"
+            : "idle",
+      );
+  }, [activePlan, chatMode]);
+  usePlanSync(resolvedProjectId, isStreaming, receivePlanSnapshot);
+
   const [keystrokeSignal, setKeystrokeSignal] = useState(0);
 
   // Skill manifest for / picker button
-  const { manifest: skillManifest } = useSkillManifest(workspaceId ?? undefined, resolvedProjectId);
+  const { manifest: skillManifest } = useSkillManifest(
+    workspaceId ?? undefined,
+    resolvedProjectId,
+  );
 
   // Voice input & image attachments
   const speechRecognition = useSpeechRecognition((transcript: string) => {
@@ -1986,31 +2587,43 @@ function EditorPageInner() {
   });
   const fileAttachments = useAttachments();
   const [projectName, setProjectName] = useState(() => {
-    const prompt = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("prompt") : null;
+    const prompt =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("prompt")
+        : null;
     if (prompt) return deriveProjectName(prompt);
-    return isNewProject ? "New Project" : "My Awesome App";
+    return isNewProject ? ui("New Project") : ui("Loading project…");
   });
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(projectName);
-  const [aiSuggestions, setAiSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS);
+  const [aiSuggestions, setAiSuggestions] =
+    useState<string[]>(FALLBACK_SUGGESTIONS);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [moreMenuMsgId, setMoreMenuMsgId] = useState<string | null>(null);
   // Tracks which messages have their older tool-call rows expanded.
   // When a message has >4 tool actions, only the last 4 are shown by default;
   // clicking the "Show N earlier steps" pill adds the msg.id to this set.
-  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(new Set());
-  const [taskCardTabs, setTaskCardTabs] = useState<Record<string, TaskCardTab>>({});
-  const [collapsedTaskCards, setCollapsedTaskCards] = useState<Set<string>>(new Set());
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(
+    new Set(),
+  );
+  const [taskCardTabs, setTaskCardTabs] = useState<Record<string, TaskCardTab>>(
+    {},
+  );
+  const [collapsedTaskCards, setCollapsedTaskCards] = useState<Set<string>>(
+    new Set(),
+  );
   const [splitPos, setSplitPos] = useState(35); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set<string>()
+    new Set<string>(),
   );
   const [showCreditsBar, setShowCreditsBar] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [pinnedItems, setPinnedItems] = useState<ActiveTab[]>(() => loadPinnedItems());
+  const [pinnedItems, setPinnedItems] = useState<ActiveTab[]>(() =>
+    loadPinnedItems(),
+  );
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   // ─── Toolbar dialog/modal state ────────────────────────────
@@ -2042,14 +2655,20 @@ function EditorPageInner() {
   });
 
   // Share dialog state
-  const [projectVisibility, setProjectVisibility] = useState<"public" | "private">("private");
+  const [projectVisibility, setProjectVisibility] = useState<
+    "public" | "private"
+  >("private");
   const [shareCopied, setShareCopied] = useState<string | null>(null);
   const [collaborators, setCollaborators] = useState<ApiCollaborator[]>([]);
   const [removingCollabId, setRemovingCollabId] = useState<string | null>(null);
 
   // Publish modal state
-  const [publishStatus, setPublishStatus] = useState<"idle" | "building" | "deploying" | "success" | "error">("idle");
-  const [publishEnv, setPublishEnv] = useState<"production" | "preview">("production");
+  const [publishStatus, setPublishStatus] = useState<
+    "idle" | "building" | "deploying" | "success" | "error"
+  >("idle");
+  const [publishEnv, setPublishEnv] = useState<"production" | "preview">(
+    "production",
+  );
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [publishBuildLog, setPublishBuildLog] = useState<string | null>(null);
@@ -2065,15 +2684,21 @@ function EditorPageInner() {
   // Elapsed seconds since the current stream started (drives the inline timer + slow hint)
   const [chatElapsedSec, setChatElapsedSec] = useState(0);
   // Seconds since the last SSE frame was received (null = stream is live)
-  const [streamIdleSeconds, setStreamIdleSeconds] = useState<number | null>(null);
+  const [streamIdleSeconds, setStreamIdleSeconds] = useState<number | null>(
+    null,
+  );
   const lastFrameAt = useRef<number>(Date.now());
   // Track first generation to show loading overlay instead of default template
   const [isFirstGeneration, setIsFirstGeneration] = useState(false);
   // Track whether tool calls are active (for building overlay on follow-up builds)
   const [hasActiveToolCalls, setHasActiveToolCalls] = useState(false);
   // Track which long user messages are expanded in the chat
-  const [expandedUserMsgs, setExpandedUserMsgs] = useState<Set<string>>(new Set());
-  const previewRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [expandedUserMsgs, setExpandedUserMsgs] = useState<Set<string>>(
+    new Set(),
+  );
+  const previewRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   // Dedicated timer for the end-of-turn FULL iframe reload. Kept separate from
   // previewRefreshTimer (the per-file-op debounce) so a chained turn's
   // debounced soft-refresh cannot clearTimeout the load-bearing full reload.
@@ -2166,23 +2791,31 @@ function EditorPageInner() {
   // "doable-theme-ready" handshake by re-pushing the current theme.
   useEffect(() => {
     function pushTheme() {
-      const t = document.documentElement.classList.contains("dark") ? "dark" : "light";
+      const t = document.documentElement.classList.contains("dark")
+        ? "dark"
+        : "light";
       try {
         iframeRef.current?.contentWindow?.postMessage(
           { type: "doable-theme", theme: t },
           "*",
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     function handleReady(e: MessageEvent) {
       // Only accept theme-ready from our preview iframe
-      if (iframeRef.current && e.source !== iframeRef.current.contentWindow) return;
+      if (iframeRef.current && e.source !== iframeRef.current.contentWindow)
+        return;
       if (e?.data?.type === "doable-theme-ready") pushTheme();
     }
     pushTheme();
     window.addEventListener("message", handleReady);
     const obs = new MutationObserver(pushTheme);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
     return () => {
       window.removeEventListener("message", handleReady);
       obs.disconnect();
@@ -2200,9 +2833,12 @@ function EditorPageInner() {
           setNameInput(res.data.name);
         }
         if (res.data.visibility) {
-          setProjectVisibility(res.data.visibility === "public" ? "public" : "private");
+          setProjectVisibility(
+            res.data.visibility === "public" ? "public" : "private",
+          );
         }
-        const persistedUrl = (res.data as { published_url?: string | null }).published_url ?? null;
+        const persistedUrl =
+          (res.data as { published_url?: string | null }).published_url ?? null;
         if (persistedUrl) {
           setPublishedUrl(persistedUrl);
           setPublishStatus("success");
@@ -2239,7 +2875,9 @@ function EditorPageInner() {
       // Enforced — override all model selection state
       setSelectedModelId(effectiveAiConfig.enforced_model ?? "");
       setSelectedProviderId(effectiveAiConfig.enforced_provider_id ?? null);
-      setSelectedCopilotAccountId(effectiveAiConfig.enforced_copilot_account_id ?? null);
+      setSelectedCopilotAccountId(
+        effectiveAiConfig.enforced_copilot_account_id ?? null,
+      );
     } else {
       // Not enforced — pick the active side based on `*_source`. With migration
       // 042, both copilot and custom configs may be persisted at once; the
@@ -2247,29 +2885,45 @@ function EditorPageInner() {
       // Prefer the user override (if active and populated), else fall back to
       // the workspace default.
       const userActive =
-        (effectiveAiConfig.user_source === "copilot" && !!effectiveAiConfig.user_copilot_account_id) ||
-        (effectiveAiConfig.user_source === "custom" && !!effectiveAiConfig.user_provider_id);
+        (effectiveAiConfig.user_source === "copilot" &&
+          !!effectiveAiConfig.user_copilot_account_id) ||
+        (effectiveAiConfig.user_source === "custom" &&
+          !!effectiveAiConfig.user_provider_id);
 
       if (userActive) {
         if (effectiveAiConfig.user_source === "custom") {
           if (effectiveAiConfig.user_provider_id) {
             setSelectedProviderId(effectiveAiConfig.user_provider_id);
-            localStorage.setItem("doable_selected_provider_id", effectiveAiConfig.user_provider_id);
+            localStorage.setItem(
+              "doable_selected_provider_id",
+              effectiveAiConfig.user_provider_id,
+            );
           }
           setSelectedCopilotAccountId(null);
           if (effectiveAiConfig.user_provider_model) {
             setSelectedModelId(effectiveAiConfig.user_provider_model);
-            localStorage.setItem("doable_selected_model", effectiveAiConfig.user_provider_model);
+            localStorage.setItem(
+              "doable_selected_model",
+              effectiveAiConfig.user_provider_model,
+            );
           }
         } else {
           if (effectiveAiConfig.user_copilot_account_id) {
-            setSelectedCopilotAccountId(effectiveAiConfig.user_copilot_account_id);
-            localStorage.setItem("doable_selected_copilot_account", effectiveAiConfig.user_copilot_account_id);
+            setSelectedCopilotAccountId(
+              effectiveAiConfig.user_copilot_account_id,
+            );
+            localStorage.setItem(
+              "doable_selected_copilot_account",
+              effectiveAiConfig.user_copilot_account_id,
+            );
           }
           setSelectedProviderId(null);
           if (effectiveAiConfig.user_copilot_model) {
             setSelectedModelId(effectiveAiConfig.user_copilot_model);
-            localStorage.setItem("doable_selected_model", effectiveAiConfig.user_copilot_model);
+            localStorage.setItem(
+              "doable_selected_model",
+              effectiveAiConfig.user_copilot_model,
+            );
           }
         }
       } else {
@@ -2277,22 +2931,36 @@ function EditorPageInner() {
         if (effectiveAiConfig.default_source === "custom") {
           if (effectiveAiConfig.default_provider_id) {
             setSelectedProviderId(effectiveAiConfig.default_provider_id);
-            localStorage.setItem("doable_selected_provider_id", effectiveAiConfig.default_provider_id);
+            localStorage.setItem(
+              "doable_selected_provider_id",
+              effectiveAiConfig.default_provider_id,
+            );
           }
           setSelectedCopilotAccountId(null);
           if (effectiveAiConfig.default_provider_model) {
             setSelectedModelId(effectiveAiConfig.default_provider_model);
-            localStorage.setItem("doable_selected_model", effectiveAiConfig.default_provider_model);
+            localStorage.setItem(
+              "doable_selected_model",
+              effectiveAiConfig.default_provider_model,
+            );
           }
         } else {
           if (effectiveAiConfig.default_copilot_account_id) {
-            setSelectedCopilotAccountId(effectiveAiConfig.default_copilot_account_id);
-            localStorage.setItem("doable_selected_copilot_account", effectiveAiConfig.default_copilot_account_id);
+            setSelectedCopilotAccountId(
+              effectiveAiConfig.default_copilot_account_id,
+            );
+            localStorage.setItem(
+              "doable_selected_copilot_account",
+              effectiveAiConfig.default_copilot_account_id,
+            );
           }
           setSelectedProviderId(null);
           if (effectiveAiConfig.default_copilot_model) {
             setSelectedModelId(effectiveAiConfig.default_copilot_model);
-            localStorage.setItem("doable_selected_model", effectiveAiConfig.default_copilot_model);
+            localStorage.setItem(
+              "doable_selected_model",
+              effectiveAiConfig.default_copilot_model,
+            );
           }
         }
       }
@@ -2322,21 +2990,29 @@ function EditorPageInner() {
           return;
         }
         if (elapsed < 5) setScaffoldProgressMsg("Creating project files…");
-        else if (elapsed < 15) setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
-        else if (elapsed < 40) setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
-        else if (elapsed < 90) setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
+        else if (elapsed < 15)
+          setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
+        else if (elapsed < 40)
+          setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
+        else if (elapsed < 90)
+          setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
         else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
       }, 2000);
 
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
-        if (cancelled) { clearInterval(ticker); return; }
+        if (cancelled) {
+          clearInterval(ticker);
+          return;
+        }
 
         // Immediate text swap so the user sees a label change the moment
         // the scaffold POST returns, instead of waiting up to 2 s for the
         // next ticker tick.
         phase = "preview-boot";
-        setScaffoldProgressMsg(`Loading preview… (${Math.round((Date.now() - startTime) / 1000)}s)`);
+        setScaffoldProgressMsg(
+          `Loading preview… (${Math.round((Date.now() - startTime) / 1000)}s)`,
+        );
 
         if (scaffoldUrl) {
           clearInterval(ticker);
@@ -2353,7 +3029,8 @@ function EditorPageInner() {
               url = await fetchPreviewUrl(resolvedProjectId);
               if (!url) lastError = null;
             } catch (pollErr) {
-              lastError = pollErr instanceof Error ? pollErr.message : String(pollErr);
+              lastError =
+                pollErr instanceof Error ? pollErr.message : String(pollErr);
             }
             if (!url) {
               attempts++;
@@ -2361,7 +3038,10 @@ function EditorPageInner() {
             }
           }
 
-          if (cancelled) { clearInterval(ticker); return; }
+          if (cancelled) {
+            clearInterval(ticker);
+            return;
+          }
 
           clearInterval(ticker);
           if (url) {
@@ -2370,13 +3050,16 @@ function EditorPageInner() {
           } else if (lastError) {
             throw new Error(`Preview failed to start: ${lastError}`);
           } else {
-            throw new Error("Dev server did not start in time. Please try refreshing.");
+            throw new Error(
+              "Dev server did not start in time. Please try refreshing.",
+            );
           }
         }
       } catch (err: unknown) {
         clearInterval(ticker);
         if (cancelled) return;
-        const msg = err instanceof Error ? err.message : "Failed to scaffold project";
+        const msg =
+          err instanceof Error ? err.message : ui("Failed to scaffold project");
         setScaffoldError(msg);
         setScaffoldStatus("error");
       }
@@ -2386,7 +3069,7 @@ function EditorPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [resolvedProjectId]);
+  }, [ui, resolvedProjectId]);
 
   // ─── Update project name from prompt on mount ───────────────
   useEffect(() => {
@@ -2415,12 +3098,13 @@ function EditorPageInner() {
         .map((n) => n.path);
       setExpandedFolders((prev) => new Set([...prev, ...topFolders]));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load files";
+      const msg =
+        err instanceof Error ? err.message : ui("Failed to load files");
       setFileTreeError(msg);
     } finally {
       setFileTreeLoading(false);
     }
-  }, [resolvedProjectId]);
+  }, [ui, resolvedProjectId]);
 
   useEffect(() => {
     if (scaffoldStatus === "ready") {
@@ -2448,30 +3132,31 @@ function EditorPageInner() {
         setFileContent(content);
         fileContentsCache.current[filePath] = content;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to load file";
+        const msg =
+          err instanceof Error ? err.message : ui("Failed to load file");
         setFileContentError(msg);
       } finally {
         setFileContentLoading(false);
       }
     },
-    [resolvedProjectId],
+    [ui, resolvedProjectId],
   );
 
   // ─── Open a file in a tab ────────────────────────────────
-  const openFileInTab = useCallback(
-    (filePath: string) => {
-      setSelectedFile(filePath);
-      const filename = filePath.split("/").pop() ?? filePath;
-      const language = detectLanguage(filename);
+  const openFileInTab = useCallback((filePath: string) => {
+    setSelectedFile(filePath);
+    const filename = filePath.split("/").pop() ?? filePath;
+    const language = detectLanguage(filename);
 
-      setOpenFileTabs((prev) => {
-        const exists = prev.find((t) => t.path === filePath);
-        if (exists) return prev;
-        return [...prev, { path: filePath, name: filename, language, isDirty: false }];
-      });
-    },
-    [],
-  );
+    setOpenFileTabs((prev) => {
+      const exists = prev.find((t) => t.path === filePath);
+      if (exists) return prev;
+      return [
+        ...prev,
+        { path: filePath, name: filename, language, isDirty: false },
+      ];
+    });
+  }, []);
 
   // ─── Close a file tab ────────────────────────────────────
   const closeFileTab = useCallback(
@@ -2502,14 +3187,11 @@ function EditorPageInner() {
   );
 
   // ─── Mark tab dirty/clean ────────────────────────────────
-  const markTabDirty = useCallback(
-    (filePath: string, dirty: boolean) => {
-      setOpenFileTabs((prev) =>
-        prev.map((t) => (t.path === filePath ? { ...t, isDirty: dirty } : t)),
-      );
-    },
-    [],
-  );
+  const markTabDirty = useCallback((filePath: string, dirty: boolean) => {
+    setOpenFileTabs((prev) =>
+      prev.map((t) => (t.path === filePath ? { ...t, isDirty: dirty } : t)),
+    );
+  }, []);
 
   // ─── Handle editor content change (with autosave) ────────
   const handleMonacoChange = useCallback(
@@ -2593,7 +3275,11 @@ function EditorPageInner() {
   // We track the last 5 attempts by error signature; hard-kill at 3 same-
   // signature retries inside 5min, and soft-pause 2min if any attempt
   // streams without producing a tool call (no file actually edited).
-  type AutoFixAttempt = { signature: string; ts: number; madeToolCall: boolean };
+  type AutoFixAttempt = {
+    signature: string;
+    ts: number;
+    madeToolCall: boolean;
+  };
   const autoFixHistoryRef = useRef<AutoFixAttempt[]>([]);
   const autoFixPausedUntilRef = useRef<number>(0);
   const [autoFixPausedReason, setAutoFixPausedReason] = useState<
@@ -2637,7 +3323,12 @@ function EditorPageInner() {
         if (typeof data?.token === "string") {
           token = data.token;
           // Refresh 60s before the 15-min expiry.
-          setTimeout(() => { token = null; }, 14 * 60 * 1000);
+          setTimeout(
+            () => {
+              token = null;
+            },
+            14 * 60 * 1000,
+          );
           return token;
         }
         return null;
@@ -2651,7 +3342,8 @@ function EditorPageInner() {
     async function handleReady(ev: MessageEvent) {
       if (!ev.data || typeof ev.data !== "object") return;
       if (ev.data.type !== "doable:connector-proxy-ready") return;
-      if (iframeRef.current && ev.source !== iframeRef.current.contentWindow) return;
+      if (iframeRef.current && ev.source !== iframeRef.current.contentWindow)
+        return;
       const t = await fetchToken();
       if (t && iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
@@ -2673,7 +3365,8 @@ function EditorPageInner() {
     const handlePreviewMessage = (event: MessageEvent) => {
       if (!event.data || typeof event.data !== "object") return;
       // Only accept messages from our preview iframe
-      if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
+      if (iframeRef.current && event.source !== iframeRef.current.contentWindow)
+        return;
 
       // Handle preview error reports
       if (event.data.type === "doable-preview-error") {
@@ -2691,10 +3384,17 @@ function EditorPageInner() {
         if (isStreaming || autoFixInFlightRef.current) return;
 
         // BUG-R27-010 — respect soft pause (last attempt made no tool call)
-        if (autoFixPausedUntilRef.current && now < autoFixPausedUntilRef.current) return;
+        if (
+          autoFixPausedUntilRef.current &&
+          now < autoFixPausedUntilRef.current
+        )
+          return;
 
         // Collect unique error messages (max 3)
-        const uniqueErrors = [...new Set(errors.map((e) => e.message))].slice(0, 3);
+        const uniqueErrors = [...new Set(errors.map((e) => e.message))].slice(
+          0,
+          3,
+        );
         const errorSummary = uniqueErrors.join("\n");
 
         // BUG-R27-010 — hard kill-switch: same error signature ≥3 in 5min.
@@ -2704,12 +3404,18 @@ function EditorPageInner() {
         autoFixHistoryRef.current = autoFixHistoryRef.current
           .filter((a) => a.ts > fiveMinAgo)
           .slice(-5);
-        const sameSigCount = autoFixHistoryRef.current.filter((a) => a.signature === sig).length;
+        const sameSigCount = autoFixHistoryRef.current.filter(
+          (a) => a.signature === sig,
+        ).length;
         if (sameSigCount >= 3) {
           console.warn(
             `[Doable] Auto-fix kill-switch: same error fired ${sameSigCount + 1}× in 5min, pausing.`,
           );
-          setAutoFixPausedReason({ kind: "hard", signature: sig, attempts: sameSigCount + 1 });
+          setAutoFixPausedReason({
+            kind: "hard",
+            signature: sig,
+            attempts: sameSigCount + 1,
+          });
           setLiveStatus("");
           return;
         }
@@ -2717,10 +3423,17 @@ function EditorPageInner() {
         lastAutoFixTimeRef.current = now;
         autoFixInFlightRef.current = true;
         // Record attempt up front; we'll flip madeToolCall=true on first tool_call frame.
-        const attempt: AutoFixAttempt = { signature: sig, ts: now, madeToolCall: false };
+        const attempt: AutoFixAttempt = {
+          signature: sig,
+          ts: now,
+          madeToolCall: false,
+        };
         autoFixHistoryRef.current.push(attempt);
 
-        console.log("[Doable] Preview error detected, auto-fixing:", errorSummary);
+        console.log(
+          "[Doable] Preview error detected, auto-fixing:",
+          errorSummary,
+        );
 
         // Show status immediately
         setLiveStatus("Found a preview issue — fixing it...");
@@ -2740,7 +3453,10 @@ function EditorPageInner() {
         })
           .then(async (res) => {
             if (!res.ok) {
-              console.warn("[Doable] Auto-fix request failed:", res.status);
+              console.warn(
+                "[Doable] Auto-fix request failed:",
+                res.status,
+              );
               autoFixInFlightRef.current = false;
               setLiveStatus("");
               return;
@@ -2787,15 +3503,21 @@ function EditorPageInner() {
                   if (payload === "[DONE]") break;
 
                   try {
-                    const parsed = JSON.parse(payload) as Record<string, unknown>;
+                    const parsed = JSON.parse(payload) as Record<
+                      string,
+                      unknown
+                    >;
                     // Handle text
                     if (parsed.type === "text_delta") {
-                      const text = typeof parsed.data === "string" ? parsed.data : "";
+                      const text =
+                        typeof parsed.data === "string" ? parsed.data : "";
                       if (text) {
                         setMessages((prev) =>
                           prev.map((m) =>
-                            m.id === fixId ? { ...m, content: m.content + text } : m
-                          )
+                            m.id === fixId
+                              ? { ...m, content: m.content + text }
+                              : m,
+                          ),
                         );
                       }
                     }
@@ -2806,7 +3528,10 @@ function EditorPageInner() {
                       if (msg) setLiveStatus(msg);
                     }
                     // Handle tool completion — refresh preview
-                    if (parsed.type === "tool_result" || parsed.type === "tool_call") {
+                    if (
+                      parsed.type === "tool_result" ||
+                      parsed.type === "tool_call"
+                    ) {
                       const d = parsed.data as Record<string, unknown>;
                       const friendly = (d?.friendlyMessage as string) ?? "";
                       if (friendly) setLiveStatus(friendly);
@@ -2832,7 +3557,7 @@ function EditorPageInner() {
                 return prev.filter((m) => m.id !== fixId);
               }
               return prev.map((m) =>
-                m.id === fixId ? { ...m, isStreaming: false } : m
+                m.id === fixId ? { ...m, isStreaming: false } : m,
               );
             });
             setIsStreaming(false);
@@ -2846,7 +3571,9 @@ function EditorPageInner() {
               const until = Date.now() + 2 * 60_000;
               autoFixPausedUntilRef.current = until;
               setAutoFixPausedReason({ kind: "soft", until });
-              console.warn("[Doable] Auto-fix soft-pause: AI made no tool call this turn.");
+              console.warn(
+                "[Doable] Auto-fix soft-pause: AI made no tool call this turn.",
+              );
             }
 
             // Refresh preview + file tree after fix
@@ -2858,7 +3585,10 @@ function EditorPageInner() {
             setTimeout(() => {
               if (iframeRef.current) {
                 try {
-                  iframeRef.current.contentWindow?.postMessage({ type: "doable-refresh" }, "*");
+                  iframeRef.current.contentWindow?.postMessage(
+                    { type: "doable-refresh" },
+                    "*",
+                  );
                 } catch {
                   if (previewUrl) {
                     iframeRef.current.src = previewUrl + "?t=" + Date.now();
@@ -2876,7 +3606,11 @@ function EditorPageInner() {
       // Handle preview loaded event
       if (event.data.type === "doable-preview-loaded") {
         // Preview loaded successfully — clear any error status
-        if (liveStatus.includes("issue") || liveStatus.includes("error") || liveStatus.includes("Fixing")) {
+        if (
+          liveStatus.includes("issue") ||
+          liveStatus.includes("error") ||
+          liveStatus.includes("Fixing")
+        ) {
           setLiveStatus("");
         }
       }
@@ -2884,7 +3618,16 @@ function EditorPageInner() {
 
     window.addEventListener("message", handlePreviewMessage);
     return () => window.removeEventListener("message", handlePreviewMessage);
-  }, [resolvedProjectId, isStreaming, liveStatus, loadFileTree, selectedFile, loadFileContent, previewUrl, errorSignature]);
+  }, [
+    resolvedProjectId,
+    isStreaming,
+    liveStatus,
+    loadFileTree,
+    selectedFile,
+    loadFileContent,
+    previewUrl,
+    errorSignature,
+  ]);
 
   // BUG-R27-010 — auto-dismiss soft-pause banner once the 2min cooldown elapses.
   useEffect(() => {
@@ -2937,183 +3680,270 @@ function EditorPageInner() {
   // Extracted as useCallback so both the mount effect and the bridge
   // onDone handler can call it.
   const loadFromApi = useCallback(async () => {
-      // While a local stream is active, history rows lag behind token streaming.
-      // Replacing chat state here would make the chat panel appear frozen.
-      if (localStreamActiveRef.current) {
-        return;
-      }
-      try {
-        const json = await apiFetch<{ data: any[] }>(`/projects/${resolvedProjectId}/chat/history`);
-        // Re-check after await: sendMessage may have started while fetch
-        // was in flight. Replacing state now would wipe mcpResources.
-        if (localStreamActiveRef.current) return;
-        if (Array.isArray(json.data) && json.data.length > 0) {
-          const currentUserId = authUser?.id;
-          const apiMessages: ChatMsg[] = json.data
-            .filter((m: any) => m.role === "user" || m.role === "assistant")
-            .map((m: any) => {
-              // Build senderInfo for user messages from other collaborators
-              let senderInfo: ChatMsg["senderInfo"] = undefined;
-              if (m.role === "user" && m.sent_by_user_id && m.sent_by_user_id !== currentUserId) {
-                const colors = ["#E57373","#F06292","#BA68C8","#9575CD","#7986CB","#64B5F6","#4FC3F7","#4DD0E1","#4DB6AC","#81C784","#AED581","#FFD54F","#FFB74D","#FF8A65","#A1887F","#90A4AE"];
-                let hash = 0;
-                for (let i = 0; i < m.sent_by_user_id.length; i++) hash = (hash * 31 + m.sent_by_user_id.charCodeAt(i)) | 0;
-                senderInfo = {
-                  userId: m.sent_by_user_id,
-                  displayName: m.display_name || "Collaborator",
-                  color: m.user_color || colors[Math.abs(hash) % colors.length],
-                  isRemote: true,
-                };
-              }
-              // Extract <think>...</think> tags from stored content into thinkingContent
-              let displayContent = m.content || "";
-              let thinkingFromContent = "";
-              const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
-              let thinkMatch: RegExpExecArray | null;
-              while ((thinkMatch = thinkRegex.exec(displayContent)) !== null) {
-                thinkingFromContent += (thinkMatch[1] ?? "").trim() + "\n";
-              }
-              displayContent = displayContent.replace(thinkRegex, "").trim();
-              // Also strip <|channel>thought...<channel> markers
-              const channelRegex = /<\|?channel\|?>thought([\s\S]*?)<\|?channel\|?>/gi;
-              let channelMatch: RegExpExecArray | null;
-              while ((channelMatch = channelRegex.exec(displayContent)) !== null) {
-                thinkingFromContent += (channelMatch[1] ?? "").trim() + "\n";
-              }
-              displayContent = displayContent.replace(channelRegex, "").trim();
-              // Also strip <rationale>...</rationale> markers (Claude prompted)
-              const rationaleRegex = /<rationale>([\s\S]*?)<\/rationale>/gi;
-              let rationaleMatch: RegExpExecArray | null;
-              while ((rationaleMatch = rationaleRegex.exec(displayContent)) !== null) {
-                thinkingFromContent += (rationaleMatch[1] ?? "").trim() + "\n";
-              }
-              displayContent = displayContent.replace(rationaleRegex, "").trim();
-              // Strip <answer>...</answer> wrappers (keep inner content as display text)
-              displayContent = displayContent.replace(/<\/?answer>/gi, "").trim();
-              const thinkingContent = m.thinking_content || thinkingFromContent.trim() || undefined;
+    // While a local stream is active, history rows lag behind token streaming.
+    // Replacing chat state here would make the chat panel appear frozen.
+    if (localStreamActiveRef.current) {
+      return;
+    }
+    try {
+      const json = await apiFetch<{ data: any[] }>(
+        `/projects/${resolvedProjectId}/chat/history`,
+      );
+      // Re-check after await: sendMessage may have started while fetch
+      // was in flight. Replacing state now would wipe mcpResources.
+      if (localStreamActiveRef.current) return;
+      if (Array.isArray(json.data) && json.data.length > 0) {
+        const currentUserId = authUser?.id;
+        const apiMessages: ChatMsg[] = json.data
+          .filter((m: any) => m.role === "user" || m.role === "assistant")
+          .map((m: any) => {
+            // Build senderInfo for user messages from other collaborators
+            let senderInfo: ChatMsg["senderInfo"] = undefined;
+            if (
+              m.role === "user" &&
+              m.sent_by_user_id &&
+              m.sent_by_user_id !== currentUserId
+            ) {
+              const colors = [
+                "#E57373",
+                "#F06292",
+                "#BA68C8",
+                "#9575CD",
+                "#7986CB",
+                "#64B5F6",
+                "#4FC3F7",
+                "#4DD0E1",
+                "#4DB6AC",
+                "#81C784",
+                "#AED581",
+                "#FFD54F",
+                "#FFB74D",
+                "#FF8A65",
+                "#A1887F",
+                "#90A4AE",
+              ];
+              let hash = 0;
+              for (let i = 0; i < m.sent_by_user_id.length; i++)
+                hash = (hash * 31 + m.sent_by_user_id.charCodeAt(i)) | 0;
+              senderInfo = {
+                userId: m.sent_by_user_id,
+                displayName: m.display_name || "Collaborator",
+                color: m.user_color || colors[Math.abs(hash) % colors.length],
+                isRemote: true,
+              };
+            }
+            // Extract <think>...</think> tags from stored content into thinkingContent
+            let displayContent = m.content || "";
+            let thinkingFromContent = "";
+            const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
+            let thinkMatch: RegExpExecArray | null;
+            while ((thinkMatch = thinkRegex.exec(displayContent)) !== null) {
+              thinkingFromContent += (thinkMatch[1] ?? "").trim() + "\n";
+            }
+            displayContent = displayContent.replace(thinkRegex, "").trim();
+            // Also strip <|channel>thought...<channel> markers
+            const channelRegex =
+              /<\|?channel\|?>thought([\s\S]*?)<\|?channel\|?>/gi;
+            let channelMatch: RegExpExecArray | null;
+            while (
+              (channelMatch = channelRegex.exec(displayContent)) !== null
+            ) {
+              thinkingFromContent += (channelMatch[1] ?? "").trim() + "\n";
+            }
+            displayContent = displayContent.replace(channelRegex, "").trim();
+            // Also strip <rationale>...</rationale> markers (Claude prompted)
+            const rationaleRegex = /<rationale>([\s\S]*?)<\/rationale>/gi;
+            let rationaleMatch: RegExpExecArray | null;
+            while (
+              (rationaleMatch = rationaleRegex.exec(displayContent)) !== null
+            ) {
+              thinkingFromContent += (rationaleMatch[1] ?? "").trim() + "\n";
+            }
+            displayContent = displayContent.replace(rationaleRegex, "").trim();
+            // Strip <answer>...</answer> wrappers (keep inner content as display text)
+            displayContent = displayContent.replace(/<\/?answer>/gi, "").trim();
+            const thinkingContent =
+              m.thinking_content || thinkingFromContent.trim() || undefined;
 
-              // Hide synthetic BUILD_DECK user messages from the chat UI
-              const isHiddenMsg = m.role === "user" && /^\u{1F3A8}\s*Designing\s/u.test(displayContent);
+            // Hide synthetic BUILD_DECK user messages from the chat UI
+            const isHiddenMsg =
+              m.role === "user" &&
+              /^\u{1F3A8}\s*Designing\s/u.test(displayContent);
 
-              // Hydrate attachment chips from server-persisted descriptors so
-              // the chip survives a refresh. Backend stores lightweight metadata
-              // only (no base64 data) — that's fine for display; the AI already
-              // consumed the full payload at send-time.
-              const persistedAttachments = Array.isArray(m.attachments) && m.attachments.length > 0
-                ? (m.attachments as Array<{ type?: string; name?: string; mimeType?: string; fileType?: string }>)
+            // Hydrate attachment chips from server-persisted descriptors so
+            // the chip survives a refresh. Backend stores lightweight metadata
+            // only (no base64 data) — that's fine for display; the AI already
+            // consumed the full payload at send-time.
+            const persistedAttachments =
+              Array.isArray(m.attachments) && m.attachments.length > 0
+                ? (
+                    m.attachments as Array<{
+                      type?: string;
+                      name?: string;
+                      mimeType?: string;
+                      fileType?: string;
+                    }>
+                  )
                     .filter((a) => typeof a?.name === "string")
                     .map((a) => {
                       // Derive the logical file type from fileType, or infer from
                       // MIME type / name. The backend may store type as a MIME string.
-                      const logicalType = a.fileType
-                        || (a.type && !a.type.includes("/") ? a.type : undefined)
-                        || (a.mimeType?.startsWith("image/") || a.type?.startsWith("image/") ? "image" : undefined)
-                        || (a.mimeType === "application/pdf" || a.type === "application/pdf" || a.name?.endsWith(".pdf") ? "pdf" : undefined)
-                        || "document";
+                      const logicalType =
+                        a.fileType ||
+                        (a.type && !a.type.includes("/")
+                          ? a.type
+                          : undefined) ||
+                        (a.mimeType?.startsWith("image/") ||
+                        a.type?.startsWith("image/")
+                          ? "image"
+                          : undefined) ||
+                        (a.mimeType === "application/pdf" ||
+                        a.type === "application/pdf" ||
+                        a.name?.endsWith(".pdf")
+                          ? "pdf"
+                          : undefined) ||
+                        "document";
                       return {
                         type: logicalType,
                         fileType: logicalType,
                         data: "",
                         name: a.name as string,
-                        mimeType: a.mimeType || a.type || "application/octet-stream",
+                        mimeType:
+                          a.mimeType || a.type || "application/octet-stream",
                       };
                     })
                 : undefined;
 
-              return {
-                id: m.id,
-                role: m.role as "user" | "assistant",
-                content: displayContent,
-                timestamp: new Date(m.created_at).toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
-                }),
-                isStreaming: false,
-                ...(isHiddenMsg ? { hidden: true } : {}),
-                ...(persistedAttachments ? { attachments: persistedAttachments } : {}),
-                thinkingContent,
-                toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
-                  ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
-                      // Some legacy rows store args double-wrapped under .arguments.arguments.
-                      const rawArgs = tc.arguments ?? {};
-                      const args = (rawArgs.arguments && typeof rawArgs.arguments === "object"
-                        ? rawArgs.arguments
-                        : rawArgs) as Record<string, unknown>;
-                      return {
-                        id: `hist-${m.id}-${i}`,
-                        toolName: tc.name || "unknown",
-                        description: describeToolAction(tc.name || "", args),
-                        isExpanded: false,
-                        isBookmarked: false,
-                        filePath: (args.path ?? args.filePath ?? args.file) as string | undefined,
-                        status: "completed" as const,
-                      };
-                    })
+            return {
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: displayContent,
+              runFailed: m.run_status === "error" || m.run_status === "stalled",
+              runError: typeof m.run_error === "string" ? m.run_error : undefined,
+              timestamp: new Date(m.created_at).toLocaleTimeString(ui.locale, {
+                hour: "numeric",
+                minute: "2-digit",
+              }),
+              isStreaming: false,
+              ...(isHiddenMsg ? { hidden: true } : {}),
+              ...(persistedAttachments
+                ? { attachments: persistedAttachments }
+                : {}),
+              thinkingContent,
+              toolActions:
+                m.tool_actions ||
+                (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+                  ? m.tool_calls.map(
+                      (
+                        tc: {
+                          name?: string;
+                          arguments?: Record<string, unknown>;
+                          status?: string;
+                        },
+                        i: number,
+                      ) => {
+                        // Some legacy rows store args double-wrapped under .arguments.arguments.
+                        const rawArgs = tc.arguments ?? {};
+                        const args = (
+                          rawArgs.arguments &&
+                          typeof rawArgs.arguments === "object"
+                            ? rawArgs.arguments
+                            : rawArgs
+                        ) as Record<string, unknown>;
+                        return {
+                          id: `hist-${m.id}-${i}`,
+                          toolName: tc.name || "unknown",
+                          description: describeToolAction(tc.name || "", args),
+                          isExpanded: false,
+                          isBookmarked: false,
+                          filePath: (args.path ??
+                            args.filePath ??
+                            args.file) as string | undefined,
+                          status:
+                            tc.status === "completed"
+                              ? ("completed" as const)
+                              : tc.status === "failed"
+                                ? ("failed" as const)
+                                : ("unknown" as const),
+                        };
+                      },
+                    )
                   : undefined),
-                suggestions: m.suggestions || undefined,
-                senderInfo,
-              };
-            });
-          setMessages((prev) => {
-            // Preserve mcpResources and artifacts from live-streamed messages
-            // because the DB/history API doesn't persist them. Without this,
-            // build cards (e.g. presentation builder) would unmount after
-            // finalizeStream → loadFromApi, preventing BUILD_DECK from firing.
-            //
-            // Two matching strategies:
-            //   1. By message ID (works when client-side ID == DB ID).
-            //   2. By assistant-message position (fallback when client-side
-            //      crypto.randomUUID() differs from the DB-assigned UUID —
-            //      common for just-streamed messages).
-            const mcpMap: Record<string, ChatMsg["mcpResources"]> = {};
-            const artMap: Record<string, ChatMsg["artifacts"]> = {};
-            for (const m of prev) {
-              if (m.mcpResources && Object.keys(m.mcpResources).length > 0) {
-                mcpMap[m.id] = m.mcpResources;
-              }
-              if (m.artifacts && m.artifacts.length > 0) {
-                artMap[m.id] = m.artifacts;
-              }
+              suggestions: m.suggestions || undefined,
+              senderInfo,
+            };
+          });
+        setMessages((prev) => {
+          // Preserve mcpResources and artifacts from live-streamed messages
+          // because the DB/history API doesn't persist them. Without this,
+          // build cards (e.g. presentation builder) would unmount after
+          // finalizeStream → loadFromApi, preventing BUILD_DECK from firing.
+          //
+          // Two matching strategies:
+          //   1. By message ID (works when client-side ID == DB ID).
+          //   2. By assistant-message position (fallback when client-side
+          //      crypto.randomUUID() differs from the DB-assigned UUID —
+          //      common for just-streamed messages).
+          const mcpMap: Record<string, ChatMsg["mcpResources"]> = {};
+          const artMap: Record<string, ChatMsg["artifacts"]> = {};
+          for (const m of prev) {
+            if (m.mcpResources && Object.keys(m.mcpResources).length > 0) {
+              mcpMap[m.id] = m.mcpResources;
             }
-            // Position-based fallback: collect mcpResources/artifacts by
-            // assistant-message index in the previous state.
-            const prevAssistants = prev.filter((m) => m.role === "assistant");
-            const mcpByIdx: (ChatMsg["mcpResources"] | undefined)[] = prevAssistants.map((m) =>
-              m.mcpResources && Object.keys(m.mcpResources).length > 0 ? m.mcpResources : undefined,
+            if (m.artifacts && m.artifacts.length > 0) {
+              artMap[m.id] = m.artifacts;
+            }
+          }
+          // Position-based fallback: collect mcpResources/artifacts by
+          // assistant-message index in the previous state.
+          const prevAssistants = prev.filter((m) => m.role === "assistant");
+          const mcpByIdx: (ChatMsg["mcpResources"] | undefined)[] =
+            prevAssistants.map((m) =>
+              m.mcpResources && Object.keys(m.mcpResources).length > 0
+                ? m.mcpResources
+                : undefined,
             );
-            const artByIdx: (ChatMsg["artifacts"] | undefined)[] = prevAssistants.map((m) =>
+          const artByIdx: (ChatMsg["artifacts"] | undefined)[] =
+            prevAssistants.map((m) =>
               m.artifacts && m.artifacts.length > 0 ? m.artifacts : undefined,
             );
-            let assistantIdx = 0;
-            return apiMessages.map((m) => {
-              let mcp = mcpMap[m.id];
-              let art = artMap[m.id];
-              if (m.role === "assistant") {
-                // Fallback to positional match when IDs differ
-                if (!mcp && assistantIdx < mcpByIdx.length) {
-                  mcp = mcpByIdx[assistantIdx];
-                }
-                if (!art && assistantIdx < artByIdx.length) {
-                  art = artByIdx[assistantIdx];
-                }
-                assistantIdx++;
+          let assistantIdx = 0;
+          return apiMessages.map((m) => {
+            let mcp = mcpMap[m.id];
+            let art = artMap[m.id];
+            if (m.role === "assistant") {
+              // Fallback to positional match when IDs differ
+              if (!mcp && assistantIdx < mcpByIdx.length) {
+                mcp = mcpByIdx[assistantIdx];
               }
-              return {
-                ...m,
-                ...(mcp ? { mcpResources: mcp } : {}),
-                ...(art && (!m.artifacts || m.artifacts.length === 0) ? { artifacts: art } : {}),
-              };
-            });
+              if (!art && assistantIdx < artByIdx.length) {
+                art = artByIdx[assistantIdx];
+              }
+              assistantIdx++;
+            }
+            return {
+              ...m,
+              ...(mcp ? { mcpResources: mcp } : {}),
+              ...(art && (!m.artifacts || m.artifacts.length === 0)
+                ? { artifacts: art }
+                : {}),
+            };
           });
-          // Also update suggestions from the last assistant message
-          const lastAssistant = [...apiMessages].reverse().find(m => m.role === "assistant");
-          if (lastAssistant?.suggestions && lastAssistant.suggestions.length > 0) {
-            setAiSuggestions(lastAssistant.suggestions);
-          }
+        });
+        // Also update suggestions from the last assistant message
+        const lastAssistant = [...apiMessages]
+          .reverse()
+          .find((m) => m.role === "assistant");
+        if (
+          lastAssistant?.suggestions &&
+          lastAssistant.suggestions.length > 0
+        ) {
+          setAiSuggestions(lastAssistant.suggestions);
         }
-      } catch {
-        // API load failed — localStorage fallback already loaded
       }
+    } catch {
+      // API load failed — localStorage fallback already loaded
+    }
   }, [resolvedProjectId, authUser?.id]);
 
   // ─── Watchdog: detect silent SSE drops ──
@@ -3130,21 +3960,38 @@ function EditorPageInner() {
     const check = async () => {
       try {
         const [chatStatusRes, aiStatusRes] = await Promise.all([
-          apiFetch<{ streaming: boolean }>(`/projects/${resolvedProjectId}/chat/status`).catch(() => null),
-          apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`).catch(() => null),
+          apiFetch<{ streaming: boolean }>(
+            `/projects/${resolvedProjectId}/chat/status`,
+          ).catch(() => null),
+          apiFetch<{ active: boolean }>(
+            `/projects/${resolvedProjectId}/ai-status`,
+          ).catch(() => null),
         ]);
         if (cancelled) return;
-        const stillActive = chatStatusRes?.streaming === true || aiStatusRes?.active === true;
+        const stillActive =
+          chatStatusRes?.streaming === true || aiStatusRes?.active === true;
         if (stillActive) return;
-        console.warn("[Chat] Watchdog: backend reports stream done while UI still streaming — force-finalizing");
-        try { abortRef.current?.abort(); } catch { /* ignore */ }
+        console.warn(
+          "[Chat] Watchdog: backend reports stream done while UI still streaming — force-finalizing",
+        );
+        try {
+          abortRef.current?.abort();
+        } catch {
+          /* ignore */
+        }
         localStreamActiveRef.current = false;
         setIsStreaming(false);
         setLiveStatus("");
         setIsFirstGeneration(false);
         setHasActiveToolCalls(false);
-        try { await loadFromApi(); } catch { /* best effort */ }
-      } catch { /* ignore */ }
+        try {
+          await loadFromApi();
+        } catch {
+          /* best effort */
+        }
+      } catch {
+        /* ignore */
+      }
     };
     const firstId = setTimeout(check, 18_000);
     const intervalId = setInterval(check, 12_000);
@@ -3159,31 +4006,6 @@ function EditorPageInner() {
   useEffect(() => {
     loadFromApi();
 
-    // Restore active plan state on mount (e.g., after refresh). Only
-    // restore DRAFT plans when the user's current chat mode is "plan"
-    // — otherwise a stale draft from a previous plan-mode session
-    // hijacks the chat UI into PlanCard review state and blocks the
-    // user who has since switched to build mode. `approved` /
-    // `in_progress` plans (the AI is actively executing them) always
-    // restore regardless of mode so a refresh doesn't drop the build
-    // in flight.
-    (async () => {
-      try {
-        const planRes = await apiFetch<{ data: any }>(`/projects/${resolvedProjectId}/plan`);
-        if (
-          planRes.data &&
-          planRes.data.status === "draft" &&
-          chatMode === "plan"
-        ) {
-          setActivePlan(planRes.data);
-          setPlanPhase("reviewing");
-        } else if (planRes.data && (planRes.data.status === "approved" || planRes.data.status === "in_progress")) {
-          setActivePlan(planRes.data);
-          setPlanPhase("building");
-        }
-      } catch { /* no active plan */ }
-    })();
-
     // Check if AI is still actively working (e.g., user refreshed mid-build).
     // Strategy:
     //   1. Call /chat/status to see if there's an active stream and get its messageId.
@@ -3196,10 +4018,17 @@ function EditorPageInner() {
     (async () => {
       try {
         const [chatStatusRes, aiStatusRes] = await Promise.all([
-          apiFetch<{ streaming: boolean; messageId?: string; startedAt?: string }>(`/projects/${resolvedProjectId}/chat/status`).catch(() => null),
-          apiFetch<{ active: boolean; mode?: string }>(`/projects/${resolvedProjectId}/ai-status`).catch(() => null),
+          apiFetch<{
+            streaming: boolean;
+            messageId?: string;
+            startedAt?: string;
+          }>(`/projects/${resolvedProjectId}/chat/status`).catch(() => null),
+          apiFetch<{ active: boolean; mode?: string }>(
+            `/projects/${resolvedProjectId}/ai-status`,
+          ).catch(() => null),
         ]);
-        const isActive = (chatStatusRes?.streaming === true) || (aiStatusRes?.active === true);
+        const isActive =
+          chatStatusRes?.streaming === true || aiStatusRes?.active === true;
         // Don't enter stream-resume when sendMessage is already handling
         // the stream — the two paths racing causes loadFromApi to overwrite
         // in-flight mcpResources.
@@ -3213,7 +4042,9 @@ function EditorPageInner() {
         // assistant so the dots render until the first resume event arrives.
         let streamingAssistantId: string | null = null;
         setMessages((prev) => {
-          const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+          const lastAssistant = [...prev]
+            .reverse()
+            .find((m) => m.role === "assistant");
           if (!lastAssistant) return prev;
           streamingAssistantId = lastAssistant.id;
           return prev.map((m) =>
@@ -3229,7 +4060,11 @@ function EditorPageInner() {
           // set it after, the build card's host-ready gate (`if (isStreaming) return`)
           // prevents the BUILD_DECK prompt from being injected in time.
           setIsStreaming(false);
-          try { await loadFromApi(); } catch { /* best-effort */ }
+          try {
+            await loadFromApi();
+          } catch {
+            /* best-effort */
+          }
           loadFileTree();
           if (selectedFile) {
             delete fileContentsCache.current[selectedFile];
@@ -3238,9 +4073,17 @@ function EditorPageInner() {
           setLiveStatus("");
           setIsFirstGeneration(false);
           setHasActiveToolCalls(false);
-          if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
+          if (
+            iframeRef.current &&
+            previewUrl &&
+            !/\/artifacts\//.test(iframeRef.current.src ?? "")
+          ) {
             setTimeout(() => {
-              if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
+              if (
+                iframeRef.current &&
+                previewUrl &&
+                !/\/artifacts\//.test(iframeRef.current.src ?? "")
+              ) {
                 iframeRef.current.src = previewUrl + "?t=" + Date.now();
               }
             }, 1500);
@@ -3249,37 +4092,55 @@ function EditorPageInner() {
           // Skip if the last assistant message has a build card — BUILD_DECK
           // will auto-fire and start a new streaming turn.
           setMessages((prev) => {
-            const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+            const lastAssistant = [...prev]
+              .reverse()
+              .find((m) => m.role === "assistant");
             // Only suppress suggestions if the MCP card will auto-fire a
             // BUILD_DECK follow-up. If the last user msg was the BUILD_DECK
             // prompt (hidden), this is the final deck — don't suppress.
             const lastUser = [...prev].reverse().find((m) => m.role === "user");
-            const wasBuildDeck = lastUser?.hidden || /^\u{1F3A8}\s*Designing\s/u.test(lastUser?.content ?? "");
-            const hasBuildCard = !wasBuildDeck && lastAssistant?.mcpResources &&
+            const wasBuildDeck =
+              lastUser?.hidden ||
+              /^\u{1F3A8}\s*Designing\s/u.test(lastUser?.content ?? "");
+            const hasBuildCard =
+              !wasBuildDeck &&
+              lastAssistant?.mcpResources &&
               Object.values(lastAssistant.mcpResources).some(
-                (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
+                (r) =>
+                  r &&
+                  typeof r === "object" &&
+                  "html" in r &&
+                  (r as Record<string, unknown>).html,
               );
             if (hasBuildCard) {
-              console.log("[Chat] Stream-resume finalizeStream: skipping suggestions — MCP build card present");
+              console.log(
+                "[Chat] Stream-resume finalizeStream: skipping suggestions — MCP build card present",
+              );
               setLiveStatus("Preparing to build your presentation…");
               return prev;
             }
             setAiSuggestions(FALLBACK_SUGGESTIONS);
-            const resumeAssistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
+            const resumeAssistantHasOutput =
+              lastAssistant?.content || lastAssistant?.thinkingContent;
             if (
               resumeAssistantHasOutput &&
               lastUser?.content &&
               suggestedForRef.current !== lastAssistant.id
             ) {
               suggestedForRef.current = lastAssistant.id;
-              const resumeSuggestionContext = lastAssistant.content || "AI used tools to complete the task.";
-              fetchAISuggestions(resolvedProjectId, lastUser.content, resumeSuggestionContext).then((s) => {
+              const resumeSuggestionContext =
+                lastAssistant.content || "AI used tools to complete the task.";
+              fetchAISuggestions(
+                resolvedProjectId,
+                lastUser.content,
+                resumeSuggestionContext,
+              ).then((s) => {
                 setAiSuggestions(s);
                 if (s.length > 0) {
                   setMessages((prev2) =>
                     prev2.map((m) =>
-                      m.id === lastAssistant.id ? { ...m, suggestions: s } : m
-                    )
+                      m.id === lastAssistant.id ? { ...m, suggestions: s } : m,
+                    ),
                   );
                 }
               });
@@ -3299,18 +4160,41 @@ function EditorPageInner() {
               const now = Date.now();
               const curSrc = iframeRef.current?.src ?? "";
               const isArtifactPreview = /\/artifacts\//.test(curSrc);
-              if (!isArtifactPreview && now - lastRefresh > 6000 && iframeRef.current && previewUrl) {
-                iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + now;
+              if (
+                !isArtifactPreview &&
+                now - lastRefresh > 6000 &&
+                iframeRef.current &&
+                previewUrl
+              ) {
+                iframeRef.current.src =
+                  previewUrl +
+                  (previewUrl.includes("?") ? "&" : "?") +
+                  "t=" +
+                  now;
                 lastRefresh = now;
               }
-              const check = await apiFetch<{ active: boolean }>(`/projects/${resolvedProjectId}/ai-status`);
+              const check = await apiFetch<{ active: boolean }>(
+                `/projects/${resolvedProjectId}/ai-status`,
+              );
               if (!check.active) {
                 clearInterval(poll);
                 await finalizeStream();
               }
-            } catch { clearInterval(poll); setIsStreaming(false); setHasActiveToolCalls(false); }
+            } catch {
+              clearInterval(poll);
+              setIsStreaming(false);
+              setHasActiveToolCalls(false);
+            }
           }, 3000);
-          setTimeout(() => { clearInterval(poll); setIsStreaming(false); setLiveStatus(""); setHasActiveToolCalls(false); }, 5 * 60 * 1000);
+          setTimeout(
+            () => {
+              clearInterval(poll);
+              setIsStreaming(false);
+              setLiveStatus("");
+              setHasActiveToolCalls(false);
+            },
+            5 * 60 * 1000,
+          );
         };
 
         const messageId = chatStatusRes?.messageId ?? null;
@@ -3338,12 +4222,18 @@ function EditorPageInner() {
             setLiveStatus("Writing response...");
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === streamingAssistantId ? { ...m, content: m.content + chunk } : m,
+                m.id === streamingAssistantId
+                  ? { ...m, content: m.content + chunk }
+                  : m,
               ),
             );
           },
-          onDone: () => { /* terminal-event loop in consumeStreamResume drives finalization */ },
-          onError: (_err: string) => { /* handled in catch below */ },
+          onDone: () => {
+            /* terminal-event loop in consumeStreamResume drives finalization */
+          },
+          onError: (_err: string) => {
+            /* handled in catch below */
+          },
           onToolStarted: handleToolStarted,
           onToolCompleted: handleToolCompleted,
           onThinking: (text: string) => {
@@ -3355,33 +4245,54 @@ function EditorPageInner() {
                   : m,
               ),
             );
-            const short = text.length < 60 && !text.includes("\n") ? text : humanizeThinking(text);
+            const short =
+              text.length < 60 && !text.includes("\n")
+                ? text
+                : humanizeThinking(text);
             if (short) setLiveStatus(short);
           },
-          onStatusChange: (status: string) => { if (status) setLiveStatus(status); },
-          onUserInputRequest: (req) => { setPendingUserInput(req); },
+          onStatusChange: (status: string) => {
+            if (status) setLiveStatus(status);
+          },
+          onUserInputRequest: (req) => {
+            setPendingUserInput(req);
+          },
           onClarification: (questions) => {
             setPendingQuestions(questions);
             setPlanPhase("clarifying");
           },
           onPlan: (plan) => {
-            setActivePlan(plan);
-            setPlanPhase("reviewing");
+            receivePlanSnapshot(plan);
           },
           onPlanStepUpdate: (stepId, status) => {
             setActivePlan((prev) => {
               if (!prev) return prev;
-              return { ...prev, steps: prev.steps.map((s) => s.id === stepId ? { ...s, status: status as any } : s) };
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.id === stepId ? { ...s, status: status as any } : s,
+                ),
+              };
             });
           },
-          onProvisionSupabase: (req) => { setSupabaseProvisionRequest(req); },
-          onIntegrationRequired: (req) => { setPendingIntegrationRequest(req); },
+          onProvisionSupabase: (req) => {
+            setSupabaseProvisionRequest(req);
+          },
+          onIntegrationRequired: (req) => {
+            setPendingIntegrationRequest(req);
+          },
           onMcpUiResource: (resource) => {
             if (!streamingAssistantId) return;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamingAssistantId
-                  ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
+                  ? {
+                      ...m,
+                      mcpResources: {
+                        ...(m.mcpResources ?? {}),
+                        [resource.toolCallId]: resource,
+                      },
+                    }
                   : m,
               ),
             );
@@ -3400,7 +4311,13 @@ function EditorPageInner() {
         };
 
         try {
-          await consumeStreamResume(resolvedProjectId, messageId, cb, controller.signal, lastSeqRef);
+          await consumeStreamResume(
+            resolvedProjectId,
+            messageId,
+            cb,
+            controller.signal,
+            lastSeqRef,
+          );
           localStreamActiveRef.current = false;
           if (controller.signal.aborted) return;
           await finalizeStream();
@@ -3412,20 +4329,30 @@ function EditorPageInner() {
           try {
             await new Promise((r) => setTimeout(r, 1000));
             if (controller.signal.aborted) return;
-            await consumeStreamResume(resolvedProjectId, messageId, cb, controller.signal, lastSeqRef);
+            await consumeStreamResume(
+              resolvedProjectId,
+              messageId,
+              cb,
+              controller.signal,
+              lastSeqRef,
+            );
             localStreamActiveRef.current = false;
             if (controller.signal.aborted) return;
             await finalizeStream();
           } catch (err2) {
             if (controller.signal.aborted) return;
-            console.warn("[Chat] stream-resume failed after retry — falling back to polling:", err2);
+            console.warn(
+              "[Chat] stream-resume failed after retry — falling back to polling:",
+              err2,
+            );
             localStreamActiveRef.current = false;
             pollUntilDone();
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     })();
-     
   }, [resolvedProjectId]);
 
   // Auto-send prompt from dashboard navigation.
@@ -3436,7 +4363,9 @@ function EditorPageInner() {
     autoSentRef.current = true;
 
     // Read mode from URL — if "plan", switch to plan mode
-    const urlMode = new URLSearchParams(window.location.search).get("mode") as ChatMode | null;
+    const urlMode = new URLSearchParams(window.location.search).get(
+      "mode",
+    ) as ChatMode | null;
     if (urlMode === "plan") {
       setChatMode("plan");
     }
@@ -3455,15 +4384,17 @@ function EditorPageInner() {
           role: "user",
           content: trimmed,
           timestamp: nowTimestamp(),
-          ...(bridge.attachments?.length ? {
-            attachments: bridge.attachments.map((a) => ({
-              type: a.mimeType || a.type || "application/octet-stream",
-              data: a.data,
-              name: a.name,
-              preview: a.preview,
-              fileType: a.type,
-            })),
-          } : {}),
+          ...(bridge.attachments?.length
+            ? {
+                attachments: bridge.attachments.map((a) => ({
+                  type: a.mimeType || a.type || "application/octet-stream",
+                  data: a.data,
+                  name: a.name,
+                  preview: a.preview,
+                  fileType: a.type,
+                })),
+              }
+            : {}),
         };
         const assistantId = (Date.now() + 1).toString();
         const assistantMsg: ChatMsg = {
@@ -3485,7 +4416,9 @@ function EditorPageInner() {
         localStreamActiveRef.current = true;
 
         // Resume the in-flight stream with the standard callback set
-        console.log(`[Bridge] Consuming bridge: isDone=${bridge.isDone} error=${bridge.error} reader=${!!bridge.reader} events=${bridge.events.length} aborted=${controller.signal.aborted}`);
+        console.log(
+          `[Bridge] Consuming bridge: isDone=${bridge.isDone} error=${bridge.error} reader=${!!bridge.reader} events=${bridge.events.length} aborted=${controller.signal.aborted}`,
+        );
         resumeBridgeStream(
           bridge.events,
           bridge.reader,
@@ -3510,10 +4443,15 @@ function EditorPageInner() {
                         if (m.id !== assistantId) return m;
                         if (m.isError) {
                           setIsStreaming(true);
-                          return { ...m, content: buffered, isStreaming: true, isError: false };
+                          return {
+                            ...m,
+                            content: buffered,
+                            isStreaming: true,
+                            isError: false,
+                          };
                         }
                         return { ...m, content: m.content + buffered };
-                      })
+                      }),
                     );
                   }
                 });
@@ -3529,8 +4467,10 @@ function EditorPageInner() {
                 chunkBufferRef.current = "";
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === assistantId ? { ...m, content: m.content + remaining } : m
-                  )
+                    m.id === assistantId
+                      ? { ...m, content: m.content + remaining }
+                      : m,
+                  ),
                 );
               }
               // IMPORTANT: flip isStreaming BEFORE loadFromApi so McpUiResourceCard
@@ -3551,41 +4491,66 @@ function EditorPageInner() {
                 delete fileContentsCache.current[selectedFile];
                 loadFileContent(selectedFile);
               }
-              if (finalReloadTimer.current) clearTimeout(finalReloadTimer.current);
+              if (finalReloadTimer.current)
+                clearTimeout(finalReloadTimer.current);
               finalReloadTimer.current = setTimeout(() => {
                 finalReloadTimer.current = null;
                 if (iframeRef.current && previewUrl) {
-                  iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+                  iframeRef.current.src =
+                    previewUrl +
+                    (previewUrl.includes("?") ? "&" : "?") +
+                    "t=" +
+                    Date.now();
                 }
               }, 1500);
               setAiSuggestions(FALLBACK_SUGGESTIONS);
               setMessages((prev) => {
                 const lastAssistant = prev.find((m) => m.id === assistantId);
-                const hasBuildCard = lastAssistant?.mcpResources &&
+                const hasBuildCard =
+                  lastAssistant?.mcpResources &&
                   Object.values(lastAssistant.mcpResources).some(
-                    (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
+                    (r) =>
+                      r &&
+                      typeof r === "object" &&
+                      "html" in r &&
+                      (r as Record<string, unknown>).html,
                   );
                 if (hasBuildCard) {
-                  console.log("[Chat] Bridge onDone: skipping suggestions — MCP build card present");
+                  console.log(
+                    "[Chat] Bridge onDone: skipping suggestions — MCP build card present",
+                  );
                   setAiSuggestions([]); // undo fallback set above
                   setLiveStatus("Preparing to build your presentation…");
                   return prev;
                 }
-                const bridgeAssistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
+                const bridgeAssistantHasOutput =
+                  lastAssistant?.content || lastAssistant?.thinkingContent;
                 if (
                   bridgeAssistantHasOutput &&
                   suggestedForRef.current !== assistantId
                 ) {
                   suggestedForRef.current = assistantId;
-                  const bridgeSuggestionPrompt = trimmed.startsWith("BUILD_DECK")
+                  const bridgeSuggestionPrompt = trimmed.startsWith(
+                    "BUILD_DECK",
+                  )
                     ? ""
                     : trimmed;
                   if (bridgeSuggestionPrompt) {
-                    const bridgeSuggestionContext = lastAssistant.content || "AI used tools to complete the task.";
-                    fetchAISuggestions(resolvedProjectId, bridgeSuggestionPrompt, bridgeSuggestionContext).then((s) => {
+                    const bridgeSuggestionContext =
+                      lastAssistant.content ||
+                      "AI used tools to complete the task.";
+                    fetchAISuggestions(
+                      resolvedProjectId,
+                      bridgeSuggestionPrompt,
+                      bridgeSuggestionContext,
+                    ).then((s) => {
                       setAiSuggestions(s);
                       if (s.length > 0) {
-                        setMessages((prev2) => prev2.map((m) => m.id === assistantId ? { ...m, suggestions: s } : m));
+                        setMessages((prev2) =>
+                          prev2.map((m) =>
+                            m.id === assistantId ? { ...m, suggestions: s } : m,
+                          ),
+                        );
                       }
                     });
                   }
@@ -3601,8 +4566,15 @@ function EditorPageInner() {
               chunkBufferRef.current = "";
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantId ? { ...m, content: error, isStreaming: false, isError: true } : m
-                )
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        content: error,
+                        isStreaming: false,
+                        isError: true,
+                      }
+                    : m,
+                ),
               );
               setIsStreaming(false);
               setLiveStatus("");
@@ -3616,9 +4588,13 @@ function EditorPageInner() {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId
-                    ? { ...m, thinkingContent: (m.thinkingContent || "") + thinkingText }
-                    : m
-                )
+                    ? {
+                        ...m,
+                        thinkingContent:
+                          (m.thinkingContent || "") + thinkingText,
+                      }
+                    : m,
+                ),
               );
               if (thinkingText.length < 60 && !thinkingText.includes("\n")) {
                 setLiveStatus(thinkingText);
@@ -3630,19 +4606,25 @@ function EditorPageInner() {
             onStatusChange: (status: string) => {
               if (status) setLiveStatus(status);
             },
-            onUserInputRequest: (req) => { setPendingUserInput(req); },
+            onUserInputRequest: (req) => {
+              setPendingUserInput(req);
+            },
             onClarification: (questions) => {
               setPendingQuestions(questions);
               setPlanPhase("clarifying");
             },
             onPlan: (plan) => {
-              setActivePlan(plan);
-              setPlanPhase("reviewing");
+              receivePlanSnapshot(plan);
             },
             onPlanStepUpdate: (stepId, status) => {
               setActivePlan((prev) => {
                 if (!prev) return prev;
-                return { ...prev, steps: prev.steps.map((s) => s.id === stepId ? { ...s, status: status as any } : s) };
+                return {
+                  ...prev,
+                  steps: prev.steps.map((s) =>
+                    s.id === stepId ? { ...s, status: status as any } : s,
+                  ),
+                };
               });
             },
             onProvisionSupabase: (req) => {
@@ -3655,9 +4637,15 @@ function EditorPageInner() {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId
-                    ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
-                    : m
-                )
+                    ? {
+                        ...m,
+                        mcpResources: {
+                          ...(m.mcpResources ?? {}),
+                          [resource.toolCallId]: resource,
+                        },
+                      }
+                    : m,
+                ),
               );
             },
             onArtifactReady: (artifact) => {
@@ -3667,7 +4655,7 @@ function EditorPageInner() {
                   const existing = m.artifacts ?? [];
                   if (existing.some((a) => a.url === artifact.url)) return m;
                   return { ...m, artifacts: [...existing, artifact] };
-                })
+                }),
               );
               // HTML decks are persisted by the API to the project's
               // index.html, so the standard tool_result `path` refresh
@@ -3722,9 +4710,12 @@ function EditorPageInner() {
     if (messages.length > 0) return;
     // Small delay so the UI renders the chat panel first
     setTimeout(() => {
-      sendMessage(prompt!, storedAttachments, urlMode === "plan" ? "plan" : undefined);
+      sendMessage(
+        prompt!,
+        storedAttachments,
+        urlMode === "plan" ? "plan" : undefined,
+      );
     }, 100);
-     
   }, [resolvedProjectId]);
 
   // Handle panel resize
@@ -3758,7 +4749,10 @@ function EditorPageInner() {
   useEffect(() => {
     if (!showMoreMenu) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+      if (
+        moreMenuRef.current &&
+        !moreMenuRef.current.contains(e.target as Node)
+      ) {
         setShowMoreMenu(false);
       }
     };
@@ -3769,7 +4763,9 @@ function EditorPageInner() {
   // Toggle pin for a toolbar item
   const togglePin = useCallback((tab: ActiveTab) => {
     setPinnedItems((prev) => {
-      const next = prev.includes(tab) ? prev.filter((t) => t !== tab) : [...prev, tab];
+      const next = prev.includes(tab)
+        ? prev.filter((t) => t !== tab)
+        : [...prev, tab];
       savePinnedItems(next);
       return next;
     });
@@ -3785,37 +4781,59 @@ function EditorPageInner() {
 
   // ─── Handle tool started — add "running" card + update live status ──
   const handleToolStarted = useCallback(
-    (toolName: string, _args: Record<string, unknown>) => {
+    (toolName: string, _args: Record<string, unknown>, callId?: string) => {
       // Update live status with human-friendly description
       const description = describeToolAction(toolName, _args);
       setLiveStatus(description);
       setHasActiveToolCalls(true);
 
       setMessages((prev) => {
-        const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+        const lastAssistant = [...prev]
+          .reverse()
+          .find((m) => m.role === "assistant");
         if (!lastAssistant) return prev;
-        const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
-            ? (_args?.path ?? _args?.filePath ?? _args?.file) as string
+        const filePath =
+          typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
+            ? ((_args?.path ?? _args?.filePath ?? _args?.file) as string)
             : undefined;
         // Dedup: skip if we already have a running tool action with the same name+path
         // (multiple SSE channels can fire for the same tool call — BUG-118)
         const existing = lastAssistant.toolActions ?? [];
-        
+
         // Find existing running action for this tool
-        const runningIdx = existing.findIndex((a) => a.status === "running" && a.toolName === toolName && (!a.filePath || a.filePath === filePath));
-        
+        const runningIdx = existing.findIndex(
+          (a) =>
+            (callId && a.callId === callId) ||
+            (a.status === "running" &&
+              (!callId || !a.callId || a.callId.startsWith("hook-")) &&
+              a.toolName === toolName &&
+              (!a.filePath || a.filePath === filePath)),
+        );
+
         if (runningIdx !== -1) {
           // If we got a new filePath or better description, update it!
-          if ((filePath && !existing[runningIdx]!.filePath) || description !== existing[runningIdx]!.description) {
+          if (
+            (callId && existing[runningIdx]!.callId !== callId) ||
+            (filePath && !existing[runningIdx]!.filePath) ||
+            description !== existing[runningIdx]!.description
+          ) {
             const updated = [...existing];
-            updated[runningIdx] = { ...updated[runningIdx]!, filePath: filePath ?? updated[runningIdx]!.filePath, description };
-            return prev.map((m) => m.id === lastAssistant.id ? { ...m, toolActions: updated } : m);
+            updated[runningIdx] = {
+              ...updated[runningIdx]!,
+              callId: callId ?? updated[runningIdx]!.callId,
+              filePath: filePath ?? updated[runningIdx]!.filePath,
+              description,
+            };
+            return prev.map((m) =>
+              m.id === lastAssistant.id ? { ...m, toolActions: updated } : m,
+            );
           }
           return prev;
         }
-        
+
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          callId,
           toolName,
           description,
           isExpanded: false,
@@ -3835,19 +4853,35 @@ function EditorPageInner() {
 
   // ─── Handle tool completion — refresh files + update card ─
   const handleToolCompleted = useCallback(
-    (toolName: string, _args: Record<string, unknown>) => {
+    (
+      toolName: string,
+      _args: Record<string, unknown>,
+      success?: boolean,
+      callId?: string,
+    ) => {
+      const status =
+        success === true
+          ? ("completed" as const)
+          : success === false
+            ? ("failed" as const)
+            : ("unknown" as const);
       // Update the running tool action card to "completed", or add a new completed card
       setMessages((prev) => {
-        const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
+        const lastAssistant = [...prev]
+          .reverse()
+          .find((m) => m.role === "assistant");
         if (!lastAssistant) return prev;
 
         // Try to find a running action with this tool name to mark as completed
-        const runningAction = lastAssistant.toolActions?.find(
-          (a) => a.toolName === toolName && a.status === "running"
+        const runningAction = lastAssistant.toolActions?.find((a) =>
+          callId
+            ? a.callId === callId
+            : a.toolName === toolName && a.status === "running",
         );
 
-        const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
-            ? (_args?.path ?? _args?.filePath ?? _args?.file) as string
+        const filePath =
+          typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
+            ? ((_args?.path ?? _args?.filePath ?? _args?.file) as string)
             : undefined;
         const finalDescription = describeToolAction(toolName, _args);
 
@@ -3855,16 +4889,34 @@ function EditorPageInner() {
           // Update existing running card to completed and refresh description/path with final args.
           // Avoid clobbering a good per-file description with the generic fallback
           // ("Reading file") when the result payload doesn't include a path.
-          const isGenericFallback = /^(Reading|Creating|Updating|Removing|Renaming) file$/.test(finalDescription);
-          const keepExistingDesc = isGenericFallback && runningAction.description && runningAction.description !== finalDescription;
+          const isGenericFallback =
+            /^(Reading|Creating|Updating|Removing|Renaming) file$/.test(
+              finalDescription,
+            );
+          const keepExistingDesc =
+            isGenericFallback &&
+            runningAction.description &&
+            runningAction.description !== finalDescription;
           return prev.map((m) =>
             m.id === lastAssistant.id
               ? {
                   ...m,
                   toolActions: m.toolActions?.map((a) =>
                     a.id === runningAction.id
-                      ? { ...a, status: "completed" as const, description: keepExistingDesc ? a.description : finalDescription, filePath: filePath ?? a.filePath }
-                      : a
+                      ? {
+                          ...a,
+                          status:
+                            a.status === "failed"
+                              ? "failed"
+                              : status === "unknown" && a.status === "completed"
+                                ? "completed"
+                                : status,
+                          description: keepExistingDesc
+                            ? a.description
+                            : finalDescription,
+                          filePath: filePath ?? a.filePath,
+                        }
+                      : a,
                   ),
                 }
               : m,
@@ -3874,12 +4926,13 @@ function EditorPageInner() {
         // No running card found — add a new completed card (fallback)
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          callId,
           toolName,
           description: finalDescription,
           isExpanded: false,
           isBookmarked: false,
           filePath,
-          status: "completed",
+          status,
         };
         return prev.map((m) =>
           m.id === lastAssistant.id
@@ -3902,7 +4955,9 @@ function EditorPageInner() {
         "patch",
       ];
       const isFileOp = fileTools.some(
-        (t) => toolName.toLowerCase().includes(t) || t.includes(toolName.toLowerCase()),
+        (t) =>
+          toolName.toLowerCase().includes(t) ||
+          t.includes(toolName.toLowerCase()),
       );
 
       if (isFileOp || !toolName) {
@@ -3928,11 +4983,18 @@ function EditorPageInner() {
             try {
               // Use postMessage to trigger reload via injected doable-refresh listener
               // This works cross-origin (Cloudflare tunnel) without a full src reset
-              iframeRef.current.contentWindow?.postMessage({ type: "doable-refresh" }, "*");
+              iframeRef.current.contentWindow?.postMessage(
+                { type: "doable-refresh" },
+                "*",
+              );
             } catch {
               // Final fallback: reset src with cache-bust
               if (previewUrl) {
-                iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+                iframeRef.current.src =
+                  previewUrl +
+                  (previewUrl.includes("?") ? "&" : "?") +
+                  "t=" +
+                  Date.now();
               }
             }
           }
@@ -3944,14 +5006,24 @@ function EditorPageInner() {
 
   // ─── Send message to real API ──────────────────────────────
   const sendMessage = useCallback(
-    (text: string, msgAttachments?: Attachment[], modeOverride?: ChatMode, displayOverride?: string) => {
+    (
+      text: string,
+      msgAttachments?: Attachment[],
+      modeOverride?: ChatMode,
+      displayOverride?: string,
+    ) => {
       const trimmed = text.trim();
       if (!trimmed || isStreaming) {
-        if (isStreaming) console.log(`[Chat][Trace] sendMessage blocked — isStreaming=true (${trimmed.slice(0, 50)}…)`);
+        if (isStreaming)
+          console.log(
+            `[Chat][Trace] sendMessage blocked — isStreaming=true (${trimmed.slice(0, 50)}…)`,
+          );
         return;
       }
       const isBuildDeckTurn = trimmed.trimStart().startsWith("BUILD_DECK");
-      console.log(`[Chat][Trace] sendMessage start (${isBuildDeckTurn ? "BUILD_DECK" : "user"}, ${trimmed.length} chars)`);
+      console.log(
+        `[Chat][Trace] sendMessage start (${isBuildDeckTurn ? "BUILD_DECK" : "user"}, ${trimmed.length} chars)`,
+      );
 
       // Add user message (the visible bubble may use a shorter label than
       // what's sent to the LLM, e.g. for MCP auto-continue where the full
@@ -3962,7 +5034,18 @@ function EditorPageInner() {
         content: (displayOverride ?? trimmed).trim(),
         timestamp: nowTimestamp(),
         ...(isBuildDeckTurn ? { hidden: true } : {}),
-        ...(msgAttachments?.length ? { attachments: msgAttachments.map((a) => ({ type: a.mimeType || (a as any).type || "application/octet-stream", data: a.data, name: a.name, preview: a.preview, fileType: a.type })) } : {}),
+        ...(msgAttachments?.length
+          ? {
+              attachments: msgAttachments.map((a) => ({
+                type:
+                  a.mimeType || (a as any).type || "application/octet-stream",
+                data: a.data,
+                name: a.name,
+                preview: a.preview,
+                fileType: a.type,
+              })),
+            }
+          : {}),
       };
 
       // Add placeholder assistant message for streaming
@@ -3984,7 +5067,11 @@ function EditorPageInner() {
       });
       setInputValue("");
       setIsStreaming(true);
-      setLiveStatus(isBuildDeckTurn ? "Designing your presentation slides…" : "Understanding your request...");
+      setLiveStatus(
+        isBuildDeckTurn
+          ? "Designing your presentation slides…"
+          : "Understanding your request...",
+      );
 
       // Abort any previous stream
       abortRef.current?.abort();
@@ -3993,7 +5080,9 @@ function EditorPageInner() {
       localStreamActiveRef.current = true;
 
       // Use explicit mode override if provided, otherwise detect from prefix or state
-      const effectiveMode: ChatMode = modeOverride ?? (trimmed.startsWith("[Visual Edit]") ? "visual-edit" : chatMode);
+      const effectiveMode: ChatMode =
+        modeOverride ??
+        (trimmed.startsWith("[Visual Edit]") ? "visual-edit" : chatMode);
 
       streamChat(
         resolvedProjectId,
@@ -4018,10 +5107,15 @@ function EditorPageInner() {
                     // If recovering from a deferred error, clear error state and start fresh
                     if (m.isError) {
                       setIsStreaming(true);
-                      return { ...m, content: buffered, isStreaming: true, isError: false };
+                      return {
+                        ...m,
+                        content: buffered,
+                        isStreaming: true,
+                        isError: false,
+                      };
                     }
                     return { ...m, content: m.content + buffered };
-                  })
+                  }),
                 );
               }
             });
@@ -4029,7 +5123,9 @@ function EditorPageInner() {
         },
         // onDone
         () => {
-          console.log(`[Chat][Trace] onDone fired (${isBuildDeckTurn ? "BUILD_DECK" : "user"} turn, assistantId=${assistantId})`);
+          console.log(
+            `[Chat][Trace] onDone fired (${isBuildDeckTurn ? "BUILD_DECK" : "user"} turn, assistantId=${assistantId})`,
+          );
           // Flush any remaining buffered chunks before marking done
           if (rafIdRef.current !== null) {
             cancelAnimationFrame(rafIdRef.current);
@@ -4042,8 +5138,8 @@ function EditorPageInner() {
               prev.map((m) =>
                 m.id === assistantId
                   ? { ...m, content: m.content + remaining }
-                  : m
-              )
+                  : m,
+              ),
             );
           }
           setMessages((prev) =>
@@ -4054,11 +5150,13 @@ function EditorPageInner() {
                     isStreaming: false,
                     // Mark any remaining "running" tool actions as completed
                     toolActions: m.toolActions?.map((a) =>
-                      a.status === "running" ? { ...a, status: "completed" as const } : a
+                      a.status === "running"
+                        ? { ...a, status: "unknown" as const }
+                        : a,
                     ),
                   }
-                : m
-            )
+                : m,
+            ),
           );
           setIsStreaming(false);
           setLiveStatus("");
@@ -4085,8 +5183,16 @@ function EditorPageInner() {
           }
           finalReloadTimer.current = setTimeout(() => {
             finalReloadTimer.current = null;
-            if (iframeRef.current && previewUrl && !/\/artifacts\//.test(iframeRef.current.src ?? "")) {
-              iframeRef.current.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+            if (
+              iframeRef.current &&
+              previewUrl &&
+              !/\/artifacts\//.test(iframeRef.current.src ?? "")
+            ) {
+              iframeRef.current.src =
+                previewUrl +
+                (previewUrl.includes("?") ? "&" : "?") +
+                "t=" +
+                Date.now();
             }
           }, 1500);
 
@@ -4102,36 +5208,51 @@ function EditorPageInner() {
             // BUILD_DECK follow-up. This is Turn 1 (create_presentation)
             // only — the BUILD_DECK turn itself also returns an MCP card
             // (the final deck viewer) but should NOT re-trigger.
-            const hasBuildCard = !isBuildDeckTurn && lastAssistant?.mcpResources &&
+            const hasBuildCard =
+              !isBuildDeckTurn &&
+              lastAssistant?.mcpResources &&
               Object.values(lastAssistant.mcpResources).some(
-                (r) => r && typeof r === "object" && "html" in r && (r as Record<string, unknown>).html,
+                (r) =>
+                  r &&
+                  typeof r === "object" &&
+                  "html" in r &&
+                  (r as Record<string, unknown>).html,
               );
             if (hasBuildCard) {
-              console.log("[Chat] Skipping suggestions — MCP build card will auto-fire BUILD_DECK");
+              console.log(
+                "[Chat] Skipping suggestions — MCP build card will auto-fire BUILD_DECK",
+              );
               setLiveStatus("Preparing to build your presentation…");
               return prev;
             }
             setAiSuggestions(FALLBACK_SUGGESTIONS);
-            const assistantHasOutput = lastAssistant?.content || lastAssistant?.thinkingContent;
-            if (
-              assistantHasOutput &&
-              suggestedForRef.current !== assistantId
-            ) {
+            const assistantHasOutput =
+              lastAssistant?.content || lastAssistant?.thinkingContent;
+            if (assistantHasOutput && suggestedForRef.current !== assistantId) {
               suggestedForRef.current = assistantId;
               // For BUILD_DECK turns, use the original user prompt from
               // message history instead of the BUILD_DECK text (which is
               // a 5000+ char instruction blob, not a user query).
               const suggestionPrompt = isBuildDeckTurn
-                ? (prev.filter((m) => m.role === "user" && !m.content.startsWith("BUILD_DECK")).pop()?.content ?? "")
+                ? (prev
+                    .filter(
+                      (m) =>
+                        m.role === "user" &&
+                        !m.content.startsWith("BUILD_DECK"),
+                    )
+                    .pop()?.content ?? "")
                 : trimmed;
               if (!suggestionPrompt) {
-                console.log("[Chat] Skipping suggestions — no original user prompt found for BUILD_DECK turn");
+                console.log(
+                  "[Chat] Skipping suggestions — no original user prompt found for BUILD_DECK turn",
+                );
                 return prev;
               }
               // Use content for suggestions, falling back to a summary if
               // content is empty (e.g. models that output untagged reasoning
               // where all post-tool text stays classified as thinking).
-              const suggestionContext = lastAssistant.content || "AI used tools to complete the task.";
+              const suggestionContext =
+                lastAssistant.content || "AI used tools to complete the task.";
               fetchAISuggestions(
                 resolvedProjectId,
                 suggestionPrompt,
@@ -4141,8 +5262,8 @@ function EditorPageInner() {
                 if (s.length > 0) {
                   setMessages((prev2) =>
                     prev2.map((m) =>
-                      m.id === assistantId ? { ...m, suggestions: s } : m
-                    )
+                      m.id === assistantId ? { ...m, suggestions: s } : m,
+                    ),
                   );
                 }
               });
@@ -4167,8 +5288,8 @@ function EditorPageInner() {
                     isStreaming: false,
                     isError: true,
                   }
-                : m
-            )
+                : m,
+            ),
           );
           setIsStreaming(false);
           setLiveStatus("");
@@ -4187,9 +5308,12 @@ function EditorPageInner() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
-                ? { ...m, thinkingContent: (m.thinkingContent || "") + thinkingText }
-                : m
-            )
+                ? {
+                    ...m,
+                    thinkingContent: (m.thinkingContent || "") + thinkingText,
+                  }
+                : m,
+            ),
           );
           // If it already looks like a friendly message (e.g. from friendlyMessage), use directly
           if (thinkingText.length < 60 && !thinkingText.includes("\n")) {
@@ -4208,7 +5332,11 @@ function EditorPageInner() {
             setLiveStatus(status);
           }
         },
-        msgAttachments?.map((a) => ({ type: a.mimeType || (a as any).type || "application/octet-stream", data: a.data, name: a.name })),
+        msgAttachments?.map((a) => ({
+          type: a.mimeType || (a as any).type || "application/octet-stream",
+          data: a.data,
+          name: a.name,
+        })),
         selectedModelId || undefined,
         selectedProviderId,
         selectedCopilotAccountId,
@@ -4218,15 +5346,16 @@ function EditorPageInner() {
           setPlanPhase("clarifying");
         },
         (plan) => {
-          setActivePlan(plan);
-          setPlanPhase("reviewing");
+          receivePlanSnapshot(plan);
         },
         (stepId, status) => {
-          setActivePlan(prev => {
+          setActivePlan((prev) => {
             if (!prev) return prev;
             return {
               ...prev,
-              steps: prev.steps.map(s => s.id === stepId ? { ...s, status: status as any } : s),
+              steps: prev.steps.map((s) =>
+                s.id === stepId ? { ...s, status: status as any } : s,
+              ),
             };
           });
         },
@@ -4239,9 +5368,15 @@ function EditorPageInner() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
-                ? { ...m, mcpResources: { ...(m.mcpResources ?? {}), [resource.toolCallId]: resource } }
-                : m
-            )
+                ? {
+                    ...m,
+                    mcpResources: {
+                      ...(m.mcpResources ?? {}),
+                      [resource.toolCallId]: resource,
+                    },
+                  }
+                : m,
+            ),
           );
         },
         // onArtifactReady — small dedicated download notification
@@ -4252,7 +5387,7 @@ function EditorPageInner() {
               const existing = m.artifacts ?? [];
               if (existing.some((a) => a.url === artifact.url)) return m;
               return { ...m, artifacts: [...existing, artifact] };
-            })
+            }),
           );
           // HTML decks are persisted by the API to the project's index.html
           // so the live preview will refresh to show them via the standard
@@ -4265,22 +5400,25 @@ function EditorPageInner() {
         // as thinking but should be displayed as content (final response after
         // last tool call, or safety valve overflow).
         (reclassifiedText: string) => {
-          console.log(`[Chat][Trace] thinking_to_text: ${reclassifiedText.length} chars from thinking→content`);
+          console.log(
+            `[Chat][Trace] thinking_to_text: ${reclassifiedText.length} chars from thinking→content`,
+          );
           setMessages((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
               // Remove from thinkingContent, append to content
               const tc = m.thinkingContent || "";
               const idx = tc.lastIndexOf(reclassifiedText);
-              const newThinking = idx >= 0
-                ? tc.slice(0, idx) + tc.slice(idx + reclassifiedText.length)
-                : tc;
+              const newThinking =
+                idx >= 0
+                  ? tc.slice(0, idx) + tc.slice(idx + reclassifiedText.length)
+                  : tc;
               return {
                 ...m,
                 content: m.content + reclassifiedText,
                 thinkingContent: newThinking,
               };
-            })
+            }),
           );
         },
         // onUserInputRequest — blocking "ask the user" prompt from a paused tool
@@ -4294,7 +5432,20 @@ function EditorPageInner() {
         },
       );
     },
-    [isStreaming, resolvedProjectId, chatMode, handleToolCompleted, handleToolStarted, loadFileTree, selectedFile, loadFileContent, previewUrl, selectedModelId, selectedProviderId, selectedCopilotAccountId]
+    [
+      isStreaming,
+      resolvedProjectId,
+      chatMode,
+      handleToolCompleted,
+      handleToolStarted,
+      loadFileTree,
+      selectedFile,
+      loadFileContent,
+      previewUrl,
+      selectedModelId,
+      selectedProviderId,
+      selectedCopilotAccountId,
+    ],
   );
 
   // ─── MCP-Apps note ────────────────────────────────────────
@@ -4305,17 +5456,29 @@ function EditorPageInner() {
 
   // Send message handler (from input)
   const handleSend = useCallback(() => {
-    const text = inputValue.trim() || (fileAttachments.attachments.length > 0 ? "See attached file(s)" : "");
+    const text =
+      inputValue.trim() ||
+      (fileAttachments.attachments.length > 0 ? "See attached file(s)" : "");
     if (!text) return;
-    sendMessage(text, fileAttachments.attachments.length > 0 ? fileAttachments.attachments : undefined);
+    sendMessage(
+      text,
+      fileAttachments.attachments.length > 0
+        ? fileAttachments.attachments
+        : undefined,
+    );
     fileAttachments.clearAll();
   }, [inputValue, sendMessage, fileAttachments]);
 
   // ─── Visual Edit Hook ─────────────────────────────────────
   const isDesignMode = activeTab === "design";
-  const visualEdit = useVisualEdit({ iframeRef, projectId: resolvedProjectId, onSendMessage: sendMessage, onSaveComplete: () => {
-    window.dispatchEvent(new CustomEvent("doable:preview-refresh"));
-  }});
+  const visualEdit = useVisualEdit({
+    iframeRef,
+    projectId: resolvedProjectId,
+    onSendMessage: sendMessage,
+    onSaveComplete: () => {
+      window.dispatchEvent(new CustomEvent("doable:preview-refresh"));
+    },
+  });
 
   // Auto-activate visual edit when entering design mode
   const prevActiveTabRef = useRef(activeTab);
@@ -4327,7 +5490,11 @@ function EditorPageInner() {
       visualEdit.deactivateVisualEdit();
     }
     prevActiveTabRef.current = activeTab;
-  }, [activeTab, visualEdit.activateVisualEdit, visualEdit.deactivateVisualEdit]);
+  }, [
+    activeTab,
+    visualEdit.activateVisualEdit,
+    visualEdit.deactivateVisualEdit,
+  ]);
 
   // Get iframe rect for floating toolbar positioning
   const [iframeRect, setIframeRect] = useState<DOMRect | null>(null);
@@ -4372,9 +5539,13 @@ function EditorPageInner() {
     setMessages((prev) =>
       prev.map((m) =>
         m.isStreaming
-          ? { ...m, isStreaming: false, content: m.content || "(Stopped by user)" }
-          : m
-      )
+          ? {
+              ...m,
+              isStreaming: false,
+              content: m.content || "(Stopped by user)",
+            }
+          : m,
+      ),
     );
     setIsStreaming(false);
     setLiveStatus("");
@@ -4388,26 +5559,31 @@ function EditorPageInner() {
       prev.map((m) =>
         m.id === msgId
           ? { ...m, feedbackGiven: m.feedbackGiven === type ? null : type }
-          : m
-      )
+          : m,
+      ),
     );
   }, []);
 
   // Toggle bookmark on a tool action
-  const handleToggleBookmark = useCallback((msgId: string, actionId: string) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === msgId
-          ? {
-              ...m,
-              toolActions: m.toolActions?.map((a) =>
-                a.id === actionId ? { ...a, isBookmarked: !a.isBookmarked } : a
-              ),
-            }
-          : m
-      )
-    );
-  }, []);
+  const handleToggleBookmark = useCallback(
+    (msgId: string, actionId: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId
+            ? {
+                ...m,
+                toolActions: m.toolActions?.map((a) =>
+                  a.id === actionId
+                    ? { ...a, isBookmarked: !a.isBookmarked }
+                    : a,
+                ),
+              }
+            : m,
+        ),
+      );
+    },
+    [],
+  );
 
   // Toggle task card collapse
   const toggleTaskCardCollapse = useCallback((msgId: string) => {
@@ -4439,7 +5615,8 @@ function EditorPageInner() {
       }
     };
     document.addEventListener("click", handler, { capture: true });
-    return () => document.removeEventListener("click", handler, { capture: true });
+    return () =>
+      document.removeEventListener("click", handler, { capture: true });
   }, [moreMenuMsgId]);
 
   // Toggle folder
@@ -4523,15 +5700,20 @@ function EditorPageInner() {
           return;
         }
         if (elapsed < 5) setScaffoldProgressMsg("Creating project files…");
-        else if (elapsed < 15) setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
-        else if (elapsed < 40) setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
-        else if (elapsed < 90) setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
+        else if (elapsed < 15)
+          setScaffoldProgressMsg(`Downloading packages… (${elapsed}s)`);
+        else if (elapsed < 40)
+          setScaffoldProgressMsg(`Installing dependencies… (${elapsed}s)`);
+        else if (elapsed < 90)
+          setScaffoldProgressMsg(`Linking packages… (${elapsed}s)`);
         else setScaffoldProgressMsg(`Almost there… (${elapsed}s)`);
       }, 2000);
       try {
         const scaffoldUrl = await scaffoldProject(resolvedProjectId);
         phase = "preview-boot";
-        setScaffoldProgressMsg(`Loading preview… (${Math.round((Date.now() - startTime) / 1000)}s)`);
+        setScaffoldProgressMsg(
+          `Loading preview… (${Math.round((Date.now() - startTime) / 1000)}s)`,
+        );
 
         if (scaffoldUrl) {
           clearInterval(ticker);
@@ -4562,23 +5744,27 @@ function EditorPageInner() {
         }
       } catch (err: unknown) {
         clearInterval(ticker);
-        const msg = err instanceof Error ? err.message : "Failed to scaffold project";
+        const msg =
+          err instanceof Error ? err.message : ui("Failed to scaffold project");
         setScaffoldError(msg);
         setScaffoldStatus("error");
       }
     };
     init();
-  }, [resolvedProjectId]);
+  }, [ui, resolvedProjectId]);
 
   // ─── Toolbar action handlers ────────────────────────────────
 
   const handleDownloadZip = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/projects/${resolvedProjectId}/download`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
-      if (!res.ok) throw new Error("Failed to download project");
+      const res = await fetch(
+        `${API_URL}/projects/${resolvedProjectId}/download`,
+        {
+          method: "POST",
+          headers: authHeaders(),
+        },
+      );
+      if (!res.ok) throw new Error(ui("Failed to download project"));
       const blob = await res.blob();
 
       const url = URL.createObjectURL(blob);
@@ -4597,7 +5783,7 @@ function EditorPageInner() {
     } catch (err) {
       console.error("Download failed:", err);
     }
-  }, [resolvedProjectId, projectName]);
+  }, [ui, resolvedProjectId, projectName]);
 
   // Duplicate project
   const handleDuplicateProject = useCallback(async () => {
@@ -4679,15 +5865,20 @@ function EditorPageInner() {
     if (!ok) return;
     setUnpublishing(true);
     try {
-      const res = await fetch(`${API_URL}/deploy/${resolvedProjectId}/publish`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders(),
+      const res = await fetch(
+        `${API_URL}/deploy/${resolvedProjectId}/publish`,
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+          },
         },
-      });
+      );
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({ error: "Unpublish failed" })) as { error?: string };
+        const errJson = (await res
+          .json()
+          .catch(() => ({ error: "Unpublish failed" }))) as { error?: string };
         setPublishError(errJson.error ?? "Unpublish failed");
         setPublishStatus("error");
         return;
@@ -4711,9 +5902,10 @@ function EditorPageInner() {
     setPublishedUrl(null);
 
     try {
-      const endpoint = publishEnv === "production"
-        ? `${API_URL}/deploy/${resolvedProjectId}/publish`
-        : `${API_URL}/deploy/${resolvedProjectId}/publish/preview`;
+      const endpoint =
+        publishEnv === "production"
+          ? `${API_URL}/deploy/${resolvedProjectId}/publish`
+          : `${API_URL}/deploy/${resolvedProjectId}/publish/preview`;
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -4725,18 +5917,27 @@ function EditorPageInner() {
       });
 
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({ error: "Publish failed" })) as {
+        const errJson = (await res
+          .json()
+          .catch(() => ({ error: "Publish failed" }))) as {
           error?: string;
           data?: { buildLog?: string; errorMessage?: string };
         };
-        setPublishError(errJson.data?.errorMessage ?? errJson.error ?? "Publish failed");
+        setPublishError(
+          errJson.data?.errorMessage ?? errJson.error ?? "Publish failed",
+        );
         setPublishBuildLog(errJson.data?.buildLog ?? null);
         setPublishStatus("error");
         return;
       }
 
       const json = (await res.json()) as {
-        data: { deploymentId: string; url: string; status: string; durationMs: number };
+        data: {
+          deploymentId: string;
+          url: string;
+          status: string;
+          durationMs: number;
+        };
       };
       setPublishedUrl(json.data.url);
       setPublishStatus("success");
@@ -4749,9 +5950,15 @@ function EditorPageInner() {
   // Fullscreen toggle
   const handleToggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+      document.documentElement
+        .requestFullscreen?.()
+        .then(() => setIsFullscreen(true))
+        .catch(() => {});
     } else {
-      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+      document
+        .exitFullscreen?.()
+        .then(() => setIsFullscreen(false))
+        .catch(() => {});
     }
   }, []);
 
@@ -4796,7 +6003,12 @@ function EditorPageInner() {
       // Escape — close any open dialog
       if (e.key === "Escape") {
         if (shareDialogOpen) setShareDialogOpen(false);
-        if (publishModalOpen && publishStatus !== "building" && publishStatus !== "deploying") setPublishModalOpen(false);
+        if (
+          publishModalOpen &&
+          publishStatus !== "building" &&
+          publishStatus !== "deploying"
+        )
+          setPublishModalOpen(false);
         if (deleteConfirmOpen && !isDeleting) setDeleteConfirmOpen(false);
         if (githubDialogOpen) setGithubDialogOpen(false);
         if (shortcutsDialogOpen) setShortcutsDialogOpen(false);
@@ -4804,12 +6016,28 @@ function EditorPageInner() {
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [handleToggleFullscreen, shareDialogOpen, publishModalOpen, publishStatus, deleteConfirmOpen, isDeleting, githubDialogOpen, shortcutsDialogOpen]);
+  }, [
+    handleToggleFullscreen,
+    shareDialogOpen,
+    publishModalOpen,
+    publishStatus,
+    deleteConfirmOpen,
+    isDeleting,
+    githubDialogOpen,
+    shortcutsDialogOpen,
+  ]);
 
   // Determine what panels to show based on active tab
-  const showChat = showSidebar && (activeTab === "chat" || activeTab === "preview" || isPanelView || isDesignMode);
+  const showChat =
+    showSidebar &&
+    (activeTab === "chat" ||
+      activeTab === "preview" ||
+      isPanelView ||
+      isDesignMode);
   const showCode = activeTab === "code";
-  const showPreview = ((activeTab === "preview" || activeTab === "chat") && !isPanelView) || isDesignMode;
+  const showPreview =
+    ((activeTab === "preview" || activeTab === "chat") && !isPanelView) ||
+    isDesignMode;
 
   // ─── Scaffold loading overlay ─────────────────────────────
   const renderScaffoldOverlay = () => {
@@ -4818,10 +6046,14 @@ function EditorPageInner() {
     if (scaffoldStatus === "error") {
       const rawErr = scaffoldError ?? "";
       const cleanErr = rawErr.replace(/\x1b\[[0-9;]*m/g, "");
-      const exitMatch = cleanErr.match(/exit(?:ed)?\s+(?:with\s+code\s+)?(-?\d+)/i);
+      const exitMatch = cleanErr.match(
+        /exit(?:ed)?\s+(?:with\s+code\s+)?(-?\d+)/i,
+      );
       const summary = exitMatch
-        ? `Preview failed to start (exit code ${exitMatch[1]}).`
-        : "Preview failed to start.";
+        ? ui("Preview failed to start (exit code {code}).", {
+            code: exitMatch[1],
+          })
+        : ui("Preview failed to start.");
       const hasLogs = cleanErr.trim().length > 0;
       const copyLogs = () => {
         if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -4834,7 +6066,8 @@ function EditorPageInner() {
             <AlertCircle className="h-7 w-7 text-red-400" />
           </div>
           <h3 className="text-sm font-medium text-red-300 mb-2">
-            Failed to start project
+            {" "}
+            {ui("Failed to start project")}{" "}
           </h3>
           <p className="text-[13px] text-muted-foreground max-w-sm mb-4">
             {summary}
@@ -4842,7 +6075,8 @@ function EditorPageInner() {
           {hasLogs && (
             <details className="mb-4 w-full max-w-xl text-left">
               <summary className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground select-none">
-                View install logs
+                {" "}
+                {ui("View install logs")}{" "}
               </summary>
               <div className="mt-2 rounded-lg border border-border bg-muted/40">
                 <div className="flex items-center justify-end border-b border-border px-2 py-1">
@@ -4851,8 +6085,7 @@ function EditorPageInner() {
                     onClick={copyLogs}
                     className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                   >
-                    <Copy className="h-3 w-3" />
-                    Copy logs
+                    <Copy className="h-3 w-3" /> {ui("Copy logs")}{" "}
                   </button>
                 </div>
                 <pre className="font-mono text-xs overflow-auto max-h-[40vh] p-3 whitespace-pre-wrap break-all">
@@ -4865,8 +6098,7 @@ function EditorPageInner() {
             onClick={retryScaffold}
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
           >
-            <RotateCcw className="h-4 w-4" />
-            Retry
+            <RotateCcw className="h-4 w-4" /> {ui("Retry")}{" "}
           </button>
         </div>
       );
@@ -4880,9 +6112,10 @@ function EditorPageInner() {
           ? "Preparing live preview..."
           : "Getting things ready...";
 
-    const subtitleMsg = liveStatus
-      || scaffoldProgressMsg
-      || (scaffoldStatus === "scaffolding"
+    const subtitleMsg =
+      liveStatus ||
+      scaffoldProgressMsg ||
+      (scaffoldStatus === "scaffolding"
         ? "Installing dependencies..."
         : "Starting the live preview so you can see changes instantly.");
 
@@ -4892,9 +6125,11 @@ function EditorPageInner() {
           <div className="h-10 w-10 rounded-full border-2 border-border border-t-brand-700 dark:border-t-brand-400 animate-spin" />
           <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-700 dark:text-brand-400" />
         </div>
-        <h3 className="text-sm font-medium text-foreground mb-1.5">{statusMsg}</h3>
+        <h3 className="text-sm font-medium text-foreground mb-1.5">
+          {ui(statusMsg)}
+        </h3>
         <p className="text-[13px] text-muted-foreground max-w-[280px] transition-all">
-          {subtitleMsg}
+          {translateProgress(subtitleMsg, ui)}
         </p>
       </div>
     );
@@ -4903,208 +6138,289 @@ function EditorPageInner() {
   // ─── Collaboration AI sync — show remote users' AI messages ──
   const remoteStreamIdsRef = useRef<Record<string, string>>({});
 
-  const handleRemoteUserMessage = useCallback((data: { messageId: string; userId: string; displayName: string; content: string }) => {
-    // Don't show our own messages (we already added them locally)
-    if (data.userId === authUser?.id) return;
+  const handleRemoteUserMessage = useCallback(
+    (data: {
+      messageId: string;
+      userId: string;
+      displayName: string;
+      content: string;
+    }) => {
+      // Don't show our own messages (we already added them locally)
+      if (data.userId === authUser?.id) return;
 
-    // Deterministic color from userId
-    const colors = ["#E57373","#F06292","#BA68C8","#9575CD","#7986CB","#64B5F6","#4FC3F7","#4DD0E1","#4DB6AC","#81C784","#AED581","#FFD54F","#FFB74D","#FF8A65","#A1887F","#90A4AE"];
-    let hash = 0;
-    for (let i = 0; i < data.userId.length; i++) hash = (hash * 31 + data.userId.charCodeAt(i)) | 0;
-    const color = colors[Math.abs(hash) % colors.length] ?? "#64B5F6";
+      // Deterministic color from userId
+      const colors = [
+        "#E57373",
+        "#F06292",
+        "#BA68C8",
+        "#9575CD",
+        "#7986CB",
+        "#64B5F6",
+        "#4FC3F7",
+        "#4DD0E1",
+        "#4DB6AC",
+        "#81C784",
+        "#AED581",
+        "#FFD54F",
+        "#FFB74D",
+        "#FF8A65",
+        "#A1887F",
+        "#90A4AE",
+      ];
+      let hash = 0;
+      for (let i = 0; i < data.userId.length; i++)
+        hash = (hash * 31 + data.userId.charCodeAt(i)) | 0;
+      const color = colors[Math.abs(hash) % colors.length] ?? "#64B5F6";
 
-    const userMsgId = `remote_user_${data.messageId}`;
-    const aiMsgId = `remote_ai_${data.messageId}`;
-    remoteStreamIdsRef.current[data.messageId] = aiMsgId;
-
-    setMessages((prev) => {
-      const userMsg: ChatMsg = {
-        id: userMsgId,
-        role: "user" as const,
-        content: data.content,
-        timestamp: nowTimestamp(),
-        senderInfo: { userId: data.userId, displayName: data.displayName, color, isRemote: true },
-      };
-      // If the assistant message was already auto-created by an early stream-chunk
-      // or tool-event, just insert the user message before it instead of duplicating
-      const existingIdx = prev.findIndex((m) => m.id === aiMsgId);
-      if (existingIdx !== -1) {
-        const copy = [...prev];
-        copy.splice(existingIdx, 0, userMsg);
-        return copy;
-      }
-      return [...prev, userMsg, {
-        id: aiMsgId,
-        role: "assistant" as const,
-        content: "",
-        timestamp: nowTimestamp(),
-        isStreaming: true,
-      }];
-    });
-  }, [authUser?.id]);
-
-  const handleRemoteStreamChunk = useCallback((data: { messageId: string; chunk: string; isThinking: boolean }) => {
-    let aiMsgId = remoteStreamIdsRef.current[data.messageId];
-
-    // Auto-create or reuse assistant message
-    if (!aiMsgId) {
-      aiMsgId = `remote_ai_${data.messageId}`;
+      const userMsgId = `remote_user_${data.messageId}`;
+      const aiMsgId = `remote_ai_${data.messageId}`;
       remoteStreamIdsRef.current[data.messageId] = aiMsgId;
+
       setMessages((prev) => {
-        if (prev.some((m) => m.id === aiMsgId)) return prev;
-        // After refresh: reuse the last assistant message from DB history
-        // instead of creating a duplicate (it already has partial content)
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg?.role === "assistant" && !lastMsg.isStreaming) {
-          remoteStreamIdsRef.current[data.messageId] = lastMsg.id;
-          aiMsgId = lastMsg.id;
-          return prev.map((m) =>
-            m.id === lastMsg.id ? { ...m, isStreaming: true } : m
-          );
+        const userMsg: ChatMsg = {
+          id: userMsgId,
+          role: "user" as const,
+          content: data.content,
+          timestamp: nowTimestamp(),
+          senderInfo: {
+            userId: data.userId,
+            displayName: data.displayName,
+            color,
+            isRemote: true,
+          },
+        };
+        // If the assistant message was already auto-created by an early stream-chunk
+        // or tool-event, just insert the user message before it instead of duplicating
+        const existingIdx = prev.findIndex((m) => m.id === aiMsgId);
+        if (existingIdx !== -1) {
+          const copy = [...prev];
+          copy.splice(existingIdx, 0, userMsg);
+          return copy;
         }
-        return [...prev, {
-          id: aiMsgId!,
-          role: "assistant" as const,
-          content: "",
-          timestamp: nowTimestamp(),
-          isStreaming: true,
-        }];
+        return [
+          ...prev,
+          userMsg,
+          {
+            id: aiMsgId,
+            role: "assistant" as const,
+            content: "",
+            timestamp: nowTimestamp(),
+            isStreaming: true,
+          },
+        ];
       });
-    }
+    },
+    [authUser?.id],
+  );
 
-    if (data.isThinking) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, thinkingContent: (m.thinkingContent ?? "") + data.chunk }
-            : m
-        )
-      );
-    } else {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId ? { ...m, content: m.content + data.chunk } : m
-        )
-      );
-    }
-  }, []);
+  const handleRemoteStreamChunk = useCallback(
+    (data: { messageId: string; chunk: string; isThinking: boolean }) => {
+      let aiMsgId = remoteStreamIdsRef.current[data.messageId];
 
-  const handleRemoteStreamEnd = useCallback((data: { messageId: string; finalContent?: string }) => {
-    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
-    if (!aiMsgId) return;
-
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === aiMsgId ? { ...m, isStreaming: false } : m
-      )
-    );
-    setIsStreaming(false);
-    setLiveStatus("");
-    setIsFirstGeneration(false);
-    setHasActiveToolCalls(false);
-    delete remoteStreamIdsRef.current[data.messageId];
-
-    // Refresh file tree + preview when stream ends (files were written)
-    loadFileTree();
-    setTimeout(() => {
-      if (iframeRef.current && previewUrl) {
-        iframeRef.current.src = previewUrl + "?t=" + Date.now();
-      }
-    }, 2000);
-  }, [loadFileTree, previewUrl]);
-
-  const handleRemoteToolEvent = useCallback((data: { messageId: string; event: "tool_call" | "tool_result"; toolName: string; args: Record<string, unknown>; friendlyMessage?: string }) => {
-    let aiMsgId = remoteStreamIdsRef.current[data.messageId];
-
-    // Auto-create assistant message if tool event arrives before ai:message-sent
-    if (!aiMsgId) {
-      aiMsgId = `remote_ai_${data.messageId}`;
-      remoteStreamIdsRef.current[data.messageId] = aiMsgId;
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === aiMsgId)) return prev;
-        return [...prev, {
-          id: aiMsgId!,
-          role: "assistant" as const,
-          content: "",
-          timestamp: nowTimestamp(),
-          isStreaming: true,
-        }];
-      });
-    }
-
-    if (data.event === "tool_call") {
-      // Update live status so the loading bar shows what's happening
-      const description = data.friendlyMessage || data.toolName.replace(/[_-]/g, " ");
-      setLiveStatus(description);
-      const filePath = typeof (data.args?.path ?? data.args?.filePath) === "string"
-        ? (data.args?.path ?? data.args?.filePath) as string : undefined;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? { ...m, toolActions: [...(m.toolActions ?? []), {
-                id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                toolName: data.toolName,
-                description,
-                isExpanded: false,
-                filePath,
-                status: "running" as const,
-              }] }
-            : m
-        )
-      );
-    } else if (data.event === "tool_result") {
-      // Mark the running tool action as completed
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.id !== aiMsgId) return m;
-          const runningAction = m.toolActions?.find(
-            (a) => a.toolName === data.toolName && a.status === "running"
-          );
-          if (runningAction) {
-            return {
-              ...m,
-              toolActions: m.toolActions?.map((a) =>
-                a.id === runningAction.id ? { ...a, status: "completed" as const } : a
-              ),
-            };
+      // Auto-create or reuse assistant message
+      if (!aiMsgId) {
+        aiMsgId = `remote_ai_${data.messageId}`;
+        remoteStreamIdsRef.current[data.messageId] = aiMsgId;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === aiMsgId)) return prev;
+          // After refresh: reuse the last assistant message from DB history
+          // instead of creating a duplicate (it already has partial content)
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg?.role === "assistant" && !lastMsg.isStreaming) {
+            remoteStreamIdsRef.current[data.messageId] = lastMsg.id;
+            aiMsgId = lastMsg.id;
+            return prev.map((m) =>
+              m.id === lastMsg.id ? { ...m, isStreaming: true } : m,
+            );
           }
-          return m;
-        })
+          return [
+            ...prev,
+            {
+              id: aiMsgId!,
+              role: "assistant" as const,
+              content: "",
+              timestamp: nowTimestamp(),
+              isStreaming: true,
+            },
+          ];
+        });
+      }
+
+      if (data.isThinking) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? {
+                  ...m,
+                  thinkingContent: (m.thinkingContent ?? "") + data.chunk,
+                }
+              : m,
+          ),
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId ? { ...m, content: m.content + data.chunk } : m,
+          ),
+        );
+      }
+    },
+    [],
+  );
+
+  const handleRemoteStreamEnd = useCallback(
+    (data: { messageId: string; finalContent?: string }) => {
+      const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+      if (!aiMsgId) return;
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === aiMsgId ? { ...m, isStreaming: false } : m)),
       );
-      // Refresh file tree and debounced preview reload for file-modifying tools
+      setIsStreaming(false);
+      setLiveStatus("");
+      setIsFirstGeneration(false);
+      setHasActiveToolCalls(false);
+      delete remoteStreamIdsRef.current[data.messageId];
+
+      // Refresh file tree + preview when stream ends (files were written)
       loadFileTree();
-      // Debounced preview refresh — only trigger if no refresh in last 3s
-      if (iframeRef.current && previewUrl) {
-        clearTimeout((handleRemoteToolEvent as any)._previewTimer);
-        (handleRemoteToolEvent as any)._previewTimer = setTimeout(() => {
-          if (iframeRef.current && previewUrl) {
-            iframeRef.current.src = previewUrl + "?t=" + Date.now();
-          }
-        }, 3000);
+      setTimeout(() => {
+        if (iframeRef.current && previewUrl) {
+          iframeRef.current.src = previewUrl + "?t=" + Date.now();
+        }
+      }, 2000);
+    },
+    [loadFileTree, previewUrl],
+  );
+
+  const handleRemoteToolEvent = useCallback(
+    (data: {
+      messageId: string;
+      event: "tool_call" | "tool_result";
+      toolName: string;
+      args: Record<string, unknown>;
+      friendlyMessage?: string;
+    }) => {
+      let aiMsgId = remoteStreamIdsRef.current[data.messageId];
+
+      // Auto-create assistant message if tool event arrives before ai:message-sent
+      if (!aiMsgId) {
+        aiMsgId = `remote_ai_${data.messageId}`;
+        remoteStreamIdsRef.current[data.messageId] = aiMsgId;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === aiMsgId)) return prev;
+          return [
+            ...prev,
+            {
+              id: aiMsgId!,
+              role: "assistant" as const,
+              content: "",
+              timestamp: nowTimestamp(),
+              isStreaming: true,
+            },
+          ];
+        });
       }
-    }
-  }, [loadFileTree, previewUrl]);
 
-  const handleRemoteStatus = useCallback((data: { messageId: string; status: string }) => {
-    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
-    if (!aiMsgId) return;
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === aiMsgId ? { ...m, liveStatus: data.status } : m
-      )
-    );
-    setLiveStatus(data.status);
-  }, []);
+      if (data.event === "tool_call") {
+        // Update live status so the loading bar shows what's happening
+        const description =
+          data.friendlyMessage || data.toolName.replace(/[_-]/g, " ");
+        setLiveStatus(description);
+        const filePath =
+          typeof (data.args?.path ?? data.args?.filePath) === "string"
+            ? ((data.args?.path ?? data.args?.filePath) as string)
+            : undefined;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? {
+                  ...m,
+                  toolActions: [
+                    ...(m.toolActions ?? []),
+                    {
+                      id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                      toolName: data.toolName,
+                      description,
+                      isExpanded: false,
+                      filePath,
+                      status: "running" as const,
+                    },
+                  ],
+                }
+              : m,
+          ),
+        );
+      } else if (data.event === "tool_result") {
+        // Mark the running tool action as completed
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== aiMsgId) return m;
+            const runningAction = m.toolActions?.find(
+              (a) => a.toolName === data.toolName && a.status === "running",
+            );
+            if (runningAction) {
+              return {
+                ...m,
+                toolActions: m.toolActions?.map((a) =>
+                  a.id === runningAction.id
+                    ? { ...a, status: "completed" as const }
+                    : a,
+                ),
+              };
+            }
+            return m;
+          }),
+        );
+        // Refresh file tree and debounced preview reload for file-modifying tools
+        loadFileTree();
+        // Debounced preview refresh — only trigger if no refresh in last 3s
+        if (iframeRef.current && previewUrl) {
+          clearTimeout((handleRemoteToolEvent as any)._previewTimer);
+          (handleRemoteToolEvent as any)._previewTimer = setTimeout(() => {
+            if (iframeRef.current && previewUrl) {
+              iframeRef.current.src = previewUrl + "?t=" + Date.now();
+            }
+          }, 3000);
+        }
+      }
+    },
+    [loadFileTree, previewUrl],
+  );
 
-  const handleRemoteError = useCallback((data: { messageId: string; error: string }) => {
-    const aiMsgId = remoteStreamIdsRef.current[data.messageId];
-    if (!aiMsgId) return;
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === aiMsgId ? { ...m, content: `**Error:** ${data.error}`, isStreaming: false, isError: true } : m
-      )
-    );
-  }, []);
+  const handleRemoteStatus = useCallback(
+    (data: { messageId: string; status: string }) => {
+      const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+      if (!aiMsgId) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId ? { ...m, liveStatus: data.status } : m,
+        ),
+      );
+      setLiveStatus(data.status);
+    },
+    [],
+  );
+
+  const handleRemoteError = useCallback(
+    (data: { messageId: string; error: string }) => {
+      const aiMsgId = remoteStreamIdsRef.current[data.messageId];
+      if (!aiMsgId) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId
+            ? {
+                ...m,
+                content: `**Error:** ${data.error}`,
+                isStreaming: false,
+                isError: true,
+              }
+            : m,
+        ),
+      );
+    },
+    [],
+  );
 
   return (
     <CollaborationProvider
@@ -5112,752 +6428,1044 @@ function EditorPageInner() {
       userId={authUser?.id ?? ""}
       displayName={authUser?.displayName ?? ""}
     >
-    <>
-    <CollabAiSync
-      onRemoteUserMessage={handleRemoteUserMessage}
-      onRemoteStreamChunk={handleRemoteStreamChunk}
-      onRemoteStreamEnd={handleRemoteStreamEnd}
-      onRemoteToolEvent={handleRemoteToolEvent}
-      onRemoteStatus={handleRemoteStatus}
-      onRemoteError={handleRemoteError}
-    />
-    <div className="flex h-screen flex-col bg-card text-foreground">
-      {/* ─── Top Bar ──────────────────────────────────────────── */}
-      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border bg-card px-2 md:px-3">
-        {/* Left: Logo + Back arrow + Project name with dropdown */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          {/* Doable logo icon */}
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-brand-100 border border-brand-600 dark:bg-gradient-to-br dark:from-brand-600 dark:to-brand-700 dark:border-transparent shadow-sm shadow-brand-700/20 dark:shadow-brand-900/30 hover:brightness-95 transition-all"
-            title="Back to dashboard"
-          >
-            <span className="text-sm font-bold text-brand-700 dark:text-white self-end mb-0.5">D</span>
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-700 dark:bg-violet-400 self-end mb-1.5 ml-0.5 shrink-0" />
-          </button>
-
-          {/* Editable project name with dropdown chevron + status subtitle */}
-          <div className="hidden sm:flex flex-col min-w-0">
-            {isEditingName ? (
-              <div className="flex items-center gap-1">
-                <input
-                  autoFocus
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      setProjectName(nameInput);
-                      setIsEditingName(false);
-                      apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
-                    }
-                    if (e.key === "Escape") {
-                      setNameInput(projectName);
-                      setIsEditingName(false);
-                    }
-                  }}
-                  onBlur={() => {
-                    setProjectName(nameInput);
-                    setIsEditingName(false);
-                    apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
-                  }}
-                  className="bg-background border border-input rounded px-2 py-0.5 text-sm text-foreground outline-none focus:border-brand-500 w-48"
-                />
-                <button
-                  onClick={() => {
-                    setProjectName(nameInput);
-                    setIsEditingName(false);
-                    apiUpdateProject(resolvedProjectId, { name: nameInput }).catch(() => {});
-                  }}
-                  className="p-1 text-muted-foreground hover:text-foreground"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
+      <>
+        <CollabAiSync
+          onRemoteUserMessage={handleRemoteUserMessage}
+          onRemoteStreamChunk={handleRemoteStreamChunk}
+          onRemoteStreamEnd={handleRemoteStreamEnd}
+          onRemoteToolEvent={handleRemoteToolEvent}
+          onRemoteStatus={handleRemoteStatus}
+          onRemoteError={handleRemoteError}
+        />
+        <div className="flex h-screen flex-col bg-card text-foreground">
+          {/* ─── Top Bar ──────────────────────────────────────────── */}
+          <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border bg-card px-2 md:px-3">
+            {/* Left: Logo + Back arrow + Project name with dropdown */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              {/* Doable logo icon */}
               <button
-                onClick={() => setIsEditingName(true)}
-                className="group flex items-center gap-1 text-sm font-semibold text-foreground hover:text-foreground truncate"
+                onClick={() => router.push("/dashboard")}
+                className="flex h-8 w-10 flex-shrink-0 items-center justify-center rounded-lg hover:bg-brand-500/10 transition-all"
+                title={ui("Back to dashboard")}
               >
-                {projectName}
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <BrandLogo className="h-7 w-9 shrink-0" />
               </button>
-            )}
-            {/* Preview status subtitle */}
-            <span className="text-[11px] text-[#9b9a97] leading-tight truncate flex items-center gap-1.5">
-              {isStreaming && liveStatus ? (
-                <>
-                  <span className="truncate">{liveStatus}{streamIdleSeconds != null ? ` · ${streamIdleSeconds}s` : ""}</span>
-                  <span className="font-mono tabular-nums text-[#9b9a77]/70 text-[10px] flex-shrink-0">{chatElapsedSec}s</span>
-                  {chatElapsedSec >= 60 && (
-                    <span className="italic text-[#9b9a77]/60 text-[10px] flex-shrink-0">Taking longer than usual</span>
-                  )}
-                </>
-              ) : (
-                scaffoldStatus === "ready"
-                  ? "Previewing last saved version"
-                  : scaffoldStatus === "error"
-                    ? "Preview unavailable"
-                    : "Loading Live Preview..."
-              )}
-            </span>
-          </div>
 
-          {/* Scaffold status indicator */}
-          {scaffoldStatus !== "ready" && scaffoldStatus !== "idle" && scaffoldStatus !== "error" && (
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-shrink-0">
-              <Loader2 className="h-3 w-3 animate-spin text-brand-700 dark:text-brand-400" />
-              {scaffoldStatus === "scaffolding" ? "Getting ready..." : "Starting..."}
-            </div>
-          )}
-        </div>
-
-        {/* Center: View toggle icon buttons */}
-        <div className="flex items-center gap-0.5 rounded-xl bg-muted border border-border p-0.5">
-          <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
-          {/* Core toolbar buttons */}
-          {([
-            { key: "history" as ActiveTab, icon: Clock, label: "History", isToggle: false },
-            { key: "chat" as ActiveTab, icon: PanelLeftClose, label: "Toggle sidebar", isToggle: true },
-            { key: "preview" as ActiveTab, icon: Globe, label: "Preview", isToggle: false },
-            { key: "code" as ActiveTab, icon: Code2, label: "Code", isToggle: false },
-          ]).map(({ key, icon: Icon, label, isToggle }, idx) => {
-            const isActive = !isToggle && activeTab === key;
-            return (
-              <button
-                key={`${key}-${idx}`}
-                onClick={() => {
-                  if (isToggle) {
-                    setShowSidebar((v) => !v);
-                  } else {
-                    setActiveTab(key);
-                  }
-                }}
-                className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
-                  isActive
-                    ? "gap-1.5 bg-brand-500/15 text-brand-700 dark:text-brand-400 px-2.5 py-1"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
-                }`}
-                title={label}
-              >
-                <Icon className="h-4 w-4" />
-                {isActive && <span className="text-xs">{label}</span>}
-              </button>
-            );
-          })}
-
-          {/* Pinned items from More menu */}
-          {pinnedItems.map((tabKey) => {
-            const item = MORE_MENU_ITEMS.find((m) => m.key === tabKey);
-            if (!item) return null;
-            const IconComp = item.icon;
-            const isActive = activeTab === tabKey;
-            return (
-              <button
-                key={`pinned-${tabKey}`}
-                onClick={() => setActiveTab(tabKey)}
-                className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
-                  isActive
-                    ? "gap-1.5 bg-brand-500/15 text-brand-700 dark:text-brand-400 px-2.5 py-1"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
-                }`}
-                title={item.label}
-              >
-                <IconComp className="h-4 w-4" />
-                {isActive && <span className="text-xs">{item.label}</span>}
-              </button>
-            );
-          })}
-          </div>
-
-          {/* More menu (triple-dots) */}
-          <div className="relative" ref={moreMenuRef}>
-            <button
-              onClick={() => setShowMoreMenu((v) => !v)}
-              className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md p-1.5 ${
-                showMoreMenu
-                  ? "bg-brand-500/15 text-brand-700 dark:text-brand-400"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-              title="More views"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-
-            {/* Dropdown */}
-            {showMoreMenu && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-border bg-muted shadow-xl shadow-md py-1 z-50">
-                {/* View tabs with pin/unpin */}
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Views</div>
-                {MORE_MENU_ITEMS.map(({ key, icon: MenuIcon, label }) => {
-                  const isActive = activeTab === key;
-                  const isPinned = pinnedItems.includes(key);
-                  return (
-                    <div
-                      key={key}
-                      className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer transition-colors ${
-                        isActive
-                          ? "bg-brand-500/10 text-brand-700 dark:text-brand-400"
-                          : "text-foreground hover:bg-accent"
-                      }`}
+              {/* Editable project name with dropdown chevron + status subtitle */}
+              <div className="hidden sm:flex flex-col min-w-0">
+                {isEditingName ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      autoFocus
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          setProjectName(nameInput);
+                          setIsEditingName(false);
+                          apiUpdateProject(resolvedProjectId, {
+                            name: nameInput,
+                          }).catch(() => {});
+                        }
+                        if (e.key === "Escape") {
+                          setNameInput(projectName);
+                          setIsEditingName(false);
+                        }
+                      }}
+                      onBlur={() => {
+                        setProjectName(nameInput);
+                        setIsEditingName(false);
+                        apiUpdateProject(resolvedProjectId, {
+                          name: nameInput,
+                        }).catch(() => {});
+                      }}
+                      className="bg-background border border-input rounded px-2 py-0.5 text-sm text-foreground outline-none focus:border-brand-500 w-48"
+                    />
+                    <button
+                      onClick={() => {
+                        setProjectName(nameInput);
+                        setIsEditingName(false);
+                        apiUpdateProject(resolvedProjectId, {
+                          name: nameInput,
+                        }).catch(() => {});
+                      }}
+                      className="p-1 text-muted-foreground hover:text-foreground"
                     >
-                      <button
-                        className="flex items-center gap-2.5 flex-1 min-w-0"
-                        onClick={() => {
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setIsEditingName(true)}
+                    className="group flex items-center gap-1 text-sm font-semibold text-foreground hover:text-foreground truncate"
+                  >
+                    {projectName}
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  </button>
+                )}
+                {/* Preview status subtitle */}
+                <span className="text-[11px] text-[#9b9a97] leading-tight truncate flex items-center gap-1.5">
+                  {isStreaming && liveStatus ? (
+                    <>
+                      <span className="truncate">
+                        {translateProgress(liveStatus, ui)}
+                        {streamIdleSeconds != null
+                          ? ` · ${streamIdleSeconds}s`
+                          : ""}
+                      </span>
+                      <span className="font-mono tabular-nums text-[#9b9a77]/70 text-[10px] flex-shrink-0">
+                        {chatElapsedSec}
+                        {ui("s")}
+                      </span>
+                      {chatElapsedSec >= 60 && (
+                        <span className="italic text-[#9b9a77]/60 text-[10px] flex-shrink-0">
+                          {ui("Taking longer than usual")}
+                        </span>
+                      )}
+                    </>
+                  ) : scaffoldStatus === "ready" ? (
+                    ui("Previewing last saved version")
+                  ) : scaffoldStatus === "error" ? (
+                    ui("Preview unavailable")
+                  ) : (
+                    ui("Loading Live Preview...")
+                  )}
+                </span>
+              </div>
+
+              {/* Scaffold status indicator */}
+              {scaffoldStatus !== "ready" &&
+                scaffoldStatus !== "idle" &&
+                scaffoldStatus !== "error" && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-shrink-0">
+                    <Loader2 className="h-3 w-3 animate-spin text-brand-700 dark:text-brand-400" />
+                    {scaffoldStatus === "scaffolding"
+                      ? ui("Getting ready...")
+                      : ui("Starting...")}
+                  </div>
+                )}
+            </div>
+
+            {/* Center: View toggle icon buttons */}
+            <div className="flex items-center gap-0.5 rounded-xl bg-muted border border-border p-0.5">
+              <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
+                {/* Core toolbar buttons */}
+                {[
+                  {
+                    key: "history" as ActiveTab,
+                    icon: Clock,
+                    label: ui("History"),
+                    isToggle: false,
+                  },
+                  {
+                    key: "chat" as ActiveTab,
+                    icon: PanelLeftClose,
+                    label: ui("Toggle sidebar"),
+                    isToggle: true,
+                  },
+                  {
+                    key: "preview" as ActiveTab,
+                    icon: Globe,
+                    label: ui("Preview"),
+                    isToggle: false,
+                  },
+                  {
+                    key: "code" as ActiveTab,
+                    icon: Code2,
+                    label: ui("Code"),
+                    isToggle: false,
+                  },
+                ].map(({ key, icon: Icon, label, isToggle }, idx) => {
+                  const isActive = !isToggle && activeTab === key;
+                  return (
+                    <button
+                      key={`${key}-${idx}`}
+                      onClick={() => {
+                        if (isToggle) {
+                          setShowSidebar((v) => !v);
+                        } else {
                           setActiveTab(key);
-                          setShowMoreMenu(false);
-                        }}
-                      >
-                        <MenuIcon className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">{label}</span>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          togglePin(key);
-                        }}
-                        className={`flex-shrink-0 p-1 rounded transition-colors ${
-                          isPinned
-                            ? "text-[#4D91FF] hover:text-blue-300"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        title={isPinned ? "Unpin from toolbar" : "Pin to toolbar"}
-                      >
-                        {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
+                        }
+                      }}
+                      className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
+                        isActive
+                          ? "gap-1.5 bg-brand-500/15 text-brand-700 dark:text-brand-400 px-2.5 py-1"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
+                      }`}
+                      title={label}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {isActive && <span className="text-xs">{label}</span>}
+                    </button>
                   );
                 })}
-                {/* Separator */}
-                <div className="my-1 border-t border-border" />
-                {/* Project actions */}
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</div>
-                <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-                  onClick={() => { router.push(`/projects/${resolvedProjectId}/settings`); setShowMoreMenu(false); }}
-                >
-                  <Settings className="h-4 w-4 flex-shrink-0" />
-                  <span>Settings</span>
-                </button>
-                <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-                  onClick={() => { handleDownloadZip(); setShowMoreMenu(false); }}
-                >
-                  <Download className="h-4 w-4 flex-shrink-0" />
-                  <span>Download project</span>
-                </button>
-                <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-                  onClick={() => { handleDuplicateProject(); setShowMoreMenu(false); }}
-                >
-                  <CopyPlus className="h-4 w-4 flex-shrink-0" />
-                  <span>{isDuplicating ? "Duplicating..." : "Duplicate project"}</span>
-                </button>
-                <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-                  onClick={() => { handleCopyProjectLink(); setShowMoreMenu(false); }}
-                >
-                  <Link className="h-4 w-4 flex-shrink-0" />
-                  <span>Copy project link</span>
-                </button>
-                <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-                  onClick={() => { setShortcutsDialogOpen(true); setShowMoreMenu(false); }}
-                >
-                  <Keyboard className="h-4 w-4 flex-shrink-0" />
-                  <span>Keyboard shortcuts</span>
-                </button>
-                {/* Separator */}
-                <div className="my-1 border-t border-border" />
-                <button
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-red-950/50 hover:text-red-300 transition-colors"
-                  onClick={() => { setDeleteConfirmOpen(true); setShowMoreMenu(false); }}
-                >
-                  <Trash2 className="h-4 w-4 flex-shrink-0" />
-                  <span>Delete project</span>
-                </button>
+
+                {/* Pinned items from More menu */}
+                {pinnedItems.map((tabKey) => {
+                  const item = i18n_MORE_MENU_ITEMS.find(
+                    (m) => m.key === tabKey,
+                  );
+                  if (!item) return null;
+                  const IconComp = item.icon;
+                  const isActive = activeTab === tabKey;
+                  return (
+                    <button
+                      key={`pinned-${tabKey}`}
+                      onClick={() => setActiveTab(tabKey)}
+                      className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md ${
+                        isActive
+                          ? "gap-1.5 bg-brand-500/15 text-brand-700 dark:text-brand-400 px-2.5 py-1"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent p-1.5"
+                      }`}
+                      title={item.label}
+                    >
+                      <IconComp className="h-4 w-4" />
+                      {isActive && (
+                        <span className="text-xs">{item.label}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Preview controls inline in top bar */}
-        <div className="flex items-center gap-1">
-          {isEditingRoute ? (
-            <form
-              className="flex items-center gap-1 rounded-full bg-muted border border-[#4D91FF] px-2.5 py-1"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const route = routeInputValue.startsWith("/") ? routeInputValue : `/${routeInputValue}`;
-                setPreviewRoute(route);
-                setIsEditingRoute(false);
-                if (iframeRef.current && previewUrl) {
-                  try {
-                    const base = new URL(previewUrl);
-                    base.pathname = route;
-                    iframeRef.current.src = base.toString();
-                  } catch {
-                    // fallback: append route to preview URL origin
-                    iframeRef.current.src = previewUrl.replace(/\/$/, "") + route;
-                  }
-                }
-              }}
-            >
-              <Globe className="h-3 w-3 text-[#4D91FF]" />
-              <input
-                ref={routeInputRef}
-                type="text"
-                value={routeInputValue}
-                onChange={(e) => setRouteInputValue(e.target.value)}
-                onBlur={() => setIsEditingRoute(false)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setRouteInputValue(previewRoute);
-                    setIsEditingRoute(false);
-                  }
-                }}
-                className="bg-transparent text-[11px] text-foreground font-mono outline-none w-24 placeholder:text-muted-foreground"
-                placeholder="/path"
-                autoFocus
-              />
-            </form>
-          ) : (
-            <button
-              onClick={() => {
-                setRouteInputValue(previewRoute);
-                setIsEditingRoute(true);
-                setTimeout(() => routeInputRef.current?.select(), 0);
-              }}
-              className="flex items-center gap-1 rounded-full bg-muted border border-border px-2.5 py-1 hover:border-border transition-colors cursor-text"
-              title="Click to navigate to a route"
-            >
-              <Globe className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[11px] text-muted-foreground font-mono">{previewRoute}</span>
-            </button>
-          )}
-          <div className="flex items-center rounded-full bg-muted border border-border p-0.5">
-            {([
-              { mode: "desktop" as DeviceMode, Icon: Monitor, label: "Desktop" },
-              { mode: "tablet" as DeviceMode, Icon: Tablet, label: "Tablet (768px)" },
-              { mode: "mobile" as DeviceMode, Icon: Smartphone, label: "Mobile (375px)" },
-            ]).map(({ mode, Icon, label }) => (
-              <button
-                key={mode}
-                onClick={() => setDeviceMode(mode)}
-                className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
-                  deviceMode === mode
-                    ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title={label}
-              >
-                <Icon className="h-3 w-3" />
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => {
-              if (iframeRef.current && previewUrl) {
-                iframeRef.current.src = previewUrl;
-              }
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title="Refresh preview"
-            disabled={!previewUrl}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              if (previewUrl) window.open(previewUrl, "_blank");
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title="Open in new tab"
-            disabled={!previewUrl}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={handleToggleFullscreen}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-          >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
-        </div>
+              {/* More menu (triple-dots) */}
+              <div className="relative" ref={moreMenuRef}>
+                <button
+                  onClick={() => setShowMoreMenu((v) => !v)}
+                  className={`flex items-center justify-center text-[13px] font-medium transition-all rounded-md p-1.5 ${
+                    showMoreMenu
+                      ? "bg-brand-500/15 text-brand-700 dark:text-brand-400"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                  title={ui("More views")}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
 
-        {/* Right: Share + GitHub + Upgrade + Publish */}
-        <div className="flex items-center gap-1 md:gap-1.5">
-          {/* Collaboration presence avatars */}
-          <CollabHeaderItems />
-
-          {/* Share: pill with muted bg, h-7 */}
-          <button
-            onClick={() => setShareDialogOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-full bg-muted px-2.5 text-sm text-[#FCFBF8] hover:bg-[#333] transition-colors"
-          >
-            <UserPlus className="h-4 w-4" />
-            <span className="hidden lg:inline">Share</span>
-          </button>
-          {/* GitHub sync button with status */}
-          <GitHubButton
-            status={github.status}
-            pushing={github.pushing}
-            pulling={github.pulling}
-            onPush={async (message, force) => { await github.push(message, force); }}
-            onPull={async () => { await github.pull(); }}
-            onConnect={() => setGithubDialogOpen(true)}
-            onDisconnect={async () => { await github.disconnect(); }}
-            error={github.error}
-            onClearError={() => github.clearError()}
-          />
-          {/* Upgrade */}
-          <button
-            onClick={() => router.push("/billing")}
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-accent border border-border px-2.5 text-sm text-foreground hover:bg-accent hover:text-foreground transition-all"
-          >
-            <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" /><span className="hidden md:inline">Upgrade</span>
-          </button>
-          {/* Deploy */}
-          <button
-            onClick={() => {
-              setPublishStatus(publishedUrl ? "success" : "idle");
-              setPublishError(null);
-              setPublishModalOpen(true);
-            }}
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-3 text-sm font-medium text-white shadow-lg shadow-brand-900/30 hover:brightness-110 transition-all"
-            title="Deploy to a public URL"
-          >
-            <CloudUpload className="h-4 w-4 md:hidden" />
-            <span className="hidden md:inline">Deploy</span>
-          </button>
-        </div>
-      </header>
-
-      {/* ─── Main Content ─────────────────────────────────────── */}
-      <div ref={containerRef} className="flex flex-1 overflow-hidden">
-        {/* ─── Chat Panel ───────────────────────────────────── */}
-        {showChat && (
-          <div
-            className="flex flex-col border-r border-border bg-card"
-            style={{
-              width: (showPreview || isPanelView) ? `${splitPos}%` : "100%",
-              minWidth: "260px",
-            }}
-          >
-            {/* ─── Design Mode: Show DesignPanel ─────────────── */}
-            {isDesignMode ? (
-              <DesignPanel
-                projectId={resolvedProjectId}
-                onClose={handlePanelClose}
-                onSendMessage={sendMessage}
-                mode={visualEdit.mode}
-                selectedElement={visualEdit.selectedElement}
-                onActivate={visualEdit.activateVisualEdit}
-                onDeactivate={visualEdit.deactivateVisualEdit}
-                onSelectParent={visualEdit.selectParent}
-                onDeselectElement={visualEdit.deselectElement}
-                onApplyLiveStyle={visualEdit.applyLiveStyle}
-                onApplyLiveText={visualEdit.applyLiveText}
-                hasPendingChanges={visualEdit.hasPendingChanges}
-                onCommitChanges={() => {
-                  visualEdit.commitChanges();
-                  setActiveTab("chat");
-                }}
-                onDiscardChanges={visualEdit.discardChanges}
-                onDirectSave={visualEdit.directSave}
-                isSaving={visualEdit.isSaving}
-              />
-            ) : (
-            <>
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 pt-4 space-y-4 scrollbar-thin flex flex-col">
-              <div className="flex-1" />
-              {messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center px-6">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600/10 mb-4">
-                    <Sparkles className="h-6 w-6 text-brand-700 dark:text-brand-400" />
-                  </div>
-                  <h3 className="text-sm font-medium text-foreground mb-1">
-                    Start a conversation
-                  </h3>
-                  <p className="text-[13px] text-muted-foreground max-w-[280px]">
-                    Describe what you want to build and Doable AI will generate
-                    the code for you.
-                  </p>
-                  {/* Mode indicator in empty state */}
-                  <div className="mt-4 flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-[12px] text-muted-foreground">
-                    {chatMode === "agent" ? (
-                      <>
-                        <Hammer className="h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />
-                        <span>Work mode — generates code</span>
-                      </>
-                    ) : (
-                      <>
-                        <Target className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                        <span>Strategize mode — creates plans only</span>
-                      </>
-                    )}
-                  </div>
-                  {/* Prompt starter chips in empty state */}
-                  <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-[360px]">
-                    {[
-                      "Build a SaaS landing page",
-                      "Create a kanban task board",
-                      "Make a recipe sharing app",
-                      "Design a portfolio site",
-                    ].map((starter) => (
-                      <button
-                        key={starter}
-                        onClick={() => sendMessage(starter)}
-                        className="rounded-full border border-border bg-secondary px-3.5 py-1.5 text-[13px] text-foreground hover:bg-accent hover:text-foreground hover:border-border transition-all"
-                      >
-                        {starter}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Plan progress tracker during build */}
-              {planPhase === "building" && activePlan && (
-                <div className="px-3 py-2">
-                  <PlanProgress plan={activePlan} />
-                </div>
-              )}
-
-              {messages.map((msg, msgIdx) => {
-                if (msg.hidden) return null;
-                return (
-                <div key={msg.id} className="group">
-                  {msg.role === "user" ? (
-                    msg.senderInfo?.isRemote ? (
-                      /* ── Remote collaborator message: left-aligned with user color ── */
-                      <div className="flex items-start gap-2.5">
-                        <div
-                          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white mt-0.5"
-                          style={{ backgroundColor: msg.senderInfo.color }}
-                        >
-                          {msg.senderInfo.displayName.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="max-w-[85%]">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-medium" style={{ color: msg.senderInfo.color }}>
-                              {msg.senderInfo.displayName}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {msg.timestamp}
-                            </span>
-                          </div>
+                {/* Dropdown */}
+                {showMoreMenu && (
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 rounded-lg border border-border bg-muted shadow-xl shadow-md py-1 z-50">
+                    {/* View tabs with pin/unpin */}
+                    <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {ui("Views")}
+                    </div>
+                    {i18n_MORE_MENU_ITEMS.map(
+                      ({ key, icon: MenuIcon, label }) => {
+                        const isActive = activeTab === key;
+                        const isPinned = pinnedItems.includes(key);
+                        return (
                           <div
-                            className="rounded-2xl rounded-tl-sm bg-secondary px-4 py-2.5 text-[14px] leading-relaxed text-foreground"
-                            style={{ borderLeft: `3px solid ${msg.senderInfo.color}` }}
+                            key={key}
+                            className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer transition-colors ${
+                              isActive
+                                ? "bg-brand-500/10 text-brand-700 dark:text-brand-400"
+                                : "text-foreground hover:bg-accent"
+                            }`}
                           >
-                            {msg.attachments && msg.attachments.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mb-2">
-                                {msg.attachments.map((att, ai) => {
-                                  const isImage = att.type === "image" || att.fileType === "image" || (att.type?.startsWith("image/") && att.data);
-                                  if (isImage && att.data) {
-                                    return <img key={ai} src={att.data} alt={att.name} className="h-20 w-20 rounded-lg object-cover border border-border" />;
-                                  }
-                                  return (
-                                    <span key={ai} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 border border-border px-2.5 py-1.5 text-xs text-muted-foreground">
-                                      <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                      <span className="truncate max-w-[120px]">{att.name}</span>
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {msg.content}
+                            <button
+                              className="flex items-center gap-2.5 flex-1 min-w-0"
+                              onClick={() => {
+                                setActiveTab(key);
+                                setShowMoreMenu(false);
+                              }}
+                            >
+                              <MenuIcon className="h-4 w-4 flex-shrink-0" />
+                              <span className="truncate">{label}</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                togglePin(key);
+                              }}
+                              className={`flex-shrink-0 p-1 rounded transition-colors ${
+                                isPinned
+                                  ? "text-[#4D91FF] hover:text-blue-300"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                              title={
+                                isPinned
+                                  ? ui("Unpin from toolbar")
+                                  : ui("Pin to toolbar")
+                              }
+                            >
+                              {isPinned ? (
+                                <PinOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Pin className="h-3.5 w-3.5" />
+                              )}
+                            </button>
                           </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* ── Own message: right-aligned dark bubble (iMessage style) ── */
-                      <div className="flex justify-end">
-                        <div className="max-w-[85%]">
-                          <div className="flex items-center justify-end gap-2 mb-1">
-                            <span className="text-[10px] text-muted-foreground">
-                              {msg.timestamp}
-                            </span>
-                            <span className="text-xs font-medium text-muted-foreground">
-                              You
-                            </span>
+                        );
+                      },
+                    )}
+                    {/* Separator */}
+                    <div className="my-1 border-t border-border" />
+                    <div className="px-3 py-2">
+                      <LanguageSwitcher id="editor-language" />
+                    </div>
+                    <div className="my-1 border-t border-border" />
+                    {/* Project actions */}
+                    <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {ui("Project")}
+                    </div>
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                      onClick={() => {
+                        router.push(`/projects/${resolvedProjectId}/settings`);
+                        setShowMoreMenu(false);
+                      }}
+                    >
+                      <Settings className="h-4 w-4 flex-shrink-0" />
+                      <span>{ui("Settings")}</span>
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                      onClick={() => {
+                        handleDownloadZip();
+                        setShowMoreMenu(false);
+                      }}
+                    >
+                      <Download className="h-4 w-4 flex-shrink-0" />
+                      <span>{ui("Download project")}</span>
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                      onClick={() => {
+                        handleDuplicateProject();
+                        setShowMoreMenu(false);
+                      }}
+                    >
+                      <CopyPlus className="h-4 w-4 flex-shrink-0" />
+                      <span>
+                        {isDuplicating
+                          ? ui("Duplicating...")
+                          : ui("Duplicate project")}
+                      </span>
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                      onClick={() => {
+                        handleCopyProjectLink();
+                        setShowMoreMenu(false);
+                      }}
+                    >
+                      <Link className="h-4 w-4 flex-shrink-0" />
+                      <span>{ui("Copy project link")}</span>
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                      onClick={() => {
+                        setShortcutsDialogOpen(true);
+                        setShowMoreMenu(false);
+                      }}
+                    >
+                      <Keyboard className="h-4 w-4 flex-shrink-0" />
+                      <span>{ui("Keyboard shortcuts")}</span>
+                    </button>
+                    {/* Separator */}
+                    <div className="my-1 border-t border-border" />
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-red-950/50 hover:text-red-300 transition-colors"
+                      onClick={() => {
+                        setDeleteConfirmOpen(true);
+                        setShowMoreMenu(false);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 flex-shrink-0" />
+                      <span>{ui("Delete project")}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Preview controls inline in top bar */}
+            <div className="flex items-center gap-1">
+              {isEditingRoute ? (
+                <form
+                  className="flex items-center gap-1 rounded-full bg-muted border border-[#4D91FF] px-2.5 py-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const route = routeInputValue.startsWith("/")
+                      ? routeInputValue
+                      : `/${routeInputValue}`;
+                    setPreviewRoute(route);
+                    setIsEditingRoute(false);
+                    if (iframeRef.current && previewUrl) {
+                      try {
+                        const base = new URL(previewUrl);
+                        base.pathname = route;
+                        iframeRef.current.src = base.toString();
+                      } catch {
+                        // fallback: append route to preview URL origin
+                        iframeRef.current.src =
+                          previewUrl.replace(/\/$/, "") + route;
+                      }
+                    }
+                  }}
+                >
+                  <Globe className="h-3 w-3 text-[#4D91FF]" />
+                  <input
+                    ref={routeInputRef}
+                    type="text"
+                    value={routeInputValue}
+                    onChange={(e) => setRouteInputValue(e.target.value)}
+                    onBlur={() => setIsEditingRoute(false)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setRouteInputValue(previewRoute);
+                        setIsEditingRoute(false);
+                      }
+                    }}
+                    className="bg-transparent text-[11px] text-foreground font-mono outline-none w-24 placeholder:text-muted-foreground"
+                    placeholder="/path"
+                    autoFocus
+                  />
+                </form>
+              ) : (
+                <button
+                  onClick={() => {
+                    setRouteInputValue(previewRoute);
+                    setIsEditingRoute(true);
+                    setTimeout(() => routeInputRef.current?.select(), 0);
+                  }}
+                  className="flex items-center gap-1 rounded-full bg-muted border border-border px-2.5 py-1 hover:border-border transition-colors cursor-text"
+                  title={ui("Click to navigate to a route")}
+                >
+                  <Globe className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    {previewRoute}
+                  </span>
+                </button>
+              )}
+              <div className="flex items-center rounded-full bg-muted border border-border p-0.5">
+                {[
+                  {
+                    mode: "desktop" as DeviceMode,
+                    Icon: Monitor,
+                    label: ui("Desktop"),
+                  },
+                  {
+                    mode: "tablet" as DeviceMode,
+                    Icon: Tablet,
+                    label: ui("Tablet (768px)"),
+                  },
+                  {
+                    mode: "mobile" as DeviceMode,
+                    Icon: Smartphone,
+                    label: ui("Mobile (375px)"),
+                  },
+                ].map(({ mode, Icon, label }) => (
+                  <button
+                    key={mode}
+                    onClick={() => setDeviceMode(mode)}
+                    className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
+                      deviceMode === mode
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    title={label}
+                  >
+                    <Icon className="h-3 w-3" />
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  if (iframeRef.current && previewUrl) {
+                    iframeRef.current.src = previewUrl;
+                  }
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title={ui("Refresh preview")}
+                disabled={!previewUrl}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  if (previewUrl) window.open(previewUrl, "_blank");
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title={ui("Open in new tab")}
+                disabled={!previewUrl}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={handleToggleFullscreen}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title={isFullscreen ? ui("Exit fullscreen") : ui("Fullscreen")}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
+
+            {/* Right: Share + GitHub + Upgrade + Publish */}
+            <div className="flex items-center gap-1 md:gap-1.5">
+              {/* Collaboration presence avatars */}
+              <CollabHeaderItems />
+
+              {/* Share: pill with muted bg, h-7 */}
+              <button
+                onClick={() => setShareDialogOpen(true)}
+                className="flex h-7 items-center gap-1.5 rounded-full bg-muted px-2.5 text-sm text-[#FCFBF8] hover:bg-[#333] transition-colors"
+              >
+                <UserPlus className="h-4 w-4" />
+                <span className="hidden lg:inline">{ui("Share")}</span>
+              </button>
+              {/* GitHub sync button with status */}
+              <GitHubButton
+                status={github.status}
+                pushing={github.pushing}
+                pulling={github.pulling}
+                onPush={async (message, force) => {
+                  await github.push(message, force);
+                }}
+                onPull={async () => {
+                  await github.pull();
+                }}
+                onConnect={() => setGithubDialogOpen(true)}
+                onDisconnect={async () => {
+                  await github.disconnect();
+                }}
+                error={github.error}
+                onClearError={() => github.clearError()}
+              />
+              {/* Upgrade */}
+              <button
+                onClick={() => router.push("/billing")}
+                className="flex h-7 items-center gap-1.5 rounded-lg bg-accent border border-border px-2.5 text-sm text-foreground hover:bg-accent hover:text-foreground transition-all"
+              >
+                <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <span className="hidden md:inline">{ui("Upgrade")}</span>
+              </button>
+              {/* Deploy */}
+              <button
+                onClick={() => {
+                  setPublishStatus(publishedUrl ? "success" : "idle");
+                  setPublishError(null);
+                  setPublishModalOpen(true);
+                }}
+                className="flex h-7 items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-3 text-sm font-medium text-white shadow-lg shadow-brand-900/30 hover:brightness-110 transition-all"
+                title={ui("Deploy to a public URL")}
+              >
+                <CloudUpload className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">{ui("Deploy")}</span>
+              </button>
+            </div>
+          </header>
+
+          {/* ─── Main Content ─────────────────────────────────────── */}
+          <div ref={containerRef} className="flex flex-1 overflow-hidden">
+            {/* ─── Chat Panel ───────────────────────────────────── */}
+            {showChat && (
+              <div
+                className="flex flex-col border-r border-border bg-card"
+                style={{
+                  width: showPreview || isPanelView ? `${splitPos}%` : "100%",
+                  minWidth: "260px",
+                }}
+              >
+                {/* ─── Design Mode: Show DesignPanel ─────────────── */}
+                {isDesignMode ? (
+                  <DesignPanel
+                    projectId={resolvedProjectId}
+                    onClose={handlePanelClose}
+                    onSendMessage={sendMessage}
+                    mode={visualEdit.mode}
+                    selectedElement={visualEdit.selectedElement}
+                    onActivate={visualEdit.activateVisualEdit}
+                    onDeactivate={visualEdit.deactivateVisualEdit}
+                    onSelectParent={visualEdit.selectParent}
+                    onDeselectElement={visualEdit.deselectElement}
+                    onApplyLiveStyle={visualEdit.applyLiveStyle}
+                    onApplyLiveText={visualEdit.applyLiveText}
+                    hasPendingChanges={visualEdit.hasPendingChanges}
+                    onCommitChanges={() => {
+                      visualEdit.commitChanges();
+                      setActiveTab("chat");
+                    }}
+                    onDiscardChanges={visualEdit.discardChanges}
+                    onDirectSave={visualEdit.directSave}
+                    isSaving={visualEdit.isSaving}
+                  />
+                ) : (
+                  <>
+                    {/* Messages */}
+                    <div className="flex-1 overflow-y-auto px-4 pt-4 space-y-4 scrollbar-thin flex flex-col">
+                      <div className="flex-1" />
+                      {messages.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full text-center px-6">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600/10 mb-4">
+                            <Sparkles className="h-6 w-6 text-brand-700 dark:text-brand-400" />
                           </div>
-                          <div className="rounded-2xl rounded-br-sm bg-muted px-4 py-2.5 text-[14px] leading-relaxed text-foreground">
-                            {msg.attachments && msg.attachments.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mb-2">
-                                {msg.attachments.map((att, ai) => {
-                                  const isImage = att.type === "image" || att.fileType === "image" || (att.type?.startsWith("image/") && att.data);
-                                  if (isImage && att.data) {
-                                    return <img key={ai} src={att.data} alt={att.name} className="h-20 w-20 rounded-lg object-cover border border-border" />;
-                                  }
-                                  return (
-                                    <span key={ai} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 border border-border px-2.5 py-1.5 text-xs text-muted-foreground">
-                                      <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                      <span className="truncate max-w-[120px]">{att.name}</span>
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {msg.content.length > 500 && !expandedUserMsgs.has(msg.id) ? (
+                          <h3 className="text-sm font-medium text-foreground mb-1">
+                            {" "}
+                            {ui("Start a conversation")}{" "}
+                          </h3>
+                          <p className="text-[13px] text-muted-foreground max-w-[280px]">
+                            {" "}
+                            {ui(
+                              "Describe what you want to build and Doable will generate the code for you.",
+                            )}{" "}
+                          </p>
+                          {/* Mode indicator in empty state */}
+                          <div className="mt-4 flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-[12px] text-muted-foreground">
+                            {chatMode === "agent" ? (
                               <>
-                                {msg.content.slice(0, 500)}…
-                                <button
-                                  onClick={() => setExpandedUserMsgs((prev) => new Set(prev).add(msg.id))}
-                                  className="ml-1 text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                                >
-                                  Show full prompt ({Math.round(msg.content.length / 1000)}k chars)
-                                </button>
+                                <Hammer className="h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />
+                                <span>{ui("Work mode — generates code")}</span>
                               </>
                             ) : (
                               <>
-                                {msg.content}
-                                {msg.content.length > 500 && (
-                                  <button
-                                    onClick={() => setExpandedUserMsgs((prev) => { const next = new Set(prev); next.delete(msg.id); return next; })}
-                                    className="ml-1 text-xs text-muted-foreground hover:underline"
-                                  >
-                                    Collapse
-                                  </button>
-                                )}
+                                <Target className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                                <span>
+                                  {ui("Strategize mode — creates plans only")}
+                                </span>
                               </>
                             )}
                           </div>
+                          {/* Prompt starter chips in empty state */}
+                          <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-[360px]">
+                            {[
+                              "Build a SaaS landing page",
+                              "Create a kanban task board",
+                              "Make a recipe sharing app",
+                              "Design a portfolio site",
+                            ].map((starter) => (
+                              <button
+                                key={starter}
+                                onClick={() => sendMessage(ui(starter))}
+                                className="rounded-full border border-border bg-secondary px-3.5 py-1.5 text-[13px] text-foreground hover:bg-accent hover:text-foreground hover:border-border transition-all"
+                              >
+                                {ui(starter)}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  ) : (
-                    /* ── Assistant message: left-aligned ── */
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand-600/20 mt-0.5">
-                        {msg.isError ? (
-                          <AlertCircle className="h-3.5 w-3.5 text-red-400" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className={`text-xs font-medium ${
-                              msg.isError
-                                ? "text-red-400"
-                                : "text-brand-700 dark:text-brand-400"
-                            }`}
-                          >
-                            {msg.isError ? "Error" : "Doable AI"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {msg.timestamp}
-                          </span>
-                          {msg.isStreaming && !msg.content && (
-                            <span className="flex items-center gap-1">
-                              <span className="status-dot-1 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
-                              <span className="status-dot-2 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
-                              <span className="status-dot-3 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
-                            </span>
-                          )}
-                          {msg.isStreaming && msg.content && (
-                            <Loader2 className="h-3 w-3 animate-spin text-brand-700 dark:text-brand-400" />
-                          )}
-                        </div>
+                      )}
 
-                        {/* ── Task Card: collapsible card with tool actions ──
+                      {/* Plan progress tracker during build */}
+                      {planPhase === "building" && activePlan && (
+                        <div className="px-3 py-2">
+                          <PlanProgress
+                            plan={activePlan}
+                            running={isStreaming}
+                          />
+                        </div>
+                      )}
+
+                      {messages.map((msg, msgIdx) => {
+                        if (msg.hidden) return null;
+                        const userContent =
+                          msg.role === "user"
+                            ? translatePlatformPrompt(msg.content, ui)
+                            : msg.content;
+                        return (
+                          <div key={msg.id} className="group">
+                            {msg.role === "user" ? (
+                              msg.senderInfo?.isRemote ? (
+                                /* ── Remote collaborator message: left-aligned with user color ── */
+                                <div className="flex items-start gap-2.5">
+                                  <div
+                                    className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white mt-0.5"
+                                    style={{
+                                      backgroundColor: msg.senderInfo.color,
+                                    }}
+                                  >
+                                    {msg.senderInfo.displayName
+                                      .charAt(0)
+                                      .toUpperCase()}
+                                  </div>
+                                  <div className="max-w-[85%]">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span
+                                        className="text-xs font-medium"
+                                        style={{ color: msg.senderInfo.color }}
+                                      >
+                                        {msg.senderInfo.displayName}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {msg.timestamp}
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="rounded-2xl rounded-tl-sm bg-secondary px-4 py-2.5 text-[14px] leading-relaxed text-foreground"
+                                      style={{
+                                        borderLeft: `3px solid ${msg.senderInfo.color}`,
+                                      }}
+                                    >
+                                      {msg.attachments &&
+                                        msg.attachments.length > 0 && (
+                                          <div className="flex flex-wrap gap-2 mb-2">
+                                            {msg.attachments.map((att, ai) => {
+                                              const isImage =
+                                                att.type === "image" ||
+                                                att.fileType === "image" ||
+                                                (att.type?.startsWith(
+                                                  "image/",
+                                                ) &&
+                                                  att.data);
+                                              if (isImage && att.data) {
+                                                return (
+                                                  <img
+                                                    key={ai}
+                                                    src={att.data}
+                                                    alt={att.name}
+                                                    className="h-20 w-20 rounded-lg object-cover border border-border"
+                                                  />
+                                                );
+                                              }
+                                              return (
+                                                <span
+                                                  key={ai}
+                                                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 border border-border px-2.5 py-1.5 text-xs text-muted-foreground"
+                                                >
+                                                  <svg
+                                                    className="h-3.5 w-3.5 flex-shrink-0"
+                                                    fill="none"
+                                                    viewBox="0 0 24 24"
+                                                    stroke="currentColor"
+                                                  >
+                                                    <path
+                                                      strokeLinecap="round"
+                                                      strokeLinejoin="round"
+                                                      strokeWidth={2}
+                                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                                    />
+                                                  </svg>
+                                                  <span className="truncate max-w-[120px]">
+                                                    {att.name}
+                                                  </span>
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      {userContent}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* ── Own message: right-aligned dark bubble (iMessage style) ── */
+                                <div className="flex justify-end">
+                                  <div className="max-w-[85%]">
+                                    <div className="flex items-center justify-end gap-2 mb-1">
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {msg.timestamp}
+                                      </span>
+                                      <span className="text-xs font-medium text-muted-foreground">
+                                        {" "}
+                                        {ui("You")}{" "}
+                                      </span>
+                                    </div>
+                                    <div className="rounded-2xl rounded-br-sm bg-muted px-4 py-2.5 text-[14px] leading-relaxed text-foreground">
+                                      {msg.attachments &&
+                                        msg.attachments.length > 0 && (
+                                          <div className="flex flex-wrap gap-2 mb-2">
+                                            {msg.attachments.map((att, ai) => {
+                                              const isImage =
+                                                att.type === "image" ||
+                                                att.fileType === "image" ||
+                                                (att.type?.startsWith(
+                                                  "image/",
+                                                ) &&
+                                                  att.data);
+                                              if (isImage && att.data) {
+                                                return (
+                                                  <img
+                                                    key={ai}
+                                                    src={att.data}
+                                                    alt={att.name}
+                                                    className="h-20 w-20 rounded-lg object-cover border border-border"
+                                                  />
+                                                );
+                                              }
+                                              return (
+                                                <span
+                                                  key={ai}
+                                                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 border border-border px-2.5 py-1.5 text-xs text-muted-foreground"
+                                                >
+                                                  <svg
+                                                    className="h-3.5 w-3.5 flex-shrink-0"
+                                                    fill="none"
+                                                    viewBox="0 0 24 24"
+                                                    stroke="currentColor"
+                                                  >
+                                                    <path
+                                                      strokeLinecap="round"
+                                                      strokeLinejoin="round"
+                                                      strokeWidth={2}
+                                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                                    />
+                                                  </svg>
+                                                  <span className="truncate max-w-[120px]">
+                                                    {att.name}
+                                                  </span>
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      {userContent.length > 500 &&
+                                      !expandedUserMsgs.has(msg.id) ? (
+                                        <>
+                                          {userContent.slice(0, 500)}…
+                                          <button
+                                            onClick={() =>
+                                              setExpandedUserMsgs((prev) =>
+                                                new Set(prev).add(msg.id),
+                                              )
+                                            }
+                                            className="ml-1 text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                          >
+                                            {" "}
+                                            {ui(
+                                              "Show full prompt ({count}k chars)",
+                                              {
+                                                count: Math.round(
+                                                  userContent.length / 1000,
+                                                ),
+                                              },
+                                            )}{" "}
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          {userContent}
+                                          {userContent.length > 500 && (
+                                            <button
+                                              onClick={() =>
+                                                setExpandedUserMsgs((prev) => {
+                                                  const next = new Set(prev);
+                                                  next.delete(msg.id);
+                                                  return next;
+                                                })
+                                              }
+                                              className="ml-1 text-xs text-muted-foreground hover:underline"
+                                            >
+                                              {" "}
+                                              {ui("Collapse")}{" "}
+                                            </button>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            ) : (
+                              /* ── Assistant message: left-aligned ── */
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand-600/20 mt-0.5">
+                                  {msg.isError ? (
+                                    <AlertCircle className="h-3.5 w-3.5 text-red-400" />
+                                  ) : (
+                                    <Sparkles className="h-3.5 w-3.5 text-brand-700 dark:text-brand-400" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span
+                                      className={`text-xs font-medium ${
+                                        msg.isError
+                                          ? "text-red-400"
+                                          : "text-brand-700 dark:text-brand-400"
+                                      }`}
+                                    >
+                                      {msg.isError
+                                        ? ui("Error")
+                                        : ui("Doable")}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {msg.timestamp}
+                                    </span>
+                                    {msg.isStreaming && !msg.content && (
+                                      <span className="flex items-center gap-1">
+                                        <span className="status-dot-1 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
+                                        <span className="status-dot-2 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
+                                        <span className="status-dot-3 h-1 w-1 rounded-full bg-brand-700 dark:bg-brand-400" />
+                                      </span>
+                                    )}
+                                    {msg.isStreaming && msg.content && (
+                                      <Loader2 className="h-3 w-3 animate-spin text-brand-700 dark:text-brand-400" />
+                                    )}
+                                  </div>
+
+                                  {/* ── Task Card: collapsible card with tool actions ──
                             Removed per user request — only the purple streaming
                             orb below should display file modifications. ── */}
-                        {/* Task card block removed — the purple streaming orb below displays file modifications. */}
+                                  {/* Task card block removed — the purple streaming orb below displays file modifications. */}
 
-                        {/* Inline thinking indicator — auto-open during streaming for live visibility */}
-                        {msg.thinkingContent && (
-                          <details open={msg.isStreaming} className="mb-2 rounded-lg border border-border bg-card text-[13px]">
-                            <summary className="cursor-pointer select-none px-3 py-1.5 text-muted-foreground hover:text-muted-foreground flex items-center gap-2">
-                              {msg.isStreaming && (
-                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-700 dark:bg-brand-400 animate-pulse" />
-                              )}
-                              {msg.isStreaming ? (() => {
-                                const actions = msg.toolActions ?? [];
-                                const stepCount = actions.length;
-                                const running = actions.find((a) => a.status === "running");
-                                const latest = running ?? actions[actions.length - 1];
-                                if (stepCount > 0 && latest) {
-                                  const label = latest.filePath
-                                    ? latest.filePath.split("/").pop()
-                                    : latest.description;
-                                  return `Step ${stepCount} — ${label}`;
-                                }
-                                return "Thinking...";
-                              })() : "Thought process"}
-                            </summary>
-                            <div className="px-3 pb-2 text-muted-foreground max-h-60 overflow-y-auto scroll-smooth">
-                              {extractFunctionSteps(msg.thinkingContent).length > 0
-                                ? renderFunctionStepList(msg.thinkingContent, true)
-                                : msg.thinkingContent.split("\n\n---\n\n").filter(Boolean).map((block, i) => (
-                                  <div key={i} className={`whitespace-pre-wrap ${i > 0 ? "mt-2 pt-2 border-t border-border/50" : ""}`}>
-                                    {block.trim()}
-                                  </div>
-                                ))}
-                            </div>
-                          </details>
-                        )}
+                                  {/* Inline thinking indicator — auto-open during streaming for live visibility */}
+                                  {msg.thinkingContent && (
+                                    <details
+                                      open={msg.isStreaming}
+                                      className="mb-2 rounded-lg border border-border bg-card text-[13px]"
+                                    >
+                                      <summary className="cursor-pointer select-none px-3 py-1.5 text-muted-foreground hover:text-muted-foreground flex items-center gap-2">
+                                        {msg.isStreaming && (
+                                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-700 dark:bg-brand-400 animate-pulse" />
+                                        )}
+                                        {msg.isStreaming
+                                          ? (() => {
+                                              const actions =
+                                                msg.toolActions ?? [];
+                                              const stepCount = actions.length;
+                                              const running = actions.find(
+                                                (a) => a.status === "running",
+                                              );
+                                              const latest =
+                                                running ??
+                                                actions[actions.length - 1];
+                                              if (stepCount > 0 && latest) {
+                                                const label = latest.filePath
+                                                  ? latest.filePath
+                                                      .split("/")
+                                                      .pop()
+                                                  : latest.description;
+                                                return ui(
+                                                  "Step {count} — {label}",
+                                                  {
+                                                    count: stepCount,
+                                                    label: translateProgress(
+                                                      label ?? "",
+                                                      ui,
+                                                    ),
+                                                  },
+                                                );
+                                              }
+                                              return ui("Thinking...");
+                                            })()
+                                          : ui("Thought process")}
+                                      </summary>
+                                      <div className="px-3 pb-2 text-muted-foreground max-h-60 overflow-y-auto scroll-smooth">
+                                        {extractFunctionSteps(
+                                          msg.thinkingContent,
+                                        ).length > 0
+                                          ? renderFunctionStepList(
+                                              msg.thinkingContent,
+                                              ui,
+                                              true,
+                                            )
+                                          : msg.thinkingContent
+                                              .split("\n\n---\n\n")
+                                              .filter(Boolean)
+                                              .map((block, i) => (
+                                                <div
+                                                  key={i}
+                                                  className={`whitespace-pre-wrap ${i > 0 ? "mt-2 pt-2 border-t border-border/50" : ""}`}
+                                                >
+                                                  {translateThinkingPrefix(
+                                                    block.trim(),
+                                                    ui,
+                                                  )}
+                                                </div>
+                                              ))}
+                                      </div>
+                                    </details>
+                                  )}
 
-                        <div
-                          className={`text-[14px] leading-relaxed ${
-                            msg.isError
-                              ? "text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-start gap-3 shadow-sm backdrop-blur-sm relative overflow-hidden"
-                              : "text-foreground"
-                          }`}
-                        >
-                          {msg.isError && (
-                            <>
-                              <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-red-500/10 to-transparent pointer-events-none" />
-                              <div className="shrink-0 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500/20">
-                                <XCircle className="h-3 w-3 text-red-400" />
-                              </div>
-                            </>
-                          )}
-                          <div className={msg.isError ? "flex-1 min-w-0 font-medium text-[13px]" : ""}>
-                            {msg.content && /AI is not configured/i.test(msg.content) ? (
-                              // Friendly CTA replaces the raw "Copilot SDK error: AI is not configured…"
-                              // string from the SSE stream. See BUG-WEB-AI-001.
-                              // NOTE: Match runs regardless of msg.isError because in some
-                              // streams the SDK error string is concatenated into the
-                              // assistant content WITHOUT the isError flag being set.
-                              <div data-testid="ai-not-configured-cta" className="space-y-2">
-                                <div className="font-semibold text-red-300">
-                                  AI provider not connected
-                                </div>
-                                <div className="text-[12px] text-red-400/90 leading-relaxed">
-                                  Connect a GitHub Copilot account or add a custom provider key in
-                                  Settings &rarr; AI.
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 pt-1">
-                                  <a
-                                    data-testid="ai-not-configured-cta-primary"
-                                    href="/admin?tab=users"
-                                    className="inline-flex items-center gap-1.5 rounded-md bg-brand-500 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-600 transition-colors no-underline"
+                                  {msg.runFailed && (
+                                    <div role="alert" data-testid="chat-run-failure" className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                                      {ui("Task stopped before completion")}
+                                      {msg.runError && <details className="mt-2 text-xs"><summary>{ui("Show raw SDK error (for debugging)")}</summary><p className="mt-1 whitespace-pre-wrap">{msg.runError}</p></details>}
+                                    </div>
+                                  )}
+                                  <div
+                                    className={`text-[14px] leading-relaxed ${
+                                      msg.isError
+                                        ? "text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-start gap-3 shadow-sm backdrop-blur-sm relative overflow-hidden"
+                                        : "text-foreground"
+                                    }`}
                                   >
-                                    <Settings className="h-3.5 w-3.5" />
-                                    Configure AI
-                                  </a>
-                                </div>
-                                <details className="mt-2 text-[11px] text-red-400/70">
-                                  <summary className="cursor-pointer select-none hover:text-red-300">
-                                    Show raw SDK error (for debugging)
-                                  </summary>
-                                  <pre className="mt-1 whitespace-pre-wrap break-words rounded-md bg-red-500/5 p-2 font-mono text-[10px] text-red-300/80">
-                                    {msg.content}
-                                  </pre>
-                                </details>
-                              </div>
-                            ) : msg.content && (
-                              extractFunctionSteps(msg.content).length > 0 && stripFunctionMarkup(msg.content).length === 0
-                                ? renderFunctionStepList(msg.content)
-                                : <MemoizedMessageContent content={stripFunctionMarkup(msg.content)} />
-                            )}
-                            
-                            {/* Live Streaming Glowing Orb - visible while streaming, and
+                                    {msg.isError && (
+                                      <>
+                                        <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-red-500/10 to-transparent pointer-events-none" />
+                                        <div className="shrink-0 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500/20">
+                                          <XCircle className="h-3 w-3 text-red-400" />
+                                        </div>
+                                      </>
+                                    )}
+                                    <div
+                                      className={
+                                        msg.isError
+                                          ? "flex-1 min-w-0 font-medium text-[13px]"
+                                          : ""
+                                      }
+                                    >
+                                      {msg.content &&
+                                      /AI is not configured/i.test(
+                                        msg.content,
+                                      ) ? (
+                                        // Friendly CTA replaces the raw "Copilot SDK error: AI is not configured…"
+                                        // string from the SSE stream. See BUG-WEB-AI-001.
+                                        // NOTE: Match runs regardless of msg.isError because in some
+                                        // streams the SDK error string is concatenated into the
+                                        // assistant content WITHOUT the isError flag being set.
+                                        <div
+                                          data-testid="ai-not-configured-cta"
+                                          className="space-y-2"
+                                        >
+                                          <div className="font-semibold text-red-300">
+                                            {" "}
+                                            {ui(
+                                              "AI provider not connected",
+                                            )}{" "}
+                                          </div>
+                                          <div className="text-[12px] text-red-400/90 leading-relaxed">
+                                            {" "}
+                                            {ui(
+                                              "Connect a GitHub Copilot account or add a custom provider key in Settings → AI.",
+                                            )}{" "}
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                                            <a
+                                              data-testid="ai-not-configured-cta-primary"
+                                              href="/admin?tab=users"
+                                              className="inline-flex items-center gap-1.5 rounded-md bg-brand-500 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-brand-600 transition-colors no-underline"
+                                            >
+                                              <Settings className="h-3.5 w-3.5" />{" "}
+                                              {ui("Configure AI")}{" "}
+                                            </a>
+                                          </div>
+                                          <details className="mt-2 text-[11px] text-red-400/70">
+                                            <summary className="cursor-pointer select-none hover:text-red-300">
+                                              {" "}
+                                              {ui(
+                                                "Show raw SDK error (for debugging)",
+                                              )}{" "}
+                                            </summary>
+                                            <pre className="mt-1 whitespace-pre-wrap break-words rounded-md bg-red-500/5 p-2 font-mono text-[10px] text-red-300/80">
+                                              {msg.content}
+                                            </pre>
+                                          </details>
+                                        </div>
+                                      ) : (
+                                        msg.content &&
+                                        (extractFunctionSteps(msg.content)
+                                          .length > 0 &&
+                                        stripFunctionMarkup(msg.content)
+                                          .length === 0 ? (
+                                          renderFunctionStepList(
+                                            msg.content,
+                                            ui,
+                                          )
+                                        ) : (
+                                          <MemoizedMessageContent
+                                            content={stripFunctionMarkup(
+                                              msg.content,
+                                            )}
+                                          />
+                                        ))
+                                      )}
+
+                                      {/* Live Streaming Glowing Orb - visible while streaming, and
                                 afterwards as a summary when there are tool actions.
                                 NOTE: bg uses `bg-card/70 backdrop-blur-md` (not
                                 `bg-foreground/30`) so this card adapts to the
@@ -5866,1800 +7474,2459 @@ function EditorPageInner() {
                                 overlay during presentation creation. `--card`
                                 is a slightly elevated panel color that reads
                                 as a subtle lift in both dark + light modes. */}
-                            {!msg.isError && (msg.isStreaming || (msg.toolActions && msg.toolActions.length > 0)) && (() => {
-                              const allActions = msg.toolActions ?? [];
-                              // Reformat MCP tool descriptions and sanitize paths/PII at display time
-                              const formatDescription = (action: ToolAction) => {
-                                if (action.toolName?.startsWith("mcp_")) {
-                                  const parts = action.toolName.slice(4).split("_");
-                                  const verbIdx = parts.findIndex(p => ["get", "list", "search", "create", "update", "delete", "query", "manage", "run", "download", "cancel", "save", "new"].includes(p));
-                                  if (verbIdx > 0) {
-                                    return parts.slice(verbIdx).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
-                                  }
-                                }
-                                // Sanitize: strip absolute paths, UUIDs, emails
-                                let desc = action.description;
-                                desc = desc.replace(/\/[\w.\-/]+\/([\w.\-]+)/g, "$1"); // /abs/path/file → file
-                                desc = desc.replace(/[A-Za-z]:\\[\w.\\-]+\\([\w.\-]+)/g, "$1"); // C:\path\file → file
-                                desc = desc.replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, "***"); // UUIDs
-                                desc = desc.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "***@***"); // emails
-                                return desc;
-                              };
-                              if (!msg.isStreaming && allActions.length === 0) return null;
-                              return (
-                              <div data-testid="streaming-orb-card" className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-md p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto">
-                                <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
-                                <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
-                                
-                                <div className="flex flex-col items-center relative z-10 w-full text-center">
-                                  <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-400/20 via-purple-500/20 to-transparent border border-border shadow-[0_0_30px_rgba(168,85,247,0.3)]">
-                                    {msg.isStreaming ? (
-                                      <>
-                                        <Sparkles className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-pulse" />
-                                        <div className="absolute inset-0 rounded-full border border-dashed border-border animate-[spin_10s_linear_infinite]" />
-                                      </>
-                                    ) : (
-                                      <Check className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
-                                    )}
+                                      {!msg.isError &&
+                                        (msg.isStreaming ||
+                                          (msg.toolActions &&
+                                            msg.toolActions.length > 0)) &&
+                                        (() => {
+                                          const allActions =
+                                            msg.toolActions ?? [];
+                                          // Reformat MCP tool descriptions and sanitize paths/PII at display time
+                                          const formatDescription = (
+                                            action: ToolAction,
+                                          ) => {
+                                            if (
+                                              action.toolName?.startsWith(
+                                                "mcp_",
+                                              )
+                                            ) {
+                                              const parts = action.toolName
+                                                .slice(4)
+                                                .split("_");
+                                              const verbIdx = parts.findIndex(
+                                                (p) =>
+                                                  [
+                                                    "get",
+                                                    "list",
+                                                    "search",
+                                                    "create",
+                                                    "update",
+                                                    "delete",
+                                                    "query",
+                                                    "manage",
+                                                    "run",
+                                                    "download",
+                                                    "cancel",
+                                                    "save",
+                                                    "new",
+                                                  ].includes(p),
+                                              );
+                                              if (verbIdx > 0) {
+                                                return translateProgress(
+                                                  parts
+                                                    .slice(verbIdx)
+                                                    .map(
+                                                      (p) =>
+                                                        p
+                                                          .charAt(0)
+                                                          .toUpperCase() +
+                                                        p.slice(1),
+                                                    )
+                                                    .join(" "),
+                                                  ui,
+                                                );
+                                              }
+                                            }
+                                            // Sanitize: strip absolute paths, UUIDs, emails
+                                            let desc = action.description;
+                                            desc = desc.replace(
+                                              /\/[\w.\-/]+\/([\w.\-]+)/g,
+                                              "$1",
+                                            ); // /abs/path/file → file
+                                            desc = desc.replace(
+                                              /[A-Za-z]:\\[\w.\\-]+\\([\w.\-]+)/g,
+                                              "$1",
+                                            ); // C:\path\file → file
+                                            desc = desc.replace(
+                                              /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi,
+                                              "***",
+                                            ); // UUIDs
+                                            desc = desc.replace(
+                                              /[\w.+-]+@[\w-]+\.[\w.]+/g,
+                                              "***@***",
+                                            ); // emails
+                                            return translateProgress(desc, ui);
+                                          };
+                                          if (
+                                            !msg.isStreaming &&
+                                            allActions.length === 0
+                                          )
+                                            return null;
+                                          return (
+                                            <div
+                                              data-testid="streaming-orb-card"
+                                              className="relative mt-4 mb-4 overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-md p-5 shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm ml-auto mr-auto"
+                                            >
+                                              <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-brand-600/10 to-transparent pointer-events-none" />
+                                              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-500/20 blur-[60px] pointer-events-none rounded-full" />
+
+                                              <div className="flex flex-col items-center relative z-10 w-full text-center">
+                                                <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-400/20 via-purple-500/20 to-transparent border border-border shadow-[0_0_30px_rgba(168,85,247,0.3)]">
+                                                  {msg.isStreaming ? (
+                                                    <>
+                                                      <Sparkles className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-pulse" />
+                                                      <div className="absolute inset-0 rounded-full border border-dashed border-border animate-[spin_10s_linear_infinite]" />
+                                                    </>
+                                                  ) : allActions.every(
+                                                      (a) =>
+                                                        a.status ===
+                                                        "completed",
+                                                    ) ? (
+                                                    <Check className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
+                                                  ) : (
+                                                    <Clock className="h-7 w-7 text-muted-foreground" />
+                                                  )}
+                                                </div>
+                                                <h3 className="mt-4 mb-3 text-sm font-semibold text-foreground tracking-wide">
+                                                  {msg.isStreaming
+                                                    ? translateProgress(
+                                                        liveStatus ||
+                                                          "Building...",
+                                                        ui,
+                                                      )
+                                                    : allActions.every(
+                                                          (a) =>
+                                                            a.status ===
+                                                            "completed",
+                                                        )
+                                                      ? ui(
+                                                          "Completed {count} actions",
+                                                          {
+                                                            count:
+                                                              allActions.length,
+                                                          },
+                                                        )
+                                                      : ui(
+                                                          "Recorded {count} actions",
+                                                          {
+                                                            count:
+                                                              allActions.length,
+                                                          },
+                                                        )}
+                                                </h3>
+
+                                                {allActions.length > 0 &&
+                                                  (() => {
+                                                    const isExpanded =
+                                                      expandedToolCalls.has(
+                                                        msg.id,
+                                                      );
+                                                    const COLLAPSE_THRESHOLD = 4;
+                                                    const shouldCollapse =
+                                                      allActions.length >
+                                                        COLLAPSE_THRESHOLD &&
+                                                      !isExpanded;
+                                                    const visibleActions =
+                                                      shouldCollapse
+                                                        ? allActions.slice(
+                                                            -COLLAPSE_THRESHOLD,
+                                                          )
+                                                        : allActions;
+                                                    const hiddenCount =
+                                                      allActions.length -
+                                                      COLLAPSE_THRESHOLD;
+                                                    return (
+                                                      <div className="w-full flex flex-col gap-2 relative mt-1">
+                                                        {allActions.length >
+                                                          COLLAPSE_THRESHOLD && (
+                                                          <button
+                                                            type="button"
+                                                            data-testid="toolcalls-collapse-toggle"
+                                                            onClick={() => {
+                                                              setExpandedToolCalls(
+                                                                (prev) => {
+                                                                  const next =
+                                                                    new Set(
+                                                                      prev,
+                                                                    );
+                                                                  if (
+                                                                    next.has(
+                                                                      msg.id,
+                                                                    )
+                                                                  )
+                                                                    next.delete(
+                                                                      msg.id,
+                                                                    );
+                                                                  else
+                                                                    next.add(
+                                                                      msg.id,
+                                                                    );
+                                                                  return next;
+                                                                },
+                                                              );
+                                                            }}
+                                                            className="self-center inline-flex items-center gap-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-border px-2.5 py-1 text-[10px] font-medium text-foreground/80 hover:text-foreground transition-colors"
+                                                          >
+                                                            {isExpanded ? (
+                                                              <>
+                                                                <ChevronUp className="h-3 w-3" />{" "}
+                                                                {ui(
+                                                                  "Hide earlier steps",
+                                                                )}{" "}
+                                                              </>
+                                                            ) : (
+                                                              <>
+                                                                <ChevronDown className="h-3 w-3" />{" "}
+                                                                {ui(
+                                                                  "Show {count} earlier steps",
+                                                                  {
+                                                                    count:
+                                                                      hiddenCount,
+                                                                  },
+                                                                )}
+                                                              </>
+                                                            )}
+                                                          </button>
+                                                        )}
+                                                        {visibleActions.map(
+                                                          (action, idx) => (
+                                                            <div
+                                                              key={idx}
+                                                              className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-accent rounded-md p-1.5 border border-border text-left"
+                                                            >
+                                                              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
+                                                                {action.status ===
+                                                                "running" ? (
+                                                                  <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
+                                                                ) : action.status ===
+                                                                  "failed" ? (
+                                                                  <XCircle className="h-3 w-3 text-red-400" />
+                                                                ) : action.status ===
+                                                                  "completed" ? (
+                                                                  <Check className="h-3 w-3 text-brand-400" />
+                                                                ) : (
+                                                                  <span
+                                                                    title={ui(
+                                                                      "Result not confirmed",
+                                                                    )}
+                                                                    className="text-muted-foreground"
+                                                                  >
+                                                                    ?
+                                                                  </span>
+                                                                )}
+                                                              </div>
+                                                              <span className="text-[11px] font-medium truncate text-foreground flex-1">
+                                                                {formatDescription(
+                                                                  action,
+                                                                )}
+                                                              </span>
+                                                            </div>
+                                                          ),
+                                                        )}
+                                                      </div>
+                                                    );
+                                                  })()}
+                                              </div>
+                                            </div>
+                                          );
+                                        })()}
+                                    </div>
                                   </div>
-                                  <h3 className="mt-4 mb-3 text-sm font-semibold text-foreground tracking-wide">
-                                    {msg.isStreaming
-                                      ? (liveStatus || "Building...")
-                                      : `${allActions.length} ${(allActions.length === 1) ? "change" : "changes"} applied`}
-                                  </h3>
-                                  
-                                  {allActions.length > 0 && (() => {
-                                    const isExpanded = expandedToolCalls.has(msg.id);
-                                    const COLLAPSE_THRESHOLD = 4;
-                                    const shouldCollapse = allActions.length > COLLAPSE_THRESHOLD && !isExpanded;
-                                    const visibleActions = shouldCollapse ? allActions.slice(-COLLAPSE_THRESHOLD) : allActions;
-                                    const hiddenCount = allActions.length - COLLAPSE_THRESHOLD;
-                                    return (
-                                    <div className="w-full flex flex-col gap-2 relative mt-1">
-                                      {allActions.length > COLLAPSE_THRESHOLD && (
+
+                                  {/* ── Message Actions: feedback + copy + more menu ── */}
+                                  {!msg.isStreaming &&
+                                    !msg.isError &&
+                                    msg.content && (
+                                      <div className="mt-2 flex items-center gap-0.5">
+                                        {/* Thumbs Up */}
                                         <button
-                                          type="button"
-                                          data-testid="toolcalls-collapse-toggle"
-                                          onClick={() => {
-                                            setExpandedToolCalls((prev) => {
-                                              const next = new Set(prev);
-                                              if (next.has(msg.id)) next.delete(msg.id);
-                                              else next.add(msg.id);
-                                              return next;
-                                            });
-                                          }}
-                                          className="self-center inline-flex items-center gap-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-border px-2.5 py-1 text-[10px] font-medium text-foreground/80 hover:text-foreground transition-colors"
+                                          onClick={() =>
+                                            handleFeedback(msg.id, "up")
+                                          }
+                                          className={`rounded-md p-1.5 transition-colors ${
+                                            msg.feedbackGiven === "up"
+                                              ? "bg-emerald-900/30 text-emerald-400"
+                                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                          }`}
+                                          title={ui("Good response")}
                                         >
-                                          {isExpanded ? (
-                                            <>
-                                              <ChevronUp className="h-3 w-3" />
-                                              Hide earlier steps
-                                            </>
+                                          <ThumbsUp className="h-3.5 w-3.5" />
+                                        </button>
+                                        {/* Thumbs Down */}
+                                        <button
+                                          onClick={() =>
+                                            handleFeedback(msg.id, "down")
+                                          }
+                                          className={`rounded-md p-1.5 transition-colors ${
+                                            msg.feedbackGiven === "down"
+                                              ? "bg-red-900/30 text-red-400"
+                                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                          }`}
+                                          title={ui("Bad response")}
+                                        >
+                                          <ThumbsDown className="h-3.5 w-3.5" />
+                                        </button>
+                                        {/* Copy */}
+                                        <button
+                                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                                          title={ui("Copy message")}
+                                          onClick={() => {
+                                            navigator.clipboard
+                                              .writeText(msg.content)
+                                              .then(() => {
+                                                setCopiedMsgId(msg.id);
+                                                setTimeout(
+                                                  () => setCopiedMsgId(null),
+                                                  2000,
+                                                );
+                                              });
+                                          }}
+                                        >
+                                          {copiedMsgId === msg.id ? (
+                                            <Check className="h-3.5 w-3.5 text-emerald-400" />
                                           ) : (
-                                            <>
-                                              <ChevronDown className="h-3 w-3" />
-                                              Show {hiddenCount} earlier {hiddenCount === 1 ? "step" : "steps"}
-                                            </>
+                                            <Copy className="h-3.5 w-3.5" />
                                           )}
                                         </button>
-                                      )}
-                                      {visibleActions.map((action, idx) => (
-                                        <div key={idx} className="flex items-center gap-2.5 animate-in slide-in-from-bottom-2 fade-in duration-300 w-full bg-accent rounded-md p-1.5 border border-border text-left">
-                                          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/15 border border-brand-500/30">
-                                             {action.status === "running" ? (
-                                               <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
-                                             ) : action.status === "failed" ? (
-                                               <XCircle className="h-3 w-3 text-red-400" />
-                                             ) : (
-                                               <Check className="h-3 w-3 text-brand-400" />
-                                             )}
-                                          </div>
-                                          <span className="text-[11px] font-medium truncate text-foreground flex-1">
-                                            {formatDescription(action)}
-                                          </span>
+                                        {/* More (...) with dropdown */}
+                                        <div
+                                          className="relative"
+                                          data-more-menu
+                                        >
+                                          <button
+                                            onClick={() =>
+                                              setMoreMenuMsgId(
+                                                moreMenuMsgId === msg.id
+                                                  ? null
+                                                  : msg.id,
+                                              )
+                                            }
+                                            className={`rounded-md p-1.5 transition-colors ${
+                                              moreMenuMsgId === msg.id
+                                                ? "bg-secondary text-foreground"
+                                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                            }`}
+                                            title={ui("More actions")}
+                                          >
+                                            <MoreHorizontal className="h-3.5 w-3.5" />
+                                          </button>
+                                          {/* Dropdown menu */}
+                                          {moreMenuMsgId === msg.id && (
+                                            <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover py-1 shadow-md">
+                                              <button
+                                                onClick={() => {
+                                                  setMoreMenuMsgId(null);
+                                                  // Copy to clipboard as "edit" prompt
+                                                  setInputValue(
+                                                    `Edit: ${msg.content.slice(0, 100)}`,
+                                                  );
+                                                }}
+                                                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-foreground hover:bg-accent transition-colors"
+                                              >
+                                                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />{" "}
+                                                {ui("Edit message")}{" "}
+                                              </button>
+                                              <button
+                                                onClick={() =>
+                                                  handleRevertToPoint(msg.id)
+                                                }
+                                                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-foreground hover:bg-accent transition-colors"
+                                              >
+                                                <Undo2 className="h-3.5 w-3.5 text-muted-foreground" />{" "}
+                                                {ui(
+                                                  "Revert to this point",
+                                                )}{" "}
+                                              </button>
+                                            </div>
+                                          )}
                                         </div>
-                                      ))}
-                                    </div>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                              );
-                            })()}
-                          </div>
-                        </div>
+                                      </div>
+                                    )}
 
-                        {/* ── Message Actions: feedback + copy + more menu ── */}
-                        {!msg.isStreaming && !msg.isError && msg.content && (
-                          <div className="mt-2 flex items-center gap-0.5">
-                            {/* Thumbs Up */}
-                            <button
-                              onClick={() => handleFeedback(msg.id, "up")}
-                              className={`rounded-md p-1.5 transition-colors ${
-                                msg.feedbackGiven === "up"
-                                  ? "bg-emerald-900/30 text-emerald-400"
-                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                              }`}
-                              title="Good response"
-                            >
-                              <ThumbsUp className="h-3.5 w-3.5" />
-                            </button>
-                            {/* Thumbs Down */}
-                            <button
-                              onClick={() => handleFeedback(msg.id, "down")}
-                              className={`rounded-md p-1.5 transition-colors ${
-                                msg.feedbackGiven === "down"
-                                  ? "bg-red-900/30 text-red-400"
-                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                              }`}
-                              title="Bad response"
-                            >
-                              <ThumbsDown className="h-3.5 w-3.5" />
-                            </button>
-                            {/* Copy */}
-                            <button
-                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                              title="Copy message"
-                              onClick={() => {
-                                navigator.clipboard.writeText(msg.content).then(() => {
-                                  setCopiedMsgId(msg.id);
-                                  setTimeout(() => setCopiedMsgId(null), 2000);
-                                });
-                              }}
-                            >
-                              {copiedMsgId === msg.id ? (
-                                <Check className="h-3.5 w-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                            {/* More (...) with dropdown */}
-                            <div className="relative" data-more-menu>
-                              <button
-                                onClick={() => setMoreMenuMsgId(moreMenuMsgId === msg.id ? null : msg.id)}
-                                className={`rounded-md p-1.5 transition-colors ${
-                                  moreMenuMsgId === msg.id
-                                    ? "bg-secondary text-foreground"
-                                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                }`}
-                                title="More actions"
-                              >
-                                <MoreHorizontal className="h-3.5 w-3.5" />
-                              </button>
-                              {/* Dropdown menu */}
-                              {moreMenuMsgId === msg.id && (
-                                <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover py-1 shadow-md">
-                                  <button
-                                    onClick={() => {
-                                      setMoreMenuMsgId(null);
-                                      // Copy to clipboard as "edit" prompt
-                                      setInputValue(`Edit: ${msg.content.slice(0, 100)}`);
-                                    }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-foreground hover:bg-accent transition-colors"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                                    Edit message
-                                  </button>
-                                  <button
-                                    onClick={() => handleRevertToPoint(msg.id)}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-foreground hover:bg-accent transition-colors"
-                                  >
-                                    <Undo2 className="h-3.5 w-3.5 text-muted-foreground" />
-                                    Revert to this point
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                                  {/* ── MCP-Apps interactive UI resources (sandboxed iframes) ── */}
+                                  {msg.mcpResources &&
+                                    Object.values(msg.mcpResources).length >
+                                      0 &&
+                                    resolvedProjectId && (
+                                      <div className="mt-2 space-y-1">
+                                        {Object.values(msg.mcpResources).map(
+                                          (res) => {
+                                            // Live-status pipeline: the presentation-builder
+                                            // "Designing your deck…" card lives on THIS
+                                            // message, but the narration lines may stream into
+                                            // the SAME message (when the model continues in one
+                                            // turn) OR the NEXT assistant message (the BUILD_DECK
+                                            // follow-up turn triggered by the iframe). Pull
+                                            // emoji-prefixed status lines out of the current
+                                            // AND every later assistant message's content and
+                                            // forward them to the iframe so it shows real progress
+                                            // instead of a static spinner.
+                                            const laterAssistants = messages
+                                              .slice(msgIdx + 1)
+                                              .filter(
+                                                (m) => m.role === "assistant",
+                                              );
+                                            const currentAndLater = [
+                                              msg,
+                                              ...laterAssistants,
+                                            ].filter(
+                                              (m) => m.role === "assistant",
+                                            );
+                                            // Include both content AND thinking — narration lines
+                                            // from the BUILD_DECK turn get classified as thinking
+                                            // (they precede the build_deck tool call) but we still
+                                            // want them to stream as progress in the auto-build card.
+                                            const rawContent = currentAndLater
+                                              .map((m) =>
+                                                [
+                                                  m.content ?? "",
+                                                  m.thinkingContent ?? "",
+                                                ]
+                                                  .filter(Boolean)
+                                                  .join("\n"),
+                                              )
+                                              .join("\n");
+                                            const statusLines = rawContent
+                                              .split(/\n+/)
+                                              .map((l) =>
+                                                l
+                                                  .trim()
+                                                  .replace(/^["'"']+/, "")
+                                                  .replace(/["'"']+$/, ""),
+                                              )
+                                              .filter(
+                                                (l) =>
+                                                  l.length > 0 &&
+                                                  l.length < 240,
+                                              )
+                                              .filter((l) =>
+                                                /^(\p{Extended_Pictographic}|[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}])/u.test(
+                                                  l,
+                                                ),
+                                              );
+                                            // Card is "done" once a build_deck tool call
+                                            // completed in the current or any later assistant message.
+                                            const deckDone =
+                                              currentAndLater.some((m) =>
+                                                (m.toolActions ?? []).some(
+                                                  (tc) => {
+                                                    const n =
+                                                      tc?.toolName ?? "";
+                                                    const matches =
+                                                      n === "build_deck" ||
+                                                      n.endsWith(
+                                                        "_build_deck",
+                                                      ) ||
+                                                      n.endsWith(".build_deck");
+                                                    return (
+                                                      matches &&
+                                                      tc?.status !== "failed"
+                                                    );
+                                                  },
+                                                ),
+                                              );
+                                            return (
+                                              <McpUiResourceCard
+                                                key={res.toolCallId}
+                                                resource={res}
+                                                projectId={resolvedProjectId}
+                                                isStreaming={isStreaming}
+                                                statusLines={statusLines}
+                                                completedText={
+                                                  deckDone
+                                                    ? "Deck ready"
+                                                    : undefined
+                                                }
+                                                onResource={(newRes) => {
+                                                  setMessages((prev) =>
+                                                    prev.map((m) =>
+                                                      m.id === msg.id
+                                                        ? {
+                                                            ...m,
+                                                            mcpResources: {
+                                                              ...(m.mcpResources ??
+                                                                {}),
+                                                              [newRes.toolCallId]:
+                                                                newRes,
+                                                            },
+                                                          }
+                                                        : m,
+                                                    ),
+                                                  );
+                                                }}
+                                                onPrompt={(
+                                                  text,
+                                                  displayText,
+                                                ) => {
+                                                  // MCP App picker handing off a synthetic
+                                                  // prompt to the AI (e.g. presentation
+                                                  // builder forwarding skill instructions).
+                                                  // displayText keeps the visible chat bubble
+                                                  // short while the LLM gets the full prompt.
+                                                  //
+                                                  // Dedup: the presentation builder's
+                                                  // "Designing your deck…" card auto-fires a
+                                                  // BUILD_DECK prompt on host-ready. If the
+                                                  // model already obeyed the same-turn
+                                                  // instructions and produced a build_deck
+                                                  // tool call for THIS card's create_presentation,
+                                                  // suppress the re-injection to avoid building
+                                                  // twice. Only check messages AFTER this one
+                                                  // so a second presentation in the same session
+                                                  // still works.
+                                                  const isBuildDeck =
+                                                    typeof text === "string" &&
+                                                    text
+                                                      .trimStart()
+                                                      .startsWith("BUILD_DECK");
+                                                  if (isBuildDeck) {
+                                                    const laterMessages =
+                                                      messages.slice(
+                                                        msgIdx + 1,
+                                                      );
+                                                    const alreadyBuilt =
+                                                      laterMessages.some((m) =>
+                                                        (
+                                                          m.toolActions ?? []
+                                                        ).some((tc) => {
+                                                          const n =
+                                                            tc?.toolName ?? "";
+                                                          return (
+                                                            n ===
+                                                              "build_deck" ||
+                                                            n.endsWith(
+                                                              "_build_deck",
+                                                            ) ||
+                                                            n.endsWith(
+                                                              ".build_deck",
+                                                            )
+                                                          );
+                                                        }),
+                                                      );
+                                                    if (alreadyBuilt) {
+                                                      console.log(
+                                                        "[MCP] BUILD_DECK prompt suppressed — build_deck already ran for this card",
+                                                      );
+                                                      return;
+                                                    }
+                                                  }
+                                                  console.log(
+                                                    `[MCP][Trace] onPrompt → sendMessage (${isBuildDeck ? "BUILD_DECK" : "other"}, ${text.length} chars)`,
+                                                  );
+                                                  sendMessage(
+                                                    text,
+                                                    undefined,
+                                                    undefined,
+                                                    displayText,
+                                                  );
+                                                }}
+                                              />
+                                            );
+                                          },
+                                        )}
+                                      </div>
+                                    )}
 
-                        {/* ── MCP-Apps interactive UI resources (sandboxed iframes) ── */}
-                        {msg.mcpResources && Object.values(msg.mcpResources).length > 0 && resolvedProjectId && (
-                          <div className="mt-2 space-y-1">
-                            {Object.values(msg.mcpResources).map((res) => {
-                              // Live-status pipeline: the presentation-builder
-                              // "Designing your deck…" card lives on THIS
-                              // message, but the narration lines may stream into
-                              // the SAME message (when the model continues in one
-                              // turn) OR the NEXT assistant message (the BUILD_DECK
-                              // follow-up turn triggered by the iframe). Pull
-                              // emoji-prefixed status lines out of the current
-                              // AND every later assistant message's content and
-                              // forward them to the iframe so it shows real progress
-                              // instead of a static spinner.
-                              const laterAssistants = messages.slice(msgIdx + 1).filter((m) => m.role === "assistant");
-                              const currentAndLater = [msg, ...laterAssistants].filter((m) => m.role === "assistant");
-                              // Include both content AND thinking — narration lines
-                              // from the BUILD_DECK turn get classified as thinking
-                              // (they precede the build_deck tool call) but we still
-                              // want them to stream as progress in the auto-build card.
-                              const rawContent = currentAndLater.map((m) => [m.content ?? "", m.thinkingContent ?? ""].filter(Boolean).join("\n")).join("\n");
-                              const statusLines = rawContent
-                                .split(/\n+/)
-                                .map((l) => l.trim().replace(/^["'"']+/, "").replace(/["'"']+$/, ""))
-                                .filter((l) => l.length > 0 && l.length < 240)
-                                .filter((l) => /^(\p{Extended_Pictographic}|[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}])/u.test(l));
-                              // Card is "done" once a build_deck tool call
-                              // completed in the current or any later assistant message.
-                              const deckDone = currentAndLater.some((m) =>
-                                (m.toolActions ?? []).some((tc) => {
-                                  const n = tc?.toolName ?? "";
-                                  const matches = n === "build_deck" || n.endsWith("_build_deck") || n.endsWith(".build_deck");
-                                  return matches && tc?.status !== "failed";
-                                }),
-                              );
-                              return (
-                              <McpUiResourceCard
-                                key={res.toolCallId}
-                                resource={res}
-                                projectId={resolvedProjectId}
-                                isStreaming={isStreaming}
-                                statusLines={statusLines}
-                                completedText={deckDone ? "Deck ready" : undefined}
-                                onResource={(newRes) => {
-                                  setMessages((prev) =>
-                                    prev.map((m) =>
-                                      m.id === msg.id
-                                        ? {
-                                            ...m,
-                                            mcpResources: {
-                                              ...(m.mcpResources ?? {}),
-                                              [newRes.toolCallId]: newRes,
-                                            },
-                                          }
-                                        : m,
-                                    ),
-                                  );
-                                }}
-                                onPrompt={(text, displayText) => {
-                                  // MCP App picker handing off a synthetic
-                                  // prompt to the AI (e.g. presentation
-                                  // builder forwarding skill instructions).
-                                  // displayText keeps the visible chat bubble
-                                  // short while the LLM gets the full prompt.
-                                  //
-                                  // Dedup: the presentation builder's
-                                  // "Designing your deck…" card auto-fires a
-                                  // BUILD_DECK prompt on host-ready. If the
-                                  // model already obeyed the same-turn
-                                  // instructions and produced a build_deck
-                                  // tool call for THIS card's create_presentation,
-                                  // suppress the re-injection to avoid building
-                                  // twice. Only check messages AFTER this one
-                                  // so a second presentation in the same session
-                                  // still works.
-                                  const isBuildDeck = typeof text === "string" && text.trimStart().startsWith("BUILD_DECK");
-                                  if (isBuildDeck) {
-                                    const laterMessages = messages.slice(msgIdx + 1);
-                                    const alreadyBuilt = laterMessages.some((m) =>
-                                      (m.toolActions ?? []).some((tc) => {
-                                        const n = tc?.toolName ?? "";
-                                        return n === "build_deck" || n.endsWith("_build_deck") || n.endsWith(".build_deck");
-                                      }),
-                                    );
-                                    if (alreadyBuilt) {
-                                      console.log("[MCP] BUILD_DECK prompt suppressed — build_deck already ran for this card");
-                                      return;
-                                    }
-                                  }
-                                  console.log(`[MCP][Trace] onPrompt → sendMessage (${isBuildDeck ? "BUILD_DECK" : "other"}, ${text.length} chars)`);
-                                  sendMessage(text, undefined, undefined, displayText);
-                                }}
-                              />
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* ── Artifact download links (always-on fallback for
+                                  {/* ── Artifact download links (always-on fallback for
                              generated files even when the larger
                              mcp_ui_resource iframe event is dropped/buffered
                              upstream e.g. by Cloudflare Tunnel). ── */}
-                        {msg.artifacts && msg.artifacts.length > 0 && (
-                          <div className="mt-2 space-y-1.5">
-                            {msg.artifacts.map((a) => (
-                              <a
-                                key={a.url}
-                                href={a.url}
-                                download={a.fileName}
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 hover:border-primary/50 hover:bg-accent transition-colors text-sm no-underline"
-                              >
-                                <span className="text-2xl leading-none">
-                                  {a.mimeType.includes("presentationml") ? "📊" :
-                                   a.mimeType.includes("html") ? "🌐" :
-                                   a.mimeType.includes("pdf") ? "📄" : "📎"}
-                                </span>
-                                <span className="flex-1 min-w-0">
-                                  <span className="block font-semibold text-foreground truncate">
-                                    {a.fileName}
-                                  </span>
-                                  <span className="block text-xs text-muted-foreground">
-                                    {a.sizeBytes > 0 ? `${(a.sizeBytes / 1024).toFixed(1)} KB · ` : ""}Click to download
-                                  </span>
-                                </span>
-                                <span className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
-                                  Download
-                                </span>
-                              </a>
-                            ))}
-                          </div>
-                        )}
+                                  {msg.artifacts &&
+                                    msg.artifacts.length > 0 && (
+                                      <div className="mt-2 space-y-1.5">
+                                        {msg.artifacts.map((a) => (
+                                          <a
+                                            key={a.url}
+                                            href={a.url}
+                                            download={a.fileName}
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 hover:border-primary/50 hover:bg-accent transition-colors text-sm no-underline"
+                                          >
+                                            <span className="text-2xl leading-none">
+                                              {a.mimeType.includes(
+                                                "presentationml",
+                                              )
+                                                ? "📊"
+                                                : a.mimeType.includes("html")
+                                                  ? "🌐"
+                                                  : a.mimeType.includes("pdf")
+                                                    ? "📄"
+                                                    : "📎"}
+                                            </span>
+                                            <span className="flex-1 min-w-0">
+                                              <span className="block font-semibold text-foreground truncate">
+                                                {a.fileName}
+                                              </span>
+                                              <span className="block text-xs text-muted-foreground">
+                                                {a.sizeBytes > 0
+                                                  ? ui("{v0} KB · ", {
+                                                      v0: (
+                                                        a.sizeBytes / 1024
+                                                      ).toFixed(1),
+                                                    })
+                                                  : ""}
+                                                {ui("Click to download")}{" "}
+                                              </span>
+                                            </span>
+                                            <span className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+                                              {" "}
+                                              {ui("Download")}{" "}
+                                            </span>
+                                          </a>
+                                        ))}
+                                      </div>
+                                    )}
 
-                        {/* ── Suggestion Chips: scrollable row after last AI response ── */}
-                        {!msg.isStreaming &&
-                          !msg.isError &&
-                          (msg.content || msg.thinkingContent) &&
-                          !isStreaming &&
-                          (msgIdx === messages.length - 1 || (msg.suggestions && msg.suggestions.length > 0)) && (
-                            <div className="mt-3 -mx-1">
-                              <div className="flex flex-wrap gap-2 px-1 pb-1">
-                                {(msgIdx === messages.length - 1 && aiSuggestions.length > 0 ? aiSuggestions : (msg.suggestions || [])).map((suggestion) => (
-                                  <button
-                                    key={suggestion}
-                                    onClick={() => sendMessage(suggestion)}
-                                    className="rounded-full border border-border bg-secondary px-3.5 py-1.5 text-[13px] text-foreground hover:bg-accent hover:text-foreground hover:border-border transition-all"
-                                  >
-                                    {suggestion}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ); })}
-
-              {/* Plan Mode V2: Clarification questions */}
-              {planPhase === "clarifying" && pendingQuestions && (
-                <div className="px-3 py-2">
-                  <ClarificationFlow
-                    questions={pendingQuestions}
-                    onComplete={async (answers) => {
-                      setPendingQuestions(null);
-                      setPlanPhase("planning");
-                      const answerText = Object.entries(answers)
-                        .map(([qId, answer]) => `${qId}: ${answer}`)
-                        .join("\n");
-                      // Send answers back as a follow-up in plan mode
-                      sendMessage(`Here are my answers to your questions:\n\n${answerText}`);
-                    }}
-                    disabled={isStreaming}
-                  />
-                </div>
-              )}
-
-              {/* Plan Mode V2: Plan card for review */}
-              {planPhase === "reviewing" && activePlan && (
-                <div className="px-3 py-2">
-                  <PlanCard
-                    plan={activePlan}
-                    isEditable
-                    onApprove={() => {
-                      // Capture plan data before state changes
-                      const plan = activePlan;
-                      const summary = plan.summary;
-                      const stepList = plan.steps.map((s) => `${s.order}. ${s.title}`).join("\n");
-
-                      // Switch mode IMMEDIATELY — don't wait for API
-                      setActivePlan(prev => prev ? { ...prev, status: "approved", approvedAt: new Date().toISOString() } : prev);
-                      setPlanPhase("building");
-                      setChatMode("agent");
-
-                      // Approve in DB (fire and forget — UI already switched)
-                      const token = getStoredTokens().accessToken;
-                      fetch(`${API_URL}/projects/${resolvedProjectId}/plan/approve`, {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                        body: JSON.stringify({ planId: plan.id }),
-                      }).catch(() => {});
-
-                      // Trigger the AI to start building — pass "agent" mode explicitly
-                      setTimeout(() => {
-                        sendMessage(
-                          `Start building! Here's the approved plan:\n\n**${summary}**\n\n${stepList}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`,
-                          undefined,
-                          "agent"
-                        );
-                      }, 150);
-                    }}
-                    onRefine={() => {
-                      sendMessage("Please refine the plan based on my feedback.");
-                    }}
-                    onReset={async () => {
-                      try {
-                        const token = getStoredTokens().accessToken;
-                        await fetch(`${API_URL}/projects/${resolvedProjectId}/plan/abandon`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                          },
-                          body: JSON.stringify({ planId: activePlan.id }),
-                        });
-                      } catch {}
-                      setActivePlan(null);
-                      setPlanPhase("idle");
-                      setPendingQuestions(null);
-                    }}
-                    onStepEdit={(stepId, field, value) => {
-                      setActivePlan(prev => {
-                        if (!prev) return prev;
-                        return {
-                          ...prev,
-                          steps: prev.steps.map(s => s.id === stepId ? { ...s, [field]: value } : s),
-                        };
-                      });
-                    }}
-                    onStepRemove={(stepId) => {
-                      setActivePlan(prev => {
-                        if (!prev) return prev;
-                        return {
-                          ...prev,
-                          steps: prev.steps.filter(s => s.id !== stepId).map((s, i) => ({ ...s, order: i + 1 })),
-                        };
-                      });
-                    }}
-                    onStepReorder={(stepIds) => {
-                      setActivePlan(prev => {
-                        if (!prev) return prev;
-                        const stepById: Record<string, (typeof prev.steps)[number]> = {};
-                        for (const s of prev.steps) stepById[s.id] = s;
-                        const reordered = stepIds
-                          .map((id, i) => {
-                            const step = stepById[id];
-                            return step ? { ...step, order: i + 1 } : null;
-                          })
-                          .filter(Boolean) as typeof prev.steps;
-                        return { ...prev, steps: reordered };
-                      });
-                    }}
-                    onStepAdd={() => {
-                      setActivePlan(prev => {
-                        if (!prev) return prev;
-                        return {
-                          ...prev,
-                          steps: [...prev.steps, {
-                            id: `step_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                            order: prev.steps.length + 1,
-                            title: "New step",
-                            description: "Describe what this step does",
-                            status: "pending" as const,
-                          }],
-                        };
-                      });
-                    }}
-                  />
-                </div>
-              )}
-
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* "Back to Chat" link when viewing a panel */}
-            {isPanelView && (
-              <button
-                onClick={handlePanelClose}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground border-t border-border transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Chat
-              </button>
-            )}
-
-            {/* ── Stop Generation Button (floating above input) ── */}
-            {isStreaming && (
-              <div className="flex justify-center px-4 -mb-1">
-                <button
-                  onClick={handleStopStreaming}
-                  className="flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-[13px] font-medium text-foreground shadow-lg shadow-md hover:bg-accent hover:border-border transition-all backdrop-blur-sm"
-                >
-                  <Square className="h-3 w-3 fill-current" />
-                  Stop Doable
-                </button>
-              </div>
-            )}
-
-            {/* Typing indicator from collaborators */}
-            <CollabChatTyping keystrokeSignal={keystrokeSignal} />
-
-            {/* Input area */}
-            <div className="border-t border-border">
-              {/* Credits bar */}
-              {showCreditsBar && (
-                <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
-                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                    <Coins className="h-3.5 w-3.5 text-amber-400" />
-                    <span>5 credits remaining</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => router.push("/billing")}
-                      className="text-[12px] font-medium text-brand-400 hover:text-brand-300 transition-colors"
-                    >
-                      Add credits
-                    </button>
-                    <button
-                      onClick={() => setShowCreditsBar(false)}
-                      className="p-0.5 text-muted-foreground hover:text-muted-foreground transition-colors"
-                      title="Dismiss"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Chat input toolbar */}
-              <div className="px-2 py-2">
-                <div className="pt-2 pb-4 px-4 bg-gradient-to-t from-background via-background to-transparent shrink-0">
-                  <div
-                    className={`relative flex flex-col rounded-3xl border shadow-lg backdrop-blur-xl transition-all duration-300 ease-out ${
-                      isDragging
-                        ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500 scale-[1.01]"
-                        : "border-border bg-muted"
-                    }`}
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onDrop={fileAttachments.handleDrop}
-                  >
-                    {/* Attachment preview thumbnails */}
-                    {fileAttachments.attachments.length > 0 && (
-                      <div className="flex items-center gap-2 px-3 pt-3 pb-2 overflow-x-auto">
-                        {fileAttachments.attachments.map((att) => (
-                          <div key={att.id} className="relative group/thumb flex-none">
-                            {att.type === "image" ? (
-                              <img
-                                src={att.preview || att.data}
-                                alt={att.name}
-                                className="h-16 w-16 rounded-lg object-cover border border-border shadow-md"
-                              />
-                            ) : (
-                              <div className="flex h-16 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 shadow-md">
-                                <FileText className="h-4 w-4 flex-none text-muted-foreground" />
-                                <span className="max-w-[80px] truncate text-xs text-muted-foreground">{att.name}</span>
+                                  {/* ── Suggestion Chips: scrollable row after last AI response ── */}
+                                  {!msg.isStreaming &&
+                                    !msg.isError &&
+                                    (msg.content || msg.thinkingContent) &&
+                                    !isStreaming &&
+                                    (msgIdx === messages.length - 1 ||
+                                      (msg.suggestions &&
+                                        msg.suggestions.length > 0)) && (
+                                      <div className="mt-3 -mx-1">
+                                        <div className="flex flex-wrap gap-2 px-1 pb-1">
+                                          {(msgIdx === messages.length - 1 &&
+                                          aiSuggestions.length > 0
+                                            ? aiSuggestions
+                                            : msg.suggestions || []
+                                          ).map((suggestion) => (
+                                            <button
+                                              key={suggestion}
+                                              onClick={() =>
+                                                sendMessage(ui(suggestion))
+                                              }
+                                              className="rounded-full border border-border bg-secondary px-3.5 py-1.5 text-[13px] text-foreground hover:bg-accent hover:text-foreground hover:border-border transition-all"
+                                            >
+                                              {ui(suggestion)}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                </div>
                               </div>
                             )}
-                            <button
-                              onClick={() => fileAttachments.removeAttachment(att.id)}
-                              className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-secondary border border-border text-muted-foreground hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100 shadow-xl"
-                            >
-                              <X className="h-2.5 w-2.5" />
-                            </button>
                           </div>
-                        ))}
+                        );
+                      })}
+
+                      {/* Plan Mode V2: Clarification questions */}
+                      {planPhase === "clarifying" && pendingQuestions && (
+                        <div className="px-3 py-2">
+                          <ClarificationFlow
+                            questions={pendingQuestions}
+                            onComplete={async (answers) => {
+                              setPendingQuestions(null);
+                              setPlanPhase("planning");
+                              const answerText = Object.entries(answers)
+                                .map(([qId, answer]) => `${qId}: ${answer}`)
+                                .join("\n");
+                              // Send answers back as a follow-up in plan mode
+                              sendMessage(
+                                ui(
+                                  "Here are my answers to your questions:\n\n{answers}",
+                                  { answers: answerText },
+                                ),
+                              );
+                            }}
+                            disabled={isStreaming}
+                          />
+                        </div>
+                      )}
+
+                      {planError && (
+                        <p
+                          role="alert"
+                          className="px-3 py-2 text-xs text-red-500"
+                        >
+                          {planError}
+                        </p>
+                      )}
+                      {/* Plan Mode V2: Plan card for review */}
+                      {planPhase === "reviewing" && activePlan && (
+                        <div className="px-3 py-2">
+                          <PlanCard
+                            plan={activePlan}
+                            isEditable
+                            onApprove={async () => {
+                              setPlanError(null);
+                              const plan = activePlan;
+                              const stepList = plan.steps
+                                .map(
+                                  (s) =>
+                                    `${s.order}. ${s.title} (Step ID: ${s.id})`,
+                                )
+                                .join("\n");
+                              try {
+                                await apiFetch(
+                                  `/projects/${resolvedProjectId}/plan/approve`,
+                                  {
+                                    method: "POST",
+                                    body: JSON.stringify({ planId: plan.id }),
+                                  },
+                                );
+                                setActivePlan((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        status: "approved",
+                                        revision: (prev.revision ?? 0) + 1,
+                                      }
+                                    : prev,
+                                );
+                                setPlanPhase("building");
+                                setChatMode("agent");
+                                sendMessage(
+                                  ui(
+                                    "Start building! Here's the approved plan:\n\n**{summary}**\n\n{steps}\n\nBuild each step in order. The full plan details are in .doable/plan.md.",
+                                    { summary: plan.summary, steps: stepList },
+                                  ),
+                                  undefined,
+                                  "agent",
+                                );
+                              } catch (err) {
+                                setPlanError(
+                                  err instanceof Error
+                                    ? err.message
+                                    : ui(
+                                        "Could not approve plan. Please try again.",
+                                      ),
+                                );
+                              }
+                            }}
+                            onRefine={() => {
+                              sendMessage(
+                                ui(
+                                  "Please refine the plan based on my feedback.",
+                                ),
+                              );
+                            }}
+                            onReset={async () => {
+                              try {
+                                const token = getStoredTokens().accessToken;
+                                await fetch(
+                                  `${API_URL}/projects/${resolvedProjectId}/plan/abandon`,
+                                  {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      ...(token
+                                        ? { Authorization: `Bearer ${token}` }
+                                        : {}),
+                                    },
+                                    body: JSON.stringify({
+                                      planId: activePlan.id,
+                                    }),
+                                  },
+                                );
+                              } catch {}
+                              setActivePlan(null);
+                              setPlanPhase("idle");
+                              setPendingQuestions(null);
+                            }}
+                            onStepEdit={(stepId, field, value) => {
+                              setActivePlan((prev) => {
+                                if (!prev) return prev;
+                                return {
+                                  ...prev,
+                                  steps: prev.steps.map((s) =>
+                                    s.id === stepId
+                                      ? { ...s, [field]: value }
+                                      : s,
+                                  ),
+                                };
+                              });
+                            }}
+                            onStepRemove={(stepId) => {
+                              setActivePlan((prev) => {
+                                if (!prev) return prev;
+                                return {
+                                  ...prev,
+                                  steps: prev.steps
+                                    .filter((s) => s.id !== stepId)
+                                    .map((s, i) => ({ ...s, order: i + 1 })),
+                                };
+                              });
+                            }}
+                            onStepReorder={(stepIds) => {
+                              setActivePlan((prev) => {
+                                if (!prev) return prev;
+                                const stepById: Record<
+                                  string,
+                                  (typeof prev.steps)[number]
+                                > = {};
+                                for (const s of prev.steps) stepById[s.id] = s;
+                                const reordered = stepIds
+                                  .map((id, i) => {
+                                    const step = stepById[id];
+                                    return step
+                                      ? { ...step, order: i + 1 }
+                                      : null;
+                                  })
+                                  .filter(Boolean) as typeof prev.steps;
+                                return { ...prev, steps: reordered };
+                              });
+                            }}
+                            onStepAdd={() => {
+                              setActivePlan((prev) => {
+                                if (!prev) return prev;
+                                return {
+                                  ...prev,
+                                  steps: [
+                                    ...prev.steps,
+                                    {
+                                      id: `step_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                                      order: prev.steps.length + 1,
+                                      title: ui("New step"),
+                                      description: ui(
+                                        "Describe what this step does",
+                                      ),
+                                      status: "pending" as const,
+                                    },
+                                  ],
+                                };
+                              });
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      <div ref={chatEndRef} />
+                    </div>
+
+                    {/* "Back to Chat" link when viewing a panel */}
+                    {isPanelView && (
+                      <button
+                        onClick={handlePanelClose}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground border-t border-border transition-colors"
+                      >
+                        <ArrowLeft className="h-4 w-4" />{" "}
+                        {ui("Back to Chat")}{" "}
+                      </button>
+                    )}
+
+                    {/* ── Stop Generation Button (floating above input) ── */}
+                    {isStreaming && (
+                      <div className="flex justify-center px-4 -mb-1">
+                        <button
+                          onClick={handleStopStreaming}
+                          className="flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-[13px] font-medium text-foreground shadow-lg shadow-md hover:bg-accent hover:border-border transition-all backdrop-blur-sm"
+                        >
+                          <Square className="h-3 w-3 fill-current" />{" "}
+                          {ui("Stop Doable")}{" "}
+                        </button>
                       </div>
                     )}
 
-                    {/* Hidden file input for attachments */}
-                    <input
-                      ref={fileAttachments.fileInputRef}
-                      type="file"
-                      accept={ACCEPTED_EXTENSIONS}
-                      multiple
-                      className="hidden"
-                      onChange={fileAttachments.handleFileChange}
-                    />
+                    {/* Typing indicator from collaborators */}
+                    <CollabChatTyping keystrokeSignal={keystrokeSignal} />
 
-                    <textarea
-                      value={inputValue}
-                      onChange={(e) => {
-                        setInputValue(e.target.value);
-                        setKeystrokeSignal((s) => s + 1);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                      onPaste={fileAttachments.handlePaste}
-                      placeholder={inputValue.length > 0 ? "" : "Ask Doable..."}
-                      rows={1}
-                      disabled={isStreaming}
-                      className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:opacity-50"
-                    />
-
-                    {/* Bottom toolbar row */}
-                    <div className="@container flex items-center justify-between px-2 pb-2 mt-1">
-                      {/* Left: Attachment + Toggles Group */}
-                      <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
-                        {/* + button (rounded-full) */}
-                        <button
-                          onClick={fileAttachments.openFilePicker}
-                          className="shrink-0 relative flex h-7 w-7 items-center justify-center rounded-full border border-border bg-accent text-muted-foreground hover:bg-accent hover:text-foreground transition-all duration-200"
-                          title="Attach file (images, text, code, PDF)"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          {fileAttachments.attachments.length > 0 && (
-                            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-500 text-[9px] font-medium text-white shadow-sm">
-                              {fileAttachments.attachments.length}
-                            </span>
-                          )}
-                        </button>
-
-                        {/* / skill picker button */}
-                        <SkillPickerButton
-                          manifest={skillManifest}
-                          onSelect={(name) => setInputValue((prev) => `/${name} ${prev}`)}
-                          disabled={isStreaming}
-                        />
-
-                        <div className="shrink-0 h-4 w-px bg-accent mx-0.5" />
-
-                        {/* ── Strategize / Work Mode Toggle ── */}
-                        <div className="shrink-0 flex items-center rounded-full bg-muted border border-border p-0.5">
-                          <button
-                            onClick={() => setChatMode("plan")}
-                            className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
-                              chatMode === "plan"
-                                ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
-                                : "text-muted-foreground hover:text-foreground"
-                            }`}
-                            title="Strategize mode — creates plans only"
-                          >
-                            <Target className="h-3 w-3" />
-                            <span className="hidden @[26rem]:inline">Strategize</span>
-                          </button>
-                          <button
-                            onClick={() => setChatMode("agent")}
-                            className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
-                              chatMode === "agent"
-                                ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
-                                : "text-muted-foreground hover:text-foreground"
-                            }`}
-                            title="Work mode — generates code"
-                          >
-                            <Hammer className="h-3 w-3" />
-                            <span className="hidden @[26rem]:inline">Work</span>
-                          </button>
+                    {/* Input area */}
+                    <div className="border-t border-border">
+                      {/* Credits bar */}
+                      {showCreditsBar && (
+                        <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
+                          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                            <Coins className="h-3.5 w-3.5 text-amber-400" />
+                            <span>{ui("5 credits remaining")}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => router.push("/billing")}
+                              className="text-[12px] font-medium text-brand-400 hover:text-brand-300 transition-colors"
+                            >
+                              {" "}
+                              {ui("Add credits")}{" "}
+                            </button>
+                            <button
+                              onClick={() => setShowCreditsBar(false)}
+                              className="p-0.5 text-muted-foreground hover:text-muted-foreground transition-colors"
+                              title={ui("Dismiss")}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
-                        
-                        {/* Design View Toggle */}
-                        <button
-                          onClick={() => setActiveTab("design")}
-                          className={`shrink-0 flex items-center gap-1.5 rounded-full border h-7 w-7 @[26rem]:w-auto @[26rem]:px-2 justify-center text-[10px] sm:text-[11px] font-medium transition-all ${
-                            isDesignMode
-                              ? "border-brand-500/50 bg-brand-500/10 text-brand-700 dark:text-brand-300"
-                              : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
-                          }`}
-                          title="Design View"
-                        >
-                          <Paintbrush className="h-3 w-3" />
-                          <span className="hidden @[26rem]:inline">Design View</span>
-                        </button>
-                        
-                        {/* Model selector — hidden unless admin enables it */}
-                        {(effectiveAiConfig?.show_model_selector ?? false) && (
-                          <div className="shrink-0 text-[10px] sm:text-[11px]">
-                            <EditorModelSelector
-                              selectedModelId={selectedModelId}
-                              selectedProviderId={selectedProviderId}
-                              selectedCopilotAccountId={selectedCopilotAccountId}
-                              onSelect={handleModelSelect}
-                              models={availableModels}
-                              disabled={effectiveAiConfig?.enforce_ai ?? false}
-                              enforcedLabel={effectiveAiConfig?.enforce_ai ? `Enforced: ${effectiveAiConfig.enforced_model ?? 'Default'}` : undefined}
+                      )}
+
+                      {/* Chat input toolbar */}
+                      <div className="px-2 py-2">
+                        <div className="pt-2 pb-4 px-4 bg-gradient-to-t from-background via-background to-transparent shrink-0">
+                          <div
+                            className={`relative flex flex-col rounded-3xl border shadow-lg backdrop-blur-xl transition-all duration-300 ease-out ${
+                              isDragging
+                                ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500 scale-[1.01]"
+                                : "border-border bg-muted"
+                            }`}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onDrop={fileAttachments.handleDrop}
+                          >
+                            {/* Attachment preview thumbnails */}
+                            {fileAttachments.attachments.length > 0 && (
+                              <div className="flex items-center gap-2 px-3 pt-3 pb-2 overflow-x-auto">
+                                {fileAttachments.attachments.map((att) => (
+                                  <div
+                                    key={att.id}
+                                    className="relative group/thumb flex-none"
+                                  >
+                                    {att.type === "image" ? (
+                                      <img
+                                        src={att.preview || att.data}
+                                        alt={att.name}
+                                        className="h-16 w-16 rounded-lg object-cover border border-border shadow-md"
+                                      />
+                                    ) : (
+                                      <div className="flex h-16 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 shadow-md">
+                                        <FileText className="h-4 w-4 flex-none text-muted-foreground" />
+                                        <span className="max-w-[80px] truncate text-xs text-muted-foreground">
+                                          {att.name}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <button
+                                      onClick={() =>
+                                        fileAttachments.removeAttachment(att.id)
+                                      }
+                                      className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-secondary border border-border text-muted-foreground hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors opacity-0 group-hover/thumb:opacity-100 shadow-xl"
+                                    >
+                                      <X className="h-2.5 w-2.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Hidden file input for attachments */}
+                            <input
+                              ref={fileAttachments.fileInputRef}
+                              type="file"
+                              accept={ACCEPTED_EXTENSIONS}
+                              multiple
+                              className="hidden"
+                              onChange={fileAttachments.handleFileChange}
                             />
+
+                            <textarea
+                              value={inputValue}
+                              onChange={(e) => {
+                                setInputValue(e.target.value);
+                                setKeystrokeSignal((s) => s + 1);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleSend();
+                                }
+                              }}
+                              onPaste={fileAttachments.handlePaste}
+                              placeholder={
+                                inputValue.length > 0
+                                  ? ""
+                                  : ui("Ask Doable...")
+                              }
+                              rows={1}
+                              disabled={isStreaming}
+                              className="w-full max-h-[40vh] min-h-[48px] resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:opacity-50"
+                            />
+
+                            {/* Bottom toolbar row */}
+                            <div className="@container flex items-center justify-between px-2 pb-2 mt-1">
+                              {/* Left: Attachment + Toggles Group */}
+                              <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
+                                {/* + button (rounded-full) */}
+                                <button
+                                  onClick={fileAttachments.openFilePicker}
+                                  className="shrink-0 relative flex h-7 w-7 items-center justify-center rounded-full border border-border bg-accent text-muted-foreground hover:bg-accent hover:text-foreground transition-all duration-200"
+                                  title={ui(
+                                    "Attach file (images, text, code, PDF)",
+                                  )}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                  {fileAttachments.attachments.length > 0 && (
+                                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-500 text-[9px] font-medium text-white shadow-sm">
+                                      {fileAttachments.attachments.length}
+                                    </span>
+                                  )}
+                                </button>
+
+                                {/* / skill picker button */}
+                                <SkillPickerButton
+                                  manifest={skillManifest}
+                                  onSelect={(name) =>
+                                    setInputValue((prev) => `/${name} ${prev}`)
+                                  }
+                                  disabled={isStreaming}
+                                />
+
+                                <div className="shrink-0 h-4 w-px bg-accent mx-0.5" />
+
+                                {/* ── Strategize / Work Mode Toggle ── */}
+                                <div className="shrink-0 flex items-center rounded-full bg-muted border border-border p-0.5">
+                                  <button
+                                    onClick={() => setChatMode("plan")}
+                                    className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
+                                      chatMode === "plan"
+                                        ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
+                                        : "text-muted-foreground hover:text-foreground"
+                                    }`}
+                                    title={ui(
+                                      "Strategize mode — creates plans only",
+                                    )}
+                                  >
+                                    <Target className="h-3 w-3" />
+                                    <span className="hidden @[26rem]:inline">
+                                      {ui("Strategize")}
+                                    </span>
+                                  </button>
+                                  <button
+                                    onClick={() => setChatMode("agent")}
+                                    className={`flex items-center gap-1 px-2.5 h-6 rounded-full text-[10px] sm:text-[11px] font-medium transition-all ${
+                                      chatMode === "agent"
+                                        ? "bg-brand-500/20 text-brand-700 dark:text-brand-300 shadow-[0_0_10px_rgba(168,85,247,0.1)]"
+                                        : "text-muted-foreground hover:text-foreground"
+                                    }`}
+                                    title={ui("Work mode — generates code")}
+                                  >
+                                    <Hammer className="h-3 w-3" />
+                                    <span className="hidden @[26rem]:inline">
+                                      {ui("Work")}
+                                    </span>
+                                  </button>
+                                </div>
+
+                                {/* Design View Toggle */}
+                                <button
+                                  onClick={() => setActiveTab("design")}
+                                  className={`shrink-0 flex items-center gap-1.5 rounded-full border h-7 w-7 @[26rem]:w-auto @[26rem]:px-2 justify-center text-[10px] sm:text-[11px] font-medium transition-all ${
+                                    isDesignMode
+                                      ? "border-brand-500/50 bg-brand-500/10 text-brand-700 dark:text-brand-300"
+                                      : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                                  }`}
+                                  title={ui("Design View")}
+                                >
+                                  <Paintbrush className="h-3 w-3" />
+                                  <span className="hidden @[26rem]:inline">
+                                    {ui("Design View")}
+                                  </span>
+                                </button>
+
+                                {/* Model selector — hidden unless admin enables it */}
+                                {(effectiveAiConfig?.show_model_selector ??
+                                  false) && (
+                                  <div className="shrink-0 text-[10px] sm:text-[11px]">
+                                    <EditorModelSelector
+                                      selectedModelId={selectedModelId}
+                                      selectedProviderId={selectedProviderId}
+                                      selectedCopilotAccountId={
+                                        selectedCopilotAccountId
+                                      }
+                                      onSelect={handleModelSelect}
+                                      models={availableModels}
+                                      disabled={
+                                        effectiveAiConfig?.enforce_ai ?? false
+                                      }
+                                      enforcedLabel={
+                                        effectiveAiConfig?.enforce_ai
+                                          ? `Enforced: ${effectiveAiConfig.enforced_model ?? "Default"}`
+                                          : undefined
+                                      }
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Right: Mic, Send */}
+                              <div className="shrink-0 flex items-center justify-end gap-1.5 ml-auto">
+                                {/* Mic button (rounded-full) — hidden on unsupported browsers */}
+                                {speechRecognition.isSupported && (
+                                  <button
+                                    onClick={speechRecognition.toggle}
+                                    className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                                      speechRecognition.isListening
+                                        ? "text-red-400 bg-red-500/10 border border-red-500/20 animate-pulse"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent"
+                                    }`}
+                                    title={
+                                      speechRecognition.isListening
+                                        ? ui("Stop recording")
+                                        : ui("Voice input")
+                                    }
+                                  >
+                                    <Mic className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+
+                                {/* Send / Stop button */}
+                                {isStreaming ? (
+                                  <button
+                                    onClick={handleStopStreaming}
+                                    className="flex h-7 items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/20 px-2.5 text-red-500 hover:bg-red-500/20 transition-colors shadow-sm"
+                                    title={ui("Stop generation")}
+                                  >
+                                    <Square className="h-3 w-3 fill-current" />
+                                    <span className="text-[10px] sm:text-[11px] font-medium">
+                                      {ui("Stop")}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={handleSend}
+                                    disabled={
+                                      !inputValue.trim() &&
+                                      fileAttachments.attachments.length === 0
+                                    }
+                                    className="group flex h-7 w-7 sm:w-auto sm:px-2.5 items-center justify-center gap-1.5 rounded-full bg-brand-500 border border-brand-500/20 text-white shadow-md hover:bg-brand-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                  >
+                                    <span className="hidden sm:inline text-[10px] sm:text-[11px] font-medium tracking-wide">
+                                      {ui("Send")}
+                                    </span>
+                                    <ArrowUp className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        )}
-                      </div>
 
-                      {/* Right: Mic, Send */}
-                      <div className="shrink-0 flex items-center justify-end gap-1.5 ml-auto">
-                        {/* Mic button (rounded-full) — hidden on unsupported browsers */}
-                        {speechRecognition.isSupported && (
-                          <button
-                            onClick={speechRecognition.toggle}
-                            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
-                              speechRecognition.isListening
-                                ? "text-red-400 bg-red-500/10 border border-red-500/20 animate-pulse"
-                                : "text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent"
-                            }`}
-                            title={speechRecognition.isListening ? "Stop recording" : "Voice input"}
-                          >
-                            <Mic className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-
-                        {/* Send / Stop button */}
-                        {isStreaming ? (
-                          <button
-                            onClick={handleStopStreaming}
-                            className="flex h-7 items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/20 px-2.5 text-red-500 hover:bg-red-500/20 transition-colors shadow-sm"
-                            title="Stop generation"
-                          >
-                            <Square className="h-3 w-3 fill-current" />
-                            <span className="text-[10px] sm:text-[11px] font-medium">Stop</span>
-                          </button>
-                        ) : (
-                          <button
-                            onClick={handleSend}
-                            disabled={!inputValue.trim() && fileAttachments.attachments.length === 0}
-                            className="group flex h-7 w-7 sm:w-auto sm:px-2.5 items-center justify-center gap-1.5 rounded-full bg-brand-500 border border-brand-500/20 text-white shadow-md hover:bg-brand-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            <span className="hidden sm:inline text-[10px] sm:text-[11px] font-medium tracking-wide">Send</span>
-                            <ArrowUp className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-2 text-center text-[10px] text-muted-foreground/60 font-medium tracking-wide">
-                    Shift + Enter for new line
-                  </div>
-                </div>
-              </div>
-
-              {/* ── "Back to Chat" link when on non-chat tabs ── */}
-              {activeTab !== "chat" && (
-                <div className="flex justify-center pb-2">
-                  <button
-                    onClick={() => setActiveTab("chat")}
-                    className="flex items-center gap-1.5 text-[12px] text-brand-400 hover:text-brand-300 transition-colors"
-                  >
-                    <MessageSquare className="h-3 w-3" />
-                    Back to Chat
-                  </button>
-                </div>
-              )}
-            </div>
-            </>
-            )}
-          </div>
-        )}
-
-        {/* ─── Code Panel ───────────────────────────────────── */}
-        {showCode && (
-          <div className="flex flex-1 overflow-hidden bg-card">
-            {/* File tree sidebar */}
-            <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-border bg-card py-2">
-              <div className="mb-1 px-3 flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Explorer
-                </span>
-                {fileTreeLoading && (
-                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                )}
-              </div>
-              {scaffoldStatus !== "ready" ? (
-                <div className="px-3 py-4 text-center">
-                  {scaffoldStatus === "error" ? (
-                    <p className="text-[12px] text-red-400">Failed to load</p>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      <p className="text-[12px] text-muted-foreground">Loading files...</p>
-                    </div>
-                  )}
-                </div>
-              ) : fileTreeError ? (
-                <div className="px-3 py-4 text-center">
-                  <p className="text-[12px] text-red-400 mb-2">{fileTreeError}</p>
-                  <button
-                    onClick={loadFileTree}
-                    className="text-[11px] text-brand-400 hover:text-brand-300"
-                  >
-                    Retry
-                  </button>
-                </div>
-              ) : fileTree.length === 0 ? (
-                <div className="px-3 py-4 text-center">
-                  <p className="text-[12px] text-muted-foreground">No files yet</p>
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    Ask the AI to create some files
-                  </p>
-                </div>
-              ) : (
-                renderTree(fileTree)
-              )}
-            </div>
-
-            {/* Code display with Monaco editor */}
-            <div className="flex flex-1 flex-col overflow-hidden">
-              {/* Multi-tab bar */}
-              <div className="flex h-9 items-center overflow-x-auto border-b border-border bg-background">
-                {openFileTabs.length > 0 ? (
-                  openFileTabs.map((tab) => {
-                    const isActiveTab = tab.path === selectedFile;
-                    return (
-                      <div
-                        key={tab.path}
-                        className={`group flex h-full items-center gap-1.5 border-r border-border px-3 text-xs cursor-pointer select-none transition-colors ${
-                          isActiveTab
-                            ? "bg-background text-foreground"
-                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                        onClick={() => {
-                          setSelectedFile(tab.path);
-                          const cached = fileContentsCache.current[tab.path];
-                          if (cached !== undefined) {
-                            setFileContent(cached);
-                          } else {
-                            loadFileContent(tab.path);
-                          }
-                        }}
-                      >
-                        <FileCode2 className="h-3 w-3 flex-none text-muted-foreground" />
-                        <span className="truncate max-w-[120px]">{tab.name}</span>
-                        <FileTabPresenceDots filePath={tab.path} currentUserId={authUser?.id ?? ""} />
-                        {tab.isDirty && (
-                          <Circle className="h-2 w-2 flex-none fill-current text-brand-400" />
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            closeFileTab(tab.path);
-                          }}
-                          className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all"
-                          title="Close (Ctrl+W)"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="px-3 py-1.5 text-[12px] text-muted-foreground">
-                    No file selected
-                  </div>
-                )}
-
-                {/* Minimap toggle */}
-                <div className="ml-auto flex items-center gap-1 px-2">
-                  <button
-                    onClick={() => setShowMinimap((v) => !v)}
-                    className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
-                      showMinimap
-                        ? "text-brand-400 bg-secondary"
-                        : "text-muted-foreground hover:text-muted-foreground"
-                    }`}
-                    title={showMinimap ? "Hide minimap" : "Show minimap"}
-                  >
-                    <Map className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Breadcrumb */}
-              {selectedFile && (
-                <div className="flex h-6 items-center border-b border-border bg-background px-3">
-                  <span className="text-[11px] text-muted-foreground font-mono truncate">
-                    {selectedFile}
-                  </span>
-                </div>
-              )}
-
-              {/* Editor content */}
-              {!selectedFile ? (
-                <div className="flex flex-1 items-center justify-center bg-background">
-                  <div className="text-center px-8">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto mb-3">
-                      <Code2 className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">
-                      Select a file from the explorer
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Click on any file to view its content
-                    </p>
-                    <div className="mt-4 flex flex-col gap-1 text-[11px] text-muted-foreground">
-                      <span>Ctrl+S to save</span>
-                      <span>Ctrl+F to search</span>
-                      <span>Ctrl+H to replace</span>
-                      <span>Ctrl+W to close tab</span>
-                    </div>
-                  </div>
-                </div>
-              ) : fileContentLoading ? (
-                <div className="flex flex-1 items-center justify-center bg-background">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="h-6 w-6 animate-spin text-brand-400" />
-                    <p className="text-sm text-muted-foreground">Loading file...</p>
-                  </div>
-                </div>
-              ) : fileContentError ? (
-                <div className="flex flex-1 items-center justify-center bg-background">
-                  <div className="text-center px-8">
-                    <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
-                    <p className="text-sm text-red-300 mb-2">{fileContentError}</p>
-                    <button
-                      onClick={() => loadFileContent(selectedFile)}
-                      className="text-sm text-brand-400 hover:text-brand-300"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                </div>
-              ) : fileContent !== null ? (
-                <div className="flex-1 overflow-hidden">
-                  <CollaborativeMonacoWrapper
-                    EditorComponent={MonacoEditorWrapper}
-                    value={fileContent}
-                    language={detectLanguage(selectedFile.split("/").pop() ?? "")}
-                    filePath={selectedFile}
-                    readOnly={false}
-                    onChange={handleMonacoChange}
-                    onSave={handleMonacoSave}
-                    showMinimap={showMinimap}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-1 items-center justify-center bg-background">
-                  <div className="text-center px-8">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto mb-3">
-                      <Code2 className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">
-                      Code will appear here as the AI generates files
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Start a conversation in the Chat tab to generate your
-                      project
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ─── Resize Handle ────────────────────────────────── */}
-        {showChat && (showPreview || isPanelView) && (
-          <div
-            className="group relative z-20 w-1 flex-shrink-0 cursor-col-resize"
-            onMouseDown={handleMouseDown}
-          >
-            <div
-              className={`absolute inset-y-0 -left-px w-[3px] transition-colors ${
-                isDragging
-                  ? "bg-brand-500"
-                  : "bg-transparent group-hover:bg-brand-500/40"
-              }`}
-            />
-          </div>
-        )}
-
-        {/* ─── Preview Panel ────────────────────────────────── */}
-        {showPreview && !showCode && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-card">
-            {/* Preview iframe or loading state */}
-            <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-background p-2">
-              {!previewUrl ? (
-                renderScaffoldOverlay()
-              ) : (
-                <div
-                  ref={previewContainerRef}
-                  className={`relative h-full overflow-hidden bg-white transition-all duration-300 ${
-                    deviceMode === "mobile"
-                      ? "w-[375px] rounded-[24px] shadow-2xl shadow-md"
-                      : deviceMode === "tablet"
-                        ? "w-[768px] rounded-2xl shadow-xl shadow-md"
-                        : "w-full rounded-2xl"
-                  }`}
-                  style={
-                    deviceMode === "mobile"
-                      ? {
-                          maxHeight: "calc(100% - 16px)",
-                          border: "4px solid #1e1e2e",
-                        }
-                      : deviceMode === "tablet"
-                        ? {
-                            maxWidth: "100%",
-                            border: "3px solid #1e1e2e",
-                          }
-                        : {}
-                  }
-                >
-                  {/* Mobile notch mockup */}
-                  {deviceMode === "mobile" && (
-                    <div className="absolute top-0 left-1/2 z-20 -translate-x-1/2">
-                      <div className="h-[22px] w-[120px] rounded-b-xl bg-[#1e1e2e]" />
-                    </div>
-                  )}
-                  <iframe
-                    ref={iframeRef}
-                    src={previewUrl}
-                    className="h-full w-full border-0"
-                    title="App Preview"
-                    // allow-same-origin is required: without it the iframe gets
-                    // an opaque origin and accessing window.localStorage throws
-                    // SecurityError, which crashes any user app that touches
-                    // it on mount (the in-memory polyfill in the injected
-                    // namespacing script can't redefine the non-configurable
-                    // window.localStorage getter in modern Chrome).
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-                    allow="microphone; autoplay; clipboard-write"
-                  />
-                  {/* BUG-R27-010 — auto-fix kill-switch banner. Surfaces when
-                      the same error has retried 3× in 5min (hard) or the AI
-                      streamed without a tool call (soft 2min cooldown). */}
-                  {autoFixPausedReason && (
-                    <div className="pointer-events-auto absolute left-3 right-3 top-3 z-40">
-                      <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md dark:border-amber-700 dark:bg-amber-950/80 dark:text-amber-100">
-                        <div className="flex-1">
-                          <div className="font-medium">
-                            {autoFixPausedReason.kind === "hard"
-                              ? `Auto-fix paused — the AI couldn't fix this error after ${autoFixPausedReason.attempts} attempts.`
-                              : "Auto-fix paused — the AI didn't edit any files on the last attempt."}
-                          </div>
-                          <div className="mt-0.5 text-xs opacity-90">
-                            {autoFixPausedReason.kind === "hard"
-                              ? "Open the chat to fix it manually, or click Reset Preview."
-                              : "Will retry automatically in 2 minutes, or resume now."}
+                          <div className="mt-2 text-center text-[10px] text-muted-foreground/60 font-medium tracking-wide">
+                            {" "}
+                            {ui("Shift + Enter for new line")}{" "}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={resumeAutoFix}
-                          className="shrink-0 rounded-md border border-amber-400 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/60 dark:text-amber-50 dark:hover:bg-amber-900"
-                        >
-                          Resume auto-fix
-                        </button>
                       </div>
+
+                      {/* ── "Back to Chat" link when on non-chat tabs ── */}
+                      {activeTab !== "chat" && (
+                        <div className="flex justify-center pb-2">
+                          <button
+                            onClick={() => setActiveTab("chat")}
+                            className="flex items-center gap-1.5 text-[12px] text-brand-400 hover:text-brand-300 transition-colors"
+                          >
+                            <MessageSquare className="h-3 w-3" />{" "}
+                            {ui("Back to Chat")}{" "}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {/* Runtime metrics overlay — bottom-right of preview pane.
-                      Reads from /projects/:id/runtime/metrics; degrades to
-                      "unavailable" copy on dev hosts (no systemd/cgroup). */}
-                  {false && resolvedProjectId && scaffoldStatus === "ready" && !isFirstGeneration && (
-                    <div className="pointer-events-auto absolute bottom-3 right-3 z-30 w-[280px] opacity-80 hover:opacity-100 transition-opacity">
-                      <RuntimePanel projectId={resolvedProjectId} />
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ─── Code Panel ───────────────────────────────────── */}
+            {showCode && (
+              <div className="flex flex-1 overflow-hidden bg-card">
+                {/* File tree sidebar */}
+                <div className="w-56 flex-shrink-0 overflow-y-auto border-r border-border bg-card py-2">
+                  <div className="mb-1 px-3 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {" "}
+                      {ui("Explorer")}{" "}
+                    </span>
+                    {fileTreeLoading && (
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  {scaffoldStatus !== "ready" ? (
+                    <div className="px-3 py-4 text-center">
+                      {scaffoldStatus === "error" ? (
+                        <p className="text-[12px] text-red-400">
+                          {ui("Failed to load")}
+                        </p>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          <p className="text-[12px] text-muted-foreground">
+                            {ui("Loading files...")}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {/* Building overlay — covers preview during scaffold setup,
-                      first generation, or any active AI building with tool calls.
-                      Shows live status as the AI works. Disappears when generation ends. */}
-                  {(isFirstGeneration || scaffoldStatus !== "ready" || hasActiveToolCalls) && (
-                    <div className={`absolute inset-0 z-10 flex flex-col items-center justify-center transition-opacity duration-500 ${
-                      scaffoldStatus !== "ready" || isFirstGeneration
-                        ? "bg-background/90 backdrop-blur-sm"
-                        : "bg-background/75 backdrop-blur-[2px]"
-                    }`}>
-                      <div className="relative mb-5">
-                        <div className="h-10 w-10 rounded-full border-2 border-border border-t-brand-400 animate-spin" />
-                        <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-400" />
-                      </div>
-                      <h3 className="text-sm font-medium text-foreground mb-1">
-                        {scaffoldStatus !== "ready"
-                          ? "Setting up workspace..."
-                          : planPhase === "building"
-                            ? "Building from plan..."
-                            : "Building your app..."}
-                      </h3>
-                      <p className="text-xs text-muted-foreground max-w-[260px] text-center">
-                        {liveStatus || scaffoldProgressMsg || (scaffoldStatus !== "ready" ? "Installing dependencies" : "AI is writing code")}
+                  ) : fileTreeError ? (
+                    <div className="px-3 py-4 text-center">
+                      <p className="text-[12px] text-red-400 mb-2">
+                        {fileTreeError}
+                      </p>
+                      <button
+                        onClick={loadFileTree}
+                        className="text-[11px] text-brand-400 hover:text-brand-300"
+                      >
+                        {" "}
+                        {ui("Retry")}{" "}
+                      </button>
+                    </div>
+                  ) : fileTree.length === 0 ? (
+                    <div className="px-3 py-4 text-center">
+                      <p className="text-[12px] text-muted-foreground">
+                        {ui("No files yet")}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        {" "}
+                        {ui("Ask the AI to create some files")}{" "}
                       </p>
                     </div>
+                  ) : (
+                    renderTree(fileTree)
                   )}
-                  {isDesignMode && (
-                    <VisualEditConflictWarning selectedSelector={visualEdit.selectedElement?.selector ?? null} />
-                  )}
-                  <RemoteSelectionOverlays iframeRef={iframeRef} />
-                  <RemoteVisualCursors iframeRef={iframeRef} />
-                  <DesignCommentsLayer
-                    projectId={resolvedProjectId}
-                    containerRef={previewContainerRef}
-                    active={isDesignMode}
-                  />
                 </div>
-              )}
-              {/* First generation watermark is now merged into the building overlay above */}
-              {/* ─── Visual Edit Floating Toolbar ────────────── */}
-              {isDesignMode && visualEdit.selectedElement && (
-                <VisualEditToolbar
-                  elementRect={visualEdit.selectedElement.boundingRect}
-                  iframeRect={iframeRect}
-                  hasPendingChanges={visualEdit.hasPendingChanges}
-                  onSubmitPrompt={(prompt) => {
-                    visualEdit.sendElementPrompt(prompt);
-                    // Switch to chat so user sees the AI working
-                    setActiveTab("chat");
-                  }}
-                  onSelectParent={visualEdit.selectParent}
-                  onViewCode={() => {
-                    setActiveTab("code");
-                  }}
-                  onDelete={() => {
-                    visualEdit.deleteElement();
-                    // Switch to chat so user sees the AI working
-                    setActiveTab("chat");
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* ─── Full Panel Views (Cloud, Analytics, Files, Security, Speed) ── */}
-        {isPanelView && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-card">
-            {activeTab === "history" && (
-              <HistoryPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
-            )}
-            {activeTab === "cloud" && (
-              <CloudPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
-            )}
-            {activeTab === "analytics" && (
-              <AnalyticsPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
-            )}
-            {activeTab === "files" && (
-              <FilesPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
-            )}
-            {activeTab === "security" && (
-              <SecurityPanel projectId={resolvedProjectId} onClose={handlePanelClose} />
-            )}
-            {activeTab === "speed" && (
-              <SpeedPanel projectId={resolvedProjectId} onClose={handlePanelClose} onSendMessage={sendMessage} />
-            )}
-            {activeTab === "environment" && (
-              <EnvironmentsPanel workspaceId={workspaceId ?? ""} projectId={resolvedProjectId} />
-            )}
-            {activeTab === "skills" && (
-              <SkillsPanel workspaceId={workspaceId ?? ""} projectId={resolvedProjectId} />
-            )}
-            {activeTab === "build" && (
-              <BuildPanel projectId={resolvedProjectId} />
-            )}
-          </div>
-        )}
-      </div>
+                {/* Code display with Monaco editor */}
+                <div className="flex flex-1 flex-col overflow-hidden">
+                  {/* Multi-tab bar */}
+                  <div className="flex h-9 items-center overflow-x-auto border-b border-border bg-background">
+                    {openFileTabs.length > 0 ? (
+                      openFileTabs.map((tab) => {
+                        const isActiveTab = tab.path === selectedFile;
+                        return (
+                          <div
+                            key={tab.path}
+                            className={`group flex h-full items-center gap-1.5 border-r border-border px-3 text-xs cursor-pointer select-none transition-colors ${
+                              isActiveTab
+                                ? "bg-background text-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            }`}
+                            onClick={() => {
+                              setSelectedFile(tab.path);
+                              const cached =
+                                fileContentsCache.current[tab.path];
+                              if (cached !== undefined) {
+                                setFileContent(cached);
+                              } else {
+                                loadFileContent(tab.path);
+                              }
+                            }}
+                          >
+                            <FileCode2 className="h-3 w-3 flex-none text-muted-foreground" />
+                            <span className="truncate max-w-[120px]">
+                              {tab.name}
+                            </span>
+                            <FileTabPresenceDots
+                              filePath={tab.path}
+                              currentUserId={authUser?.id ?? ""}
+                            />
+                            {tab.isDirty && (
+                              <Circle className="h-2 w-2 flex-none fill-current text-brand-400" />
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                closeFileTab(tab.path);
+                              }}
+                              className="flex h-4 w-4 flex-none items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all"
+                              title={ui("Close (Ctrl+W)")}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="px-3 py-1.5 text-[12px] text-muted-foreground">
+                        {" "}
+                        {ui("No file selected")}{" "}
+                      </div>
+                    )}
 
-      {/* ─── Share Dialog ──────────────────────────────────────── */}
-      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-        <DialogContent className="bg-card border-border text-foreground max-w-md" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle className="text-foreground">Share Project</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Share your project with others or embed it on your website.
-            </DialogDescription>
-          </DialogHeader>
+                    {/* Minimap toggle */}
+                    <div className="ml-auto flex items-center gap-1 px-2">
+                      <button
+                        onClick={() => setShowMinimap((v) => !v)}
+                        className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
+                          showMinimap
+                            ? "text-brand-400 bg-secondary"
+                            : "text-muted-foreground hover:text-muted-foreground"
+                        }`}
+                        title={
+                          showMinimap ? ui("Hide minimap") : ui("Show minimap")
+                        }
+                      >
+                        <Map className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
 
-          <div className="mt-4 space-y-4">
-            {/* Link Sharing Toggle — controls whether anyone with the link can collaborate */}
-            <div className="flex items-center justify-between rounded-lg bg-secondary border border-border px-4 py-3">
-              <div className="flex items-center gap-3">
-                {projectVisibility === "public" ? (
-                  <Users className="h-4 w-4 text-brand-400" />
-                ) : (
-                  <Lock className="h-4 w-4 text-muted-foreground" />
-                )}
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {projectVisibility === "public" ? "Link sharing enabled" : "Private project"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {projectVisibility === "public"
-                      ? "Anyone with the link can join and collaborate"
-                      : "Only invited collaborators can access"}
-                  </p>
+                  {/* Breadcrumb */}
+                  {selectedFile && (
+                    <div className="flex h-6 items-center border-b border-border bg-background px-3">
+                      <span className="text-[11px] text-muted-foreground font-mono truncate">
+                        {selectedFile}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Editor content */}
+                  {!selectedFile ? (
+                    <div className="flex flex-1 items-center justify-center bg-background">
+                      <div className="text-center px-8">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto mb-3">
+                          <Code2 className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-1">
+                          {" "}
+                          {ui("Select a file from the explorer")}{" "}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {" "}
+                          {ui("Click on any file to view its content")}{" "}
+                        </p>
+                        <div className="mt-4 flex flex-col gap-1 text-[11px] text-muted-foreground">
+                          <span>{ui("Ctrl+S to save")}</span>
+                          <span>{ui("Ctrl+F to search")}</span>
+                          <span>{ui("Ctrl+H to replace")}</span>
+                          <span>{ui("Ctrl+W to close tab")}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : fileContentLoading ? (
+                    <div className="flex flex-1 items-center justify-center bg-background">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="h-6 w-6 animate-spin text-brand-400" />
+                        <p className="text-sm text-muted-foreground">
+                          {ui("Loading file...")}
+                        </p>
+                      </div>
+                    </div>
+                  ) : fileContentError ? (
+                    <div className="flex flex-1 items-center justify-center bg-background">
+                      <div className="text-center px-8">
+                        <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
+                        <p className="text-sm text-red-300 mb-2">
+                          {fileContentError}
+                        </p>
+                        <button
+                          onClick={() => loadFileContent(selectedFile)}
+                          className="text-sm text-brand-400 hover:text-brand-300"
+                        >
+                          {" "}
+                          {ui("Retry")}{" "}
+                        </button>
+                      </div>
+                    </div>
+                  ) : fileContent !== null ? (
+                    <div className="flex-1 overflow-hidden">
+                      <CollaborativeMonacoWrapper
+                        EditorComponent={MonacoEditorWrapper}
+                        value={fileContent}
+                        language={detectLanguage(
+                          selectedFile.split("/").pop() ?? "",
+                        )}
+                        filePath={selectedFile}
+                        readOnly={false}
+                        onChange={handleMonacoChange}
+                        onSave={handleMonacoSave}
+                        showMinimap={showMinimap}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center bg-background">
+                      <div className="text-center px-8">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto mb-3">
+                          <Code2 className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-1">
+                          {" "}
+                          {ui(
+                            "Code will appear here as the AI generates files",
+                          )}{" "}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {" "}
+                          {ui(
+                            "Start a conversation in the Chat tab to generate your project",
+                          )}{" "}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-              <button
-                onClick={handleToggleVisibility}
-                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
-                  projectVisibility === "public" ? "bg-brand-600" : "bg-muted-foreground/30"
-                }`}
+            )}
+
+            {/* ─── Resize Handle ────────────────────────────────── */}
+            {showChat && (showPreview || isPanelView) && (
+              <div
+                className="group relative z-20 w-1 flex-shrink-0 cursor-col-resize"
+                onMouseDown={handleMouseDown}
               >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform ${
-                    projectVisibility === "public" ? "translate-x-5" : "translate-x-0"
+                <div
+                  className={`absolute inset-y-0 -left-px w-[3px] transition-colors ${
+                    isDragging
+                      ? "bg-brand-500"
+                      : "bg-transparent group-hover:bg-brand-500/40"
                   }`}
                 />
-              </button>
-            </div>
+              </div>
+            )}
 
-            {/* Collaborate Link — only shown when link sharing is enabled */}
-            {projectVisibility === "public" && (
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">Collaboration Link</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-muted-foreground font-mono truncate">
-                    {`${typeof window !== "undefined" ? window.location.origin : ""}/editor/${resolvedProjectId}`}
-                  </div>
-                  <button
-                    onClick={() => {
-                      const link = `${window.location.origin}/editor/${resolvedProjectId}`;
-                      navigator.clipboard.writeText(link).then(() => {
-                        setShareCopied("collab");
-                        setTimeout(() => setShareCopied(null), 2000);
-                      });
-                    }}
-                    className="flex h-9 items-center gap-1.5 rounded-md bg-brand-600 hover:bg-brand-500 px-3 text-sm font-medium text-white transition-colors"
-                    title="Copy collaboration link"
-                  >
-                    {shareCopied === "collab" ? <><Check className="h-4 w-4" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Link</>}
-                  </button>
+            {/* ─── Preview Panel ────────────────────────────────── */}
+            {showPreview && !showCode && (
+              <div className="flex flex-1 flex-col overflow-hidden bg-card">
+                {/* Preview iframe or loading state */}
+                <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-background p-2">
+                  {!previewUrl ? (
+                    renderScaffoldOverlay()
+                  ) : (
+                    <div
+                      ref={previewContainerRef}
+                      className={`relative h-full overflow-hidden bg-white transition-all duration-300 ${
+                        deviceMode === "mobile"
+                          ? "w-[375px] rounded-[24px] shadow-2xl shadow-md"
+                          : deviceMode === "tablet"
+                            ? "w-[768px] rounded-2xl shadow-xl shadow-md"
+                            : "w-full rounded-2xl"
+                      }`}
+                      style={
+                        deviceMode === "mobile"
+                          ? {
+                              maxHeight: "calc(100% - 16px)",
+                              border: "4px solid #1e1e2e",
+                            }
+                          : deviceMode === "tablet"
+                            ? {
+                                maxWidth: "100%",
+                                border: "3px solid #1e1e2e",
+                              }
+                            : {}
+                      }
+                    >
+                      {/* Mobile notch mockup */}
+                      {deviceMode === "mobile" && (
+                        <div className="absolute top-0 left-1/2 z-20 -translate-x-1/2">
+                          <div className="h-[22px] w-[120px] rounded-b-xl bg-[#1e1e2e]" />
+                        </div>
+                      )}
+                      <iframe
+                        ref={iframeRef}
+                        src={previewUrl}
+                        className="h-full w-full border-0"
+                        title={ui("App Preview")}
+                        // allow-same-origin is required: without it the iframe gets
+                        // an opaque origin and accessing window.localStorage throws
+                        // SecurityError, which crashes any user app that touches
+                        // it on mount (the in-memory polyfill in the injected
+                        // namespacing script can't redefine the non-configurable
+                        // window.localStorage getter in modern Chrome).
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                        allow="microphone; autoplay; clipboard-write"
+                      />
+                      {/* BUG-R27-010 — auto-fix kill-switch banner. Surfaces when
+                      the same error has retried 3× in 5min (hard) or the AI
+                      streamed without a tool call (soft 2min cooldown). */}
+                      {autoFixPausedReason && (
+                        <div className="pointer-events-auto absolute left-3 right-3 top-3 z-40">
+                          <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md dark:border-amber-700 dark:bg-amber-950/80 dark:text-amber-100">
+                            <div className="flex-1">
+                              <div className="font-medium">
+                                {autoFixPausedReason.kind === "hard"
+                                  ? ui(
+                                      "Auto-fix paused — the AI couldn't fix this error after {v0} attempts.",
+                                      { v0: autoFixPausedReason.attempts },
+                                    )
+                                  : ui(
+                                      "Auto-fix paused — the AI didn't edit any files on the last attempt.",
+                                    )}
+                              </div>
+                              <div className="mt-0.5 text-xs opacity-90">
+                                {autoFixPausedReason.kind === "hard"
+                                  ? ui(
+                                      "Open the chat to fix it manually, or click Reset Preview.",
+                                    )
+                                  : ui(
+                                      "Will retry automatically in 2 minutes, or resume now.",
+                                    )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={resumeAutoFix}
+                              className="shrink-0 rounded-md border border-amber-400 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/60 dark:text-amber-50 dark:hover:bg-amber-900"
+                            >
+                              {" "}
+                              {ui("Resume auto-fix")}{" "}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {/* Runtime metrics overlay — bottom-right of preview pane.
+                      Reads from /projects/:id/runtime/metrics; degrades to
+                      "unavailable" copy on dev hosts (no systemd/cgroup). */}
+                      {false &&
+                        resolvedProjectId &&
+                        scaffoldStatus === "ready" &&
+                        !isFirstGeneration && (
+                          <div className="pointer-events-auto absolute bottom-3 right-3 z-30 w-[280px] opacity-80 hover:opacity-100 transition-opacity">
+                            <RuntimePanel projectId={resolvedProjectId} />
+                          </div>
+                        )}
+                      {/* Building overlay — covers preview during scaffold setup,
+                      first generation, or any active AI building with tool calls.
+                      Shows live status as the AI works. Disappears when generation ends. */}
+                      {(isFirstGeneration ||
+                        scaffoldStatus !== "ready" ||
+                        hasActiveToolCalls) && (
+                        <div
+                          className={`absolute inset-0 z-10 flex flex-col items-center justify-center transition-opacity duration-500 ${
+                            scaffoldStatus !== "ready" || isFirstGeneration
+                              ? "bg-background/90 backdrop-blur-sm"
+                              : "bg-background/75 backdrop-blur-[2px]"
+                          }`}
+                        >
+                          <div className="relative mb-5">
+                            <div className="h-10 w-10 rounded-full border-2 border-border border-t-brand-400 animate-spin" />
+                            <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-brand-400" />
+                          </div>
+                          <h3 className="text-sm font-medium text-foreground mb-1">
+                            {scaffoldStatus !== "ready"
+                              ? ui("Setting up workspace...")
+                              : planPhase === "building"
+                                ? ui("Building from plan...")
+                                : ui("Building your app...")}
+                          </h3>
+                          <p className="text-xs text-muted-foreground max-w-[260px] text-center">
+                            {translateProgress(
+                              liveStatus || scaffoldProgressMsg,
+                              ui,
+                            ) ||
+                              (scaffoldStatus !== "ready"
+                                ? ui("Installing dependencies")
+                                : ui("AI is writing code"))}
+                          </p>
+                        </div>
+                      )}
+                      {isDesignMode && (
+                        <VisualEditConflictWarning
+                          selectedSelector={
+                            visualEdit.selectedElement?.selector ?? null
+                          }
+                        />
+                      )}
+                      <RemoteSelectionOverlays iframeRef={iframeRef} />
+                      <RemoteVisualCursors iframeRef={iframeRef} />
+                      <DesignCommentsLayer
+                        projectId={resolvedProjectId}
+                        containerRef={previewContainerRef}
+                        active={isDesignMode}
+                      />
+                    </div>
+                  )}
+                  {/* First generation watermark is now merged into the building overlay above */}
+                  {/* ─── Visual Edit Floating Toolbar ────────────── */}
+                  {isDesignMode && visualEdit.selectedElement && (
+                    <VisualEditToolbar
+                      elementRect={visualEdit.selectedElement.boundingRect}
+                      iframeRect={iframeRect}
+                      hasPendingChanges={visualEdit.hasPendingChanges}
+                      onSubmitPrompt={(prompt) => {
+                        visualEdit.sendElementPrompt(prompt);
+                        // Switch to chat so user sees the AI working
+                        setActiveTab("chat");
+                      }}
+                      onSelectParent={visualEdit.selectParent}
+                      onViewCode={() => {
+                        setActiveTab("code");
+                      }}
+                      onDelete={() => {
+                        visualEdit.deleteElement();
+                        // Switch to chat so user sees the AI working
+                        setActiveTab("chat");
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Share Analytics — only shown when link sharing is enabled */}
-            {projectVisibility === "public" && shareStats && (shareStats.uniqueVisitors > 0 || shareStats.totalVisits > 0) && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-4 rounded-lg bg-secondary border border-border px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-muted-foreground" />
+            {/* ─── Full Panel Views (Cloud, Analytics, Files, Security, Speed) ── */}
+            {isPanelView && (
+              <div className="flex flex-1 flex-col overflow-hidden bg-card">
+                {activeTab === "history" && (
+                  <HistoryPanel
+                    projectId={resolvedProjectId}
+                    onClose={handlePanelClose}
+                  />
+                )}
+                {activeTab === "cloud" && (
+                  <CloudPanel
+                    projectId={resolvedProjectId}
+                    onClose={handlePanelClose}
+                  />
+                )}
+                {activeTab === "analytics" && (
+                  <AnalyticsPanel
+                    projectId={resolvedProjectId}
+                    onClose={handlePanelClose}
+                  />
+                )}
+                {activeTab === "files" && (
+                  <FilesPanel
+                    projectId={resolvedProjectId}
+                    onClose={handlePanelClose}
+                  />
+                )}
+                {activeTab === "security" && (
+                  <SecurityPanel
+                    projectId={resolvedProjectId}
+                    onClose={handlePanelClose}
+                  />
+                )}
+                {activeTab === "speed" && (
+                  <SpeedPanel
+                    projectId={resolvedProjectId}
+                    onClose={handlePanelClose}
+                    onSendMessage={sendMessage}
+                  />
+                )}
+                {activeTab === "environment" && (
+                  <EnvironmentsPanel
+                    workspaceId={workspaceId ?? ""}
+                    projectId={resolvedProjectId}
+                  />
+                )}
+                {activeTab === "skills" && (
+                  <SkillsPanel
+                    workspaceId={workspaceId ?? ""}
+                    projectId={resolvedProjectId}
+                  />
+                )}
+                {activeTab === "build" && (
+                  <BuildPanel projectId={resolvedProjectId} />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ─── Share Dialog ──────────────────────────────────────── */}
+          <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+            <DialogContent
+              className="bg-card border-border text-foreground max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DialogHeader>
+                <DialogTitle className="text-foreground">
+                  {ui("Share Project")}
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  {" "}
+                  {ui(
+                    "Share your project with others or embed it on your website.",
+                  )}{" "}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="mt-4 space-y-4">
+                {/* Link Sharing Toggle — controls whether anyone with the link can collaborate */}
+                <div className="flex items-center justify-between rounded-lg bg-secondary border border-border px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    {projectVisibility === "public" ? (
+                      <Users className="h-4 w-4 text-brand-400" />
+                    ) : (
+                      <Lock className="h-4 w-4 text-muted-foreground" />
+                    )}
                     <div>
-                      <p className="text-sm font-medium text-foreground">{shareStats.uniqueVisitors}</p>
-                      <p className="text-xs text-muted-foreground">{shareStats.uniqueVisitors === 1 ? "visitor" : "visitors"}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {projectVisibility === "public"
+                          ? ui("Link sharing enabled")
+                          : ui("Private project")}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {projectVisibility === "public"
+                          ? ui("Anyone with the link can join and collaborate")
+                          : ui("Only invited collaborators can access")}
+                      </p>
                     </div>
                   </div>
-                  <div className="h-8 w-px bg-border" />
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{shareStats.totalVisits}</p>
-                      <p className="text-xs text-muted-foreground">total views</p>
-                    </div>
-                  </div>
+                  <button
+                    onClick={handleToggleVisibility}
+                    className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                      projectVisibility === "public"
+                        ? "bg-brand-600"
+                        : "bg-muted-foreground/30"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform ${
+                        projectVisibility === "public"
+                          ? "translate-x-5"
+                          : "translate-x-0"
+                      }`}
+                    />
+                  </button>
                 </div>
 
-                {/* Visitor list */}
-                {shareStats.visitors.length > 0 && (
-                  <div className="rounded-lg bg-secondary border border-border overflow-hidden">
-                    <div className="px-4 py-2 border-b border-border">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">People who viewed this project</p>
+                {/* Collaborate Link — only shown when link sharing is enabled */}
+                {projectVisibility === "public" && (
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-1.5 block">
+                      {ui("Collaboration Link")}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-muted-foreground font-mono truncate">
+                        {ui("{v0}/editor/{v1}", {
+                          v0:
+                            typeof window !== "undefined"
+                              ? window.location.origin
+                              : "",
+                          v1: resolvedProjectId,
+                        })}
+                      </div>
+                      <button
+                        onClick={() => {
+                          const link = `${window.location.origin}/editor/${resolvedProjectId}`;
+                          navigator.clipboard.writeText(link).then(() => {
+                            setShareCopied("collab");
+                            setTimeout(() => setShareCopied(null), 2000);
+                          });
+                        }}
+                        className="flex h-9 items-center gap-1.5 rounded-md bg-brand-600 hover:bg-brand-500 px-3 text-sm font-medium text-white transition-colors"
+                        title={ui("Copy collaboration link")}
+                      >
+                        {shareCopied === "collab" ? (
+                          <>
+                            <Check className="h-4 w-4" /> {ui("Copied!")}
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-4 w-4" /> {ui("Copy Link")}
+                          </>
+                        )}
+                      </button>
                     </div>
+                  </div>
+                )}
+
+                {/* Share Analytics — only shown when link sharing is enabled */}
+                {projectVisibility === "public" &&
+                  shareStats &&
+                  (shareStats.uniqueVisitors > 0 ||
+                    shareStats.totalVisits > 0) && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-4 rounded-lg bg-secondary border border-border px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              {shareStats.uniqueVisitors}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {shareStats.uniqueVisitors === 1
+                                ? ui("visitor")
+                                : ui("visitors")}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="h-8 w-px bg-border" />
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              {shareStats.totalVisits}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {ui("total views")}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Visitor list */}
+                      {shareStats.visitors.length > 0 && (
+                        <div className="rounded-lg bg-secondary border border-border overflow-hidden">
+                          <div className="px-4 py-2 border-b border-border">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              {ui("People who viewed this project")}
+                            </p>
+                          </div>
+                          <div className="max-h-48 overflow-y-auto divide-y divide-border">
+                            {shareStats.visitors.map((visitor) => (
+                              <div
+                                key={visitor.user_id}
+                                className="flex items-center justify-between px-4 py-2.5"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground shrink-0">
+                                    {(
+                                      visitor.display_name ||
+                                      visitor.email ||
+                                      "?"
+                                    )
+                                      .charAt(0)
+                                      .toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm text-foreground truncate">
+                                      {visitor.display_name ||
+                                        visitor.email?.split("@")[0] ||
+                                        ui("Unknown visitor")}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground truncate">
+                                      {visitor.email || ""}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0 ml-3">
+                                  <p className="text-xs text-muted-foreground">
+                                    {visitor.visit_count}{" "}
+                                    {visitor.visit_count === 1
+                                      ? ui("visit")
+                                      : ui("visits")}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(
+                                      visitor.last_visited_at,
+                                    ).toLocaleDateString(ui.locale)}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Collaborators List — always visible */}
+                <div className="rounded-lg bg-secondary border border-border overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        {" "}
+                        {ui("Collaborators")}
+                        {collaborators.length > 0
+                          ? ` (${collaborators.length})`
+                          : ""}
+                      </p>
+                    </div>
+                  </div>
+                  {collaborators.length > 0 ? (
                     <div className="max-h-48 overflow-y-auto divide-y divide-border">
-                      {shareStats.visitors.map((visitor) => (
-                        <div key={visitor.user_id} className="flex items-center justify-between px-4 py-2.5">
+                      {collaborators.map((collab) => (
+                        <div
+                          key={collab.user_id}
+                          className="flex items-center justify-between px-4 py-2.5"
+                        >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground shrink-0">
-                              {(visitor.display_name || visitor.email || "?").charAt(0).toUpperCase()}
+                              {(collab.display_name || collab.email || "?")
+                                .charAt(0)
+                                .toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm text-foreground truncate">{visitor.display_name || visitor.email?.split("@")[0] || "Unknown visitor"}</p>
-                              <p className="text-xs text-muted-foreground truncate">{visitor.email || ""}</p>
+                              <p className="text-sm text-foreground truncate">
+                                {collab.display_name ||
+                                  collab.email?.split("@")[0] ||
+                                  ui("Collaborator")}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {collab.email || ""}
+                              </p>
                             </div>
                           </div>
-                          <div className="text-right shrink-0 ml-3">
-                            <p className="text-xs text-muted-foreground">{visitor.visit_count} {visitor.visit_count === 1 ? "visit" : "visits"}</p>
-                            <p className="text-xs text-muted-foreground">{new Date(visitor.last_visited_at).toLocaleDateString()}</p>
+                          <div className="flex items-center gap-2 shrink-0 ml-3">
+                            <span className="text-xs text-muted-foreground capitalize">
+                              {collab.role}
+                            </span>
+                            <button
+                              onClick={async () => {
+                                setRemovingCollabId(collab.user_id);
+                                try {
+                                  await apiRemoveCollaborator(
+                                    resolvedProjectId,
+                                    collab.user_id,
+                                  );
+                                  setCollaborators((prev) =>
+                                    prev.filter(
+                                      (c) => c.user_id !== collab.user_id,
+                                    ),
+                                  );
+                                } catch {
+                                  // Failed to remove
+                                } finally {
+                                  setRemovingCollabId(null);
+                                }
+                              }}
+                              disabled={removingCollabId === collab.user_id}
+                              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                              title={ui("Remove collaborator")}
+                            >
+                              {removingCollabId === collab.user_id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <X className="h-3.5 w-3.5" />
+                              )}
+                            </button>
                           </div>
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
+                  ) : (
+                    <div className="px-4 py-4 text-center">
+                      <p className="text-sm text-muted-foreground">
+                        {ui("No collaborators yet")}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {projectVisibility === "public"
+                          ? ui("Share the link above to invite people")
+                          : ui("Enable link sharing to let others join")}
+                      </p>
+                    </div>
+                  )}
+                </div>
 
-            {/* Collaborators List — always visible */}
-            <div className="rounded-lg bg-secondary border border-border overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Collaborators{collaborators.length > 0 ? ` (${collaborators.length})` : ""}
-                  </p>
+                <div className="border-t border-border" />
+
+                {/* Preview URL */}
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">
+                    {ui("Preview URL")}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-muted-foreground font-mono truncate">
+                      {previewUrl ?? ui("Not available yet")}
+                    </div>
+                    <button
+                      onClick={handleCopyPreviewUrl}
+                      disabled={!previewUrl}
+                      className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                      title={ui("Copy URL")}
+                    >
+                      {shareCopied === "preview" ? (
+                        <Check className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* (Visibility toggle moved to top of dialog as Link Sharing control) */}
+
+                {/* Embed Code */}
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">
+                    {ui("Embed Code")}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-xs text-muted-foreground font-mono truncate">
+                      {previewUrl
+                        ? `<iframe src="${previewUrl}" ...>`
+                        : ui("Preview not available yet")}
+                    </div>
+                    <button
+                      onClick={handleCopyEmbedCode}
+                      disabled={!previewUrl}
+                      className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                      title={ui("Copy embed code")}
+                    >
+                      {shareCopied === "embed" ? (
+                        <Check className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Code className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
-              {collaborators.length > 0 ? (
-                <div className="max-h-48 overflow-y-auto divide-y divide-border">
-                  {collaborators.map((collab) => (
-                    <div key={collab.user_id} className="flex items-center justify-between px-4 py-2.5">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground shrink-0">
-                          {(collab.display_name || collab.email || "?").charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm text-foreground truncate">{collab.display_name || collab.email?.split("@")[0] || "Collaborator"}</p>
-                          <p className="text-xs text-muted-foreground truncate">{collab.email || ""}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 ml-3">
-                        <span className="text-xs text-muted-foreground capitalize">{collab.role}</span>
+
+              <DialogFooter className="mt-6">
+                <button
+                  onClick={() => setShareDialogOpen(false)}
+                  className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  {" "}
+                  {ui("Close")}{" "}
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* ─── Deploy Modal ──────────────────────────────────────── */}
+          <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
+            <DialogContent
+              className="bg-card border-border text-foreground max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DialogHeader>
+                <DialogTitle className="text-foreground flex items-center gap-2">
+                  <Rocket className="h-5 w-5 text-blue-400" />{" "}
+                  {ui("Deploy Project")}{" "}
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  {" "}
+                  {ui("Push your project to a public URL.")}{" "}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="mt-4 space-y-4">
+                {/* Environment selection */}
+                {publishStatus === "idle" && (
+                  <>
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-2 block">
+                        {ui("Environment")}
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
                         <button
-                          onClick={async () => {
-                            setRemovingCollabId(collab.user_id);
-                            try {
-                              await apiRemoveCollaborator(resolvedProjectId, collab.user_id);
-                              setCollaborators((prev) => prev.filter((c) => c.user_id !== collab.user_id));
-                            } catch {
-                              // Failed to remove
-                            } finally {
-                              setRemovingCollabId(null);
-                            }
-                          }}
-                          disabled={removingCollabId === collab.user_id}
-                          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                          title="Remove collaborator"
+                          onClick={() => setPublishEnv("production")}
+                          className={`flex flex-col items-center gap-1.5 rounded-lg border px-4 py-3 text-sm transition-all ${
+                            publishEnv === "production"
+                              ? "border-blue-500 bg-blue-500/10 text-blue-300"
+                              : "border-border bg-secondary text-muted-foreground hover:border-border"
+                          }`}
                         >
-                          {removingCollabId === collab.user_id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <X className="h-3.5 w-3.5" />
-                          )}
+                          <Globe className="h-5 w-5" />
+                          <span className="font-medium">{ui("Live")}</span>
+                          <span className="text-xs opacity-70">
+                            {ui("Production deploy")}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => setPublishEnv("preview")}
+                          className={`flex flex-col items-center gap-1.5 rounded-lg border px-4 py-3 text-sm transition-all ${
+                            publishEnv === "preview"
+                              ? "border-blue-500 bg-blue-500/10 text-blue-300"
+                              : "border-border bg-secondary text-muted-foreground hover:border-border"
+                          }`}
+                        >
+                          <Eye className="h-5 w-5" />
+                          <span className="font-medium">{ui("Test")}</span>
+                          <span className="text-xs opacity-70">
+                            {ui("Preview deploy")}
+                          </span>
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="px-4 py-4 text-center">
-                  <p className="text-sm text-muted-foreground">No collaborators yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {projectVisibility === "public"
-                      ? "Share the link above to invite people"
-                      : "Enable link sharing to let others join"}
-                  </p>
-                </div>
-              )}
-            </div>
 
-            <div className="border-t border-border" />
-
-            {/* Preview URL */}
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">Preview URL</label>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-muted-foreground font-mono truncate">
-                  {previewUrl ?? "Not available yet"}
-                </div>
-                <button
-                  onClick={handleCopyPreviewUrl}
-                  disabled={!previewUrl}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-                  title="Copy URL"
-                >
-                  {shareCopied === "preview" ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* (Visibility toggle moved to top of dialog as Link Sharing control) */}
-
-            {/* Embed Code */}
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">Embed Code</label>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-xs text-muted-foreground font-mono truncate">
-                  {previewUrl
-                    ? `<iframe src="${previewUrl}" ...>`
-                    : "Preview not available yet"}
-                </div>
-                <button
-                  onClick={handleCopyEmbedCode}
-                  disabled={!previewUrl}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-                  title="Copy embed code"
-                >
-                  {shareCopied === "embed" ? <Check className="h-4 w-4 text-emerald-400" /> : <Code className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="mt-6">
-            <button
-              onClick={() => setShareDialogOpen(false)}
-              className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-            >
-              Close
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ─── Deploy Modal ──────────────────────────────────────── */}
-      <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
-        <DialogContent className="bg-card border-border text-foreground max-w-md" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle className="text-foreground flex items-center gap-2">
-              <Rocket className="h-5 w-5 text-blue-400" />
-              Deploy Project
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Push your project to a public URL.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="mt-4 space-y-4">
-            {/* Environment selection */}
-            {publishStatus === "idle" && (
-              <>
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-2 block">Environment</label>
-                  <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => setPublishEnv("production")}
-                      className={`flex flex-col items-center gap-1.5 rounded-lg border px-4 py-3 text-sm transition-all ${
-                        publishEnv === "production"
-                          ? "border-blue-500 bg-blue-500/10 text-blue-300"
-                          : "border-border bg-secondary text-muted-foreground hover:border-border"
-                      }`}
+                      onClick={handlePublish}
+                      className="w-full flex items-center justify-center gap-2 rounded-md bg-[#1E52F1] px-4 py-2.5 text-sm font-medium text-white hover:brightness-110 transition-colors"
                     >
-                      <Globe className="h-5 w-5" />
-                      <span className="font-medium">Live</span>
-                      <span className="text-xs opacity-70">Production deploy</span>
+                      <Rocket className="h-4 w-4" /> {ui("Deploy to")}{" "}
+                      {publishEnv === "production" ? ui("Live") : ui("Test")}
                     </button>
-                    <button
-                      onClick={() => setPublishEnv("preview")}
-                      className={`flex flex-col items-center gap-1.5 rounded-lg border px-4 py-3 text-sm transition-all ${
-                        publishEnv === "preview"
-                          ? "border-blue-500 bg-blue-500/10 text-blue-300"
-                          : "border-border bg-secondary text-muted-foreground hover:border-border"
-                      }`}
-                    >
-                      <Eye className="h-5 w-5" />
-                      <span className="font-medium">Test</span>
-                      <span className="text-xs opacity-70">Preview deploy</span>
-                    </button>
-                  </div>
-                </div>
+                  </>
+                )}
 
-                <button
-                  onClick={handlePublish}
-                  className="w-full flex items-center justify-center gap-2 rounded-md bg-[#1E52F1] px-4 py-2.5 text-sm font-medium text-white hover:brightness-110 transition-colors"
-                >
-                  <Rocket className="h-4 w-4" />
-                  Deploy to {publishEnv === "production" ? "Live" : "Test"}
-                </button>
-              </>
-            )}
-
-            {/* Building / Deploying progress */}
-            {(publishStatus === "building" || publishStatus === "deploying") && (
-              <div className="flex flex-col items-center py-8 text-center">
-                <Loader2 className="h-10 w-10 animate-spin text-blue-400 mb-4" />
-                <h3 className="text-sm font-medium text-foreground mb-1">
-                  {publishStatus === "building" ? "Building project..." : "Deploying..."}
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  This may take a moment. Please don&apos;t close this dialog.
-                </p>
-                {/* Progress steps */}
-                <div className="mt-6 w-full max-w-xs space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                    <span className="text-foreground">Preparing files</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    {publishStatus === "building" ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                    )}
-                    <span className={publishStatus === "building" ? "text-blue-300" : "text-foreground"}>
-                      Building project
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    {publishStatus === "deploying" ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                    ) : (
-                      <div className="h-4 w-4 rounded-full border border-border" />
-                    )}
-                    <span className={publishStatus === "deploying" ? "text-blue-300" : "text-muted-foreground"}>
-                      Deploying to {publishEnv === "production" ? "production" : "preview"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Success state */}
-            {publishStatus === "success" && (
-              <div className="flex flex-col items-center py-6 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-4">
-                  <CheckCircle2 className="h-8 w-8 text-emerald-400" />
-                </div>
-                <h3 className="text-sm font-semibold text-foreground mb-1">Live!</h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Your project is now live at:
-                </p>
-                {publishedUrl && (
-                  <div className="flex items-center gap-2 w-full">
-                    <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-blue-400 font-mono truncate">
-                      {publishedUrl}
+                {/* Building / Deploying progress */}
+                {(publishStatus === "building" ||
+                  publishStatus === "deploying") && (
+                  <div className="flex flex-col items-center py-8 text-center">
+                    <Loader2 className="h-10 w-10 animate-spin text-blue-400 mb-4" />
+                    <h3 className="text-sm font-medium text-foreground mb-1">
+                      {publishStatus === "building"
+                        ? ui("Building project...")
+                        : ui("Deploying...")}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {" "}
+                      {ui(
+                        "This may take a moment. Please don't close this dialog.",
+                      )}{" "}
+                    </p>
+                    {/* Progress steps */}
+                    <div className="mt-6 w-full max-w-xs space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                        <span className="text-foreground">
+                          {ui("Preparing files")}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        {publishStatus === "building" ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                        )}
+                        <span
+                          className={
+                            publishStatus === "building"
+                              ? "text-blue-300"
+                              : "text-foreground"
+                          }
+                        >
+                          {" "}
+                          {ui("Building project")}{" "}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        {publishStatus === "deploying" ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-full border border-border" />
+                        )}
+                        <span
+                          className={
+                            publishStatus === "deploying"
+                              ? "text-blue-300"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {" "}
+                          {ui("Deploying to")}{" "}
+                          {publishEnv === "production"
+                            ? ui("production")
+                            : ui("preview")}
+                        </span>
+                      </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Success state */}
+                {publishStatus === "success" && (
+                  <div className="flex flex-col items-center py-6 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-4">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-foreground mb-1">
+                      {ui("Live!")}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      {" "}
+                      {ui("Your project is now live at:")}{" "}
+                    </p>
+                    {publishedUrl && (
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="flex-1 rounded-md bg-secondary border border-border px-3 py-2 text-sm text-blue-400 font-mono truncate">
+                          {publishedUrl}
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(publishedUrl);
+                          }}
+                          className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                          title={ui("Copy URL")}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => window.open(publishedUrl, "_blank")}
+                          className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                          title={ui("Open in new tab")}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
                     <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(publishedUrl);
-                      }}
-                      className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      title="Copy URL"
+                      onClick={handleUnpublish}
+                      disabled={unpublishing}
+                      className="mt-5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
+                      title={ui("Remove the live site and free the URL")}
                     >
-                      <Copy className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => window.open(publishedUrl, "_blank")}
-                      className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      title="Open in new tab"
-                    >
-                      <ExternalLink className="h-4 w-4" />
+                      {unpublishing ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
+                          {ui("Taking down…")}
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-3.5 w-3.5" />{" "}
+                          {ui("Take down this site")}
+                        </>
+                      )}
                     </button>
                   </div>
                 )}
-                <button
-                  onClick={handleUnpublish}
-                  disabled={unpublishing}
-                  className="mt-5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
-                  title="Remove the live site and free the URL"
-                >
-                  {unpublishing ? (
-                    <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Taking down…</>
-                  ) : (
-                    <><XCircle className="h-3.5 w-3.5" /> Take down this site</>
-                  )}
-                </button>
-              </div>
-            )}
 
-            {/* Error state */}
-            {publishStatus === "error" && (
-              <div className="flex flex-col items-center py-6 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 mb-4">
-                  <XCircle className="h-8 w-8 text-red-400" />
-                </div>
-                <h3 className="text-sm font-semibold text-red-300 mb-1">Deploy failed</h3>
-                <p className="text-xs text-muted-foreground mb-4 max-w-sm">
-                  {publishError ?? "Something went wrong during deployment."}
-                </p>
-                {publishBuildLog && (
-                  <details className="w-full text-left mb-4">
-                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                      View build log
-                    </summary>
-                    <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-card border border-border p-3 text-[11px] text-muted-foreground font-mono">
-                      {publishBuildLog}
-                    </pre>
-                  </details>
+                {/* Error state */}
+                {publishStatus === "error" && (
+                  <div className="flex flex-col items-center py-6 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 mb-4">
+                      <XCircle className="h-8 w-8 text-red-400" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-red-300 mb-1">
+                      {ui("Deploy failed")}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-4 max-w-sm">
+                      {publishError ??
+                        ui("Something went wrong during deployment.")}
+                    </p>
+                    {publishBuildLog && (
+                      <details className="w-full text-left mb-4">
+                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                          {" "}
+                          {ui("View build log")}{" "}
+                        </summary>
+                        <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-card border border-border p-3 text-[11px] text-muted-foreground font-mono">
+                          {publishBuildLog}
+                        </pre>
+                      </details>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setPublishStatus("idle");
+                          setPublishError(null);
+                        }}
+                        className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                      >
+                        {" "}
+                        {ui("Try again")}{" "}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPublishModalOpen(false);
+                          sendMessage(
+                            ui("The publish/deploy failed with this error: ") +
+                              (publishError ?? "unknown error") +
+                              ". Please help me fix it.",
+                          );
+                        }}
+                        className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
+                      >
+                        {" "}
+                        {ui("Try to Fix")}{" "}
+                      </button>
+                    </div>
+                  </div>
                 )}
-                <div className="flex gap-2">
+              </div>
+
+              {(publishStatus === "idle" || publishStatus === "success") && (
+                <DialogFooter className="mt-4">
                   <button
-                    onClick={() => {
-                      setPublishStatus("idle");
-                      setPublishError(null);
-                    }}
+                    onClick={() => setPublishModalOpen(false)}
                     className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
-                    Try again
+                    {publishStatus === "success" ? ui("Done") : ui("Cancel")}
                   </button>
-                  <button
-                    onClick={() => {
-                      setPublishModalOpen(false);
-                      sendMessage("The publish/deploy failed with this error: " + (publishError ?? "unknown error") + ". Please help me fix it.");
-                    }}
-                    className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 transition-colors"
-                  >
-                    Try to Fix
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {(publishStatus === "idle" || publishStatus === "success") && (
-            <DialogFooter className="mt-4">
-              <button
-                onClick={() => setPublishModalOpen(false)}
-                className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-              >
-                {publishStatus === "success" ? "Done" : "Cancel"}
-              </button>
-            </DialogFooter>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ─── Delete Confirmation Dialog ────────────────────────── */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="bg-card border-border text-foreground max-w-sm" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle className="text-foreground flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-red-400" />
-              Delete Project
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Are you sure you want to delete <strong className="text-foreground">{projectName}</strong>? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter className="mt-6 flex gap-2">
-            <button
-              onClick={() => setDeleteConfirmOpen(false)}
-              disabled={isDeleting}
-              className="flex-1 rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleDeleteProject}
-              disabled={isDeleting}
-              className="flex-1 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 transition-colors disabled:opacity-50"
-            >
-              {isDeleting ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Deleting...
-                </span>
-              ) : (
-                "Delete"
+                </DialogFooter>
               )}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </DialogContent>
+          </Dialog>
 
-      {/* ─── GitHub Connect Dialog ─────────────────────────────── */}
-      <GitHubConnectDialog
-        open={githubDialogOpen}
-        onClose={() => setGithubDialogOpen(false)}
-        onConnect={async (opts) => {
-          await github.connect(opts);
-        }}
-        onInitiateOAuth={() => github.initiateOAuth()}
-        onSwitchAccount={async () => {
-          // Drop the user-level OAuth token, then re-launch OAuth so the
-          // user can pick a different GitHub account on github.com.
-          // initiateOAuth() does a full-page redirect, so post-redirect
-          // state in this component is irrelevant.
-          await github.disconnectUser();
-          github.initiateOAuth();
-        }}
-        repos={[] as never[]}
-        reposLoading={false}
-        githubUsername={github.githubUsername}
-        isGitHubConnected={github.isGitHubConnected}
-        onLoadRepos={async () => {}}
-        projectName={projectName}
-      />
-
-      {/* ─── Keyboard Shortcuts Dialog ─────────────────────────── */}
-      <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>
-        <DialogContent className="bg-card border-border text-foreground max-w-md" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle className="text-foreground flex items-center gap-2">
-              <Keyboard className="h-5 w-5 text-muted-foreground" />
-              Keyboard Shortcuts
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="mt-4 space-y-1">
-            {[
-              { keys: "Enter", desc: "Send message" },
-              { keys: "Shift + Enter", desc: "New line in chat" },
-              { keys: "Ctrl + /", desc: "Toggle sidebar" },
-              { keys: "Ctrl + B", desc: "Toggle code view" },
-              { keys: "Ctrl + P", desc: "Toggle preview" },
-              { keys: "Ctrl + Shift + P", desc: "Deploy project" },
-              { keys: "F11", desc: "Toggle fullscreen" },
-              { keys: "Esc", desc: "Close dialog" },
-            ].map(({ keys, desc }) => (
-              <div key={keys} className="flex items-center justify-between py-2 px-1">
-                <span className="text-sm text-muted-foreground">{desc}</span>
-                <div className="flex items-center gap-1">
-                  {keys.split(" + ").map((k) => (
-                    <kbd
-                      key={k}
-                      className="rounded bg-secondary border border-border px-2 py-0.5 text-xs font-mono text-foreground"
-                    >
-                      {k}
-                    </kbd>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <DialogFooter className="mt-4">
-            <button
-              onClick={() => setShortcutsDialogOpen(false)}
-              className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+          {/* ─── Delete Confirmation Dialog ────────────────────────── */}
+          <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+            <DialogContent
+              className="bg-card border-border text-foreground max-w-sm"
+              onClick={(e) => e.stopPropagation()}
             >
-              Close
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-    <CollabPresenceSync activeTab={activeTab} selectedFile={selectedFile} />
-    <CollabFileTabSync openFilePaths={openFileTabs.map((t: any) => t.path)} />
-    <CollabActivityOverlay />
-    <ChatPopout currentUserId={authUser?.id ?? ""} />
-    <ChatMessageToasts />
-    <CollabPreviewSync iframeRef={iframeRef} />
-    {/* Blocking "ask the user" prompt from a paused tool (NotebookLM
+              <DialogHeader>
+                <DialogTitle className="text-foreground flex items-center gap-2">
+                  <Trash2 className="h-5 w-5 text-red-400" />{" "}
+                  {ui("Delete Project")}{" "}
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  {" "}
+                  {ui("Are you sure you want to delete")}{" "}
+                  <strong className="text-foreground">{projectName}</strong>
+                  {ui("? This action cannot be undone.")}{" "}
+                </DialogDescription>
+              </DialogHeader>
+
+              <DialogFooter className="mt-6 flex gap-2">
+                <button
+                  onClick={() => setDeleteConfirmOpen(false)}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                >
+                  {" "}
+                  {ui("Cancel")}{" "}
+                </button>
+                <button
+                  onClick={handleDeleteProject}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 transition-colors disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                      {ui("Deleting...")}{" "}
+                    </span>
+                  ) : (
+                    ui("Delete")
+                  )}
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* ─── GitHub Connect Dialog ─────────────────────────────── */}
+          <GitHubConnectDialog
+            open={githubDialogOpen}
+            onClose={() => setGithubDialogOpen(false)}
+            onConnect={async (opts) => {
+              await github.connect(opts);
+            }}
+            onInitiateOAuth={() => github.initiateOAuth()}
+            onSwitchAccount={async () => {
+              // Drop the user-level OAuth token, then re-launch OAuth so the
+              // user can pick a different GitHub account on github.com.
+              // initiateOAuth() does a full-page redirect, so post-redirect
+              // state in this component is irrelevant.
+              await github.disconnectUser();
+              github.initiateOAuth();
+            }}
+            repos={[] as never[]}
+            reposLoading={false}
+            githubUsername={github.githubUsername}
+            isGitHubConnected={github.isGitHubConnected}
+            onLoadRepos={async () => {}}
+            projectName={projectName}
+          />
+
+          {/* ─── Keyboard Shortcuts Dialog ─────────────────────────── */}
+          <Dialog
+            open={shortcutsDialogOpen}
+            onOpenChange={setShortcutsDialogOpen}
+          >
+            <DialogContent
+              className="bg-card border-border text-foreground max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DialogHeader>
+                <DialogTitle className="text-foreground flex items-center gap-2">
+                  <Keyboard className="h-5 w-5 text-muted-foreground" />{" "}
+                  {ui("Keyboard Shortcuts")}{" "}
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="mt-4 space-y-1">
+                {[
+                  { keys: "Enter", desc: "Send message" },
+                  { keys: "Shift + Enter", desc: "New line in chat" },
+                  { keys: "Ctrl + /", desc: "Toggle sidebar" },
+                  { keys: "Ctrl + B", desc: "Toggle code view" },
+                  { keys: "Ctrl + P", desc: "Toggle preview" },
+                  { keys: "Ctrl + Shift + P", desc: "Deploy project" },
+                  { keys: "F11", desc: "Toggle fullscreen" },
+                  { keys: "Esc", desc: "Close dialog" },
+                ].map(({ keys, desc }) => (
+                  <div
+                    key={keys}
+                    className="flex items-center justify-between py-2 px-1"
+                  >
+                    <span className="text-sm text-muted-foreground">
+                      {ui(desc)}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {keys.split(" + ").map((k) => (
+                        <kbd
+                          key={k}
+                          className="rounded bg-secondary border border-border px-2 py-0.5 text-xs font-mono text-foreground"
+                        >
+                          {k}
+                        </kbd>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <DialogFooter className="mt-4">
+                <button
+                  onClick={() => setShortcutsDialogOpen(false)}
+                  className="rounded-md bg-secondary border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  {" "}
+                  {ui("Close")}{" "}
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+        <CollabPresenceSync activeTab={activeTab} selectedFile={selectedFile} />
+        <CollabFileTabSync
+          openFilePaths={openFileTabs.map((t: any) => t.path)}
+        />
+        <CollabActivityOverlay />
+        <ChatPopout currentUserId={authUser?.id ?? ""} />
+        <ChatMessageToasts />
+        <CollabPreviewSync iframeRef={iframeRef} />
+        {/* Blocking "ask the user" prompt from a paused tool (NotebookLM
         duplicate-notebook / infographic-reuse fork). Floats above the chat
         input so the choice is unmissable; answering resumes the paused turn. */}
-    {pendingUserInput && resolvedProjectId && (
-      <div className="fixed inset-x-0 bottom-28 z-[60] flex justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-md">
-          <UserInputCard
-            key={pendingUserInput.requestId}
-            projectId={resolvedProjectId}
-            requestId={pendingUserInput.requestId}
-            prompt={pendingUserInput.prompt}
-            choices={pendingUserInput.choices}
-            allowFreeform={pendingUserInput.allowFreeform}
-            onAnswered={() =>
-              // Clear only if a newer prompt (e.g. the infographic's follow-up
-              // reuse/regenerate ask) hasn't already replaced this one.
-              setPendingUserInput((cur) =>
-                cur?.requestId === pendingUserInput.requestId ? null : cur,
-              )
-            }
+        {pendingUserInput && resolvedProjectId && (
+          <div className="fixed inset-x-0 bottom-28 z-[60] flex justify-center px-4 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-md">
+              <UserInputCard
+                key={pendingUserInput.requestId}
+                projectId={resolvedProjectId}
+                requestId={pendingUserInput.requestId}
+                prompt={pendingUserInput.prompt}
+                choices={pendingUserInput.choices}
+                allowFreeform={pendingUserInput.allowFreeform}
+                onAnswered={() =>
+                  // Clear only if a newer prompt (e.g. the infographic's follow-up
+                  // reuse/regenerate ask) hasn't already replaced this one.
+                  setPendingUserInput((cur) =>
+                    cur?.requestId === pendingUserInput.requestId ? null : cur,
+                  )
+                }
+              />
+            </div>
+          </div>
+        )}
+        {pendingIntegrationRequest && workspaceId && (
+          <IntegrationConnectDialog
+            request={pendingIntegrationRequest}
+            workspaceId={workspaceId}
+            projectId={resolvedProjectId ?? undefined}
+            onDismiss={() => {
+              const req = pendingIntegrationRequest;
+              setPendingIntegrationRequest(null);
+              // User cancelled the Connect popup. For ElevenLabs / voice, the AI
+              // paused mid-build waiting on the connection (awaitingIntegrationConnect),
+              // so it will never resume on its own. Re-prompt it to finish the voice
+              // feature using the doable.voice helper, which transparently falls back
+              // to the browser's built-in speech API when ElevenLabs isn't connected.
+              if (req.integrationId === "elevenlabs") {
+                sendMessage(
+                  "I don't want to connect ElevenLabs right now. Please continue building the voice feature using the built-in doable.voice helper — it will automatically use the browser's built-in speech API as a fallback.",
+                );
+              }
+            }}
+            onConnected={() => {
+              const req = pendingIntegrationRequest;
+              const dn = req.displayName;
+              setPendingIntegrationRequest(null);
+              // Give the API-triggered dev-server restart + AI-session eviction a
+              // moment to settle, then re-prompt the AI to resume building.
+              setTimeout(() => {
+                if (req.integrationId === "elevenlabs") {
+                  sendMessage(
+                    "ElevenLabs is now connected. Please continue building the voice feature using the doable.voice helper — it will now use real ElevenLabs voices.",
+                  );
+                } else {
+                  sendMessage(
+                    `${dn} is now connected. Please continue building the feature you were working on, using the ${dn} integration.`,
+                  );
+                }
+              }, 2000);
+            }}
           />
-        </div>
-      </div>
-    )}
-    {pendingIntegrationRequest && workspaceId && (
-      <IntegrationConnectDialog
-        request={pendingIntegrationRequest}
-        workspaceId={workspaceId}
-        projectId={resolvedProjectId ?? undefined}
-        onDismiss={() => {
-          const req = pendingIntegrationRequest;
-          setPendingIntegrationRequest(null);
-          // User cancelled the Connect popup. For ElevenLabs / voice, the AI
-          // paused mid-build waiting on the connection (awaitingIntegrationConnect),
-          // so it will never resume on its own. Re-prompt it to finish the voice
-          // feature using the doable.voice helper, which transparently falls back
-          // to the browser's built-in speech API when ElevenLabs isn't connected.
-          if (req.integrationId === "elevenlabs") {
-            sendMessage(
-              "I don't want to connect ElevenLabs right now. Please continue building the voice feature using the built-in doable.voice helper — it will automatically use the browser's built-in speech API as a fallback.",
-            );
-          }
-        }}
-        onConnected={() => {
-          const req = pendingIntegrationRequest;
-          const dn = req.displayName;
-          setPendingIntegrationRequest(null);
-          // Give the API-triggered dev-server restart + AI-session eviction a
-          // moment to settle, then re-prompt the AI to resume building.
-          setTimeout(() => {
-            if (req.integrationId === "elevenlabs") {
-              sendMessage(
-                "ElevenLabs is now connected. Please continue building the voice feature using the doable.voice helper — it will now use real ElevenLabs voices.",
-              );
-            } else {
-              sendMessage(
-                `${dn} is now connected. Please continue building the feature you were working on, using the ${dn} integration.`,
-              );
-            }
-          }, 2000);
-        }}
-      />
-    )}
-    {supabaseProvisionRequest && resolvedProjectId && workspaceId && (
-      <SupabaseProvisionDialog
-        open={!!supabaseProvisionRequest}
-        workspaceId={workspaceId}
-        projectId={resolvedProjectId}
-        defaultName={supabaseProvisionRequest.name}
-        reason={supabaseProvisionRequest.reason}
-        onClose={(done) => {
-          setSupabaseProvisionRequest(null);
-          if (done && resolvedProjectId) {
-            // Restart the dev server so the vault-bridge re-resolves
-            // env vars (e.g. VITE_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL)
-            // from the newly-stored credential. Without this, the running
-            // dev server has the OLD .env and the env vars are undefined.
-            const token = getStoredTokens().accessToken;
-            fetch(`${API_URL}/projects/${resolvedProjectId}/dev-server/restart`, {
-              method: "POST",
-              headers: token ? { Authorization: `Bearer ${token}` } : {},
-            }).catch(() => { /* non-critical */ });
+        )}
+        {supabaseProvisionRequest && resolvedProjectId && workspaceId && (
+          <SupabaseProvisionDialog
+            open={!!supabaseProvisionRequest}
+            workspaceId={workspaceId}
+            projectId={resolvedProjectId}
+            defaultName={supabaseProvisionRequest.name}
+            reason={supabaseProvisionRequest.reason}
+            onClose={(done) => {
+              setSupabaseProvisionRequest(null);
+              if (done && resolvedProjectId) {
+                // Restart the dev server so the vault-bridge re-resolves
+                // env vars (e.g. VITE_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL)
+                // from the newly-stored credential. Without this, the running
+                // dev server has the OLD .env and the env vars are undefined.
+                const token = getStoredTokens().accessToken;
+                fetch(
+                  `${API_URL}/projects/${resolvedProjectId}/dev-server/restart`,
+                  {
+                    method: "POST",
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  },
+                ).catch(() => {
+                  /* non-critical */
+                });
 
-            // Nudge the AI to continue building with the new env vars
-            setTimeout(() => {
-              sendMessage(
-                "Supabase provisioning complete. The Supabase URL and anon key env vars are now available — please continue with the feature you were building, using the env-var conventions for this project's framework (see your env-var rules above).",
-              );
-            }, 2000); // 2s delay so dev server has time to restart
-          }
-        }}
-      />
-    )}
-    </>
+                // Nudge the AI to continue building with the new env vars
+                setTimeout(() => {
+                  sendMessage(
+                    "Supabase provisioning complete. The Supabase URL and anon key env vars are now available — please continue with the feature you were building, using the env-var conventions for this project's framework (see your env-var rules above).",
+                  );
+                }, 2000); // 2s delay so dev server has time to restart
+              }
+            }}
+          />
+        )}
+      </>
     </CollaborationProvider>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,26 +20,32 @@ export function OAuthForm({
   onOAuth: () => void;
   onCancel: () => void;
 }) {
+  const ui = useUiText();
+
   return (
     <div className="space-y-4 py-2">
       <p className="text-sm text-muted-foreground">
-        You&apos;ll be redirected to {itemName} to authorize
-        access. A popup window will open for you to sign in.
+        {" "}
+        {ui("You'll be redirected to")} {itemName}{" "}
+        {ui(
+          "to authorize access. A popup window will open for you to sign in.",
+        )}{" "}
       </p>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={loading}>
-          Cancel
+          {" "}
+          {ui("Cancel")}{" "}
         </Button>
         <Button onClick={onOAuth} disabled={loading}>
           {loading ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Connecting...
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />{" "}
+              {ui("Connecting...")}{" "}
             </>
           ) : (
             <>
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Sign in with {itemName}
+              <ExternalLink className="h-4 w-4 mr-2" /> {ui("Sign in with")}{" "}
+              {itemName}
             </>
           )}
         </Button>
@@ -72,14 +79,16 @@ export function SecretTextForm({
   onConnect: () => void;
   onCancel: () => void;
 }) {
+  const ui = useUiText();
+
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <label className="text-sm font-medium">API Key</label>
+        <label className="text-sm font-medium">{ui("API Key")}</label>
         <div className="relative">
           <Input
             type={showSecret ? "text" : "password"}
-            placeholder="Enter your API key"
+            placeholder={ui("Enter your API key")}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             className="pr-10"
@@ -90,27 +99,42 @@ export function SecretTextForm({
             onClick={() => setShowSecret(!showSecret)}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
           >
-            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showSecret ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium">
-          Label <span className="text-muted-foreground font-normal">(optional)</span>
+          {" "}
+          {ui("Label")}{" "}
+          <span className="text-muted-foreground font-normal">
+            {ui("(optional)")}
+          </span>
         </label>
         <Input
           type="text"
-          placeholder={`My ${itemName} connection`}
+          placeholder={ui("My {v0} connection", { v0: itemName })}
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
         />
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onCancel} disabled={loading}>Cancel</Button>
+        <Button variant="outline" onClick={onCancel} disabled={loading}>
+          {ui("Cancel")}
+        </Button>
         <Button onClick={onConnect} disabled={loading || !apiKey.trim()}>
           {loading ? (
-            <><Loader2 className="h-4 w-4 animate-spin mr-2" />Connecting...</>
-          ) : "Connect"}
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              {ui("Connecting...")}
+            </>
+          ) : (
+            ui("Connect")
+          )}
         </Button>
       </DialogFooter>
     </div>
@@ -146,18 +170,26 @@ export function BasicAuthForm({
   onConnect: () => void;
   onCancel: () => void;
 }) {
+  const ui = useUiText();
+
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <label className="text-sm font-medium">Username</label>
-        <Input type="text" placeholder="Enter username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+        <label className="text-sm font-medium">{ui("Username")}</label>
+        <Input
+          type="text"
+          placeholder={ui("Enter username")}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+        />
       </div>
       <div className="space-y-2">
-        <label className="text-sm font-medium">Password</label>
+        <label className="text-sm font-medium">{ui("Password")}</label>
         <div className="relative">
           <Input
             type={showSecret ? "text" : "password"}
-            placeholder="Enter password"
+            placeholder={ui("Enter password")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="pr-10"
@@ -167,22 +199,45 @@ export function BasicAuthForm({
             onClick={() => setShowSecret(!showSecret)}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
           >
-            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showSecret ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium">
-          Label <span className="text-muted-foreground font-normal">(optional)</span>
+          {" "}
+          {ui("Label")}{" "}
+          <span className="text-muted-foreground font-normal">
+            {ui("(optional)")}
+          </span>
         </label>
-        <Input type="text" placeholder={`My ${itemName} connection`} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        <Input
+          type="text"
+          placeholder={ui("My {v0} connection", { v0: itemName })}
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onCancel} disabled={loading}>Cancel</Button>
-        <Button onClick={onConnect} disabled={loading || !username.trim() || !password.trim()}>
+        <Button variant="outline" onClick={onCancel} disabled={loading}>
+          {ui("Cancel")}
+        </Button>
+        <Button
+          onClick={onConnect}
+          disabled={loading || !username.trim() || !password.trim()}
+        >
           {loading ? (
-            <><Loader2 className="h-4 w-4 animate-spin mr-2" />Connecting...</>
-          ) : "Connect"}
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              {ui("Connecting...")}
+            </>
+          ) : (
+            ui("Connect")
+          )}
         </Button>
       </DialogFooter>
     </div>
@@ -206,7 +261,17 @@ export function CustomAuthForm({
   onConnect,
   onCancel,
 }: {
-  item: { displayName: string; customAuthFields?: Array<{ name: string; displayName: string; description?: string; type?: string; required?: boolean; options?: Array<{ value: string; label: string }> }> };
+  item: {
+    displayName: string;
+    customAuthFields?: Array<{
+      name: string;
+      displayName: string;
+      description?: string;
+      type?: string;
+      required?: boolean;
+      options?: Array<{ value: string; label: string }>;
+    }>;
+  };
   apiKey: string;
   setApiKey: (v: string) => void;
   customFields: Record<string, string>;
@@ -220,6 +285,8 @@ export function CustomAuthForm({
   onConnect: () => void;
   onCancel: () => void;
 }) {
+  const ui = useUiText();
+
   const fields = item.customAuthFields ?? [];
 
   return (
@@ -230,11 +297,15 @@ export function CustomAuthForm({
             <label className="text-sm font-medium">
               {field.displayName}
               {!field.required && (
-                <span className="text-muted-foreground font-normal ml-1">(optional)</span>
+                <span className="text-muted-foreground font-normal ml-1">
+                  {ui("(optional)")}
+                </span>
               )}
             </label>
             {field.description && (
-              <p className="text-xs text-muted-foreground -mt-1">{field.description}</p>
+              <p className="text-xs text-muted-foreground -mt-1">
+                {field.description}
+              </p>
             )}
             {field.type === "dropdown" && field.options ? (
               <select
@@ -243,19 +314,23 @@ export function CustomAuthForm({
                 className={cn(
                   "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm",
                   "shadow-xs transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 )}
               >
-                <option value="">Select...</option>
+                <option value="">{ui("Select...")}</option>
                 {field.options.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </select>
             ) : field.type === "secret" ? (
               <div className="relative">
                 <Input
                   type={showSecret ? "text" : "password"}
-                  placeholder={`Enter ${field.displayName.toLowerCase()}`}
+                  placeholder={ui("Enter {v0}", {
+                    v0: field.displayName.toLowerCase(),
+                  })}
                   value={customFields[field.name] ?? ""}
                   onChange={(e) => setCustomField(field.name, e.target.value)}
                   className="pr-10"
@@ -266,13 +341,19 @@ export function CustomAuthForm({
                   onClick={() => setShowSecret(!showSecret)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showSecret ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             ) : (
               <Input
                 type="text"
-                placeholder={`Enter ${field.displayName.toLowerCase()}`}
+                placeholder={ui("Enter {v0}", {
+                  v0: field.displayName.toLowerCase(),
+                })}
                 value={customFields[field.name] ?? ""}
                 onChange={(e) => setCustomField(field.name, e.target.value)}
                 autoFocus={field === fields.find((f) => f.required)}
@@ -282,11 +363,13 @@ export function CustomAuthForm({
         ))
       ) : (
         <div className="space-y-2">
-          <label className="text-sm font-medium">Authentication Token</label>
+          <label className="text-sm font-medium">
+            {ui("Authentication Token")}
+          </label>
           <div className="relative">
             <Input
               type={showSecret ? "text" : "password"}
-              placeholder="Enter your authentication token"
+              placeholder={ui("Enter your authentication token")}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               className="pr-10"
@@ -297,7 +380,11 @@ export function CustomAuthForm({
               onClick={() => setShowSecret(!showSecret)}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
             >
-              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showSecret ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
             </button>
           </div>
         </div>
@@ -305,21 +392,32 @@ export function CustomAuthForm({
 
       <div className="space-y-2">
         <label className="text-sm font-medium">
-          Label <span className="text-muted-foreground font-normal">(optional)</span>
+          {" "}
+          {ui("Label")}{" "}
+          <span className="text-muted-foreground font-normal">
+            {ui("(optional)")}
+          </span>
         </label>
         <Input
           type="text"
-          placeholder={`My ${item.displayName} connection`}
+          placeholder={ui("My {v0} connection", { v0: item.displayName })}
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
         />
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onCancel} disabled={loading}>Cancel</Button>
+        <Button variant="outline" onClick={onCancel} disabled={loading}>
+          {ui("Cancel")}
+        </Button>
         <Button onClick={onConnect} disabled={loading || !isValid}>
           {loading ? (
-            <><Loader2 className="h-4 w-4 animate-spin mr-2" />Connecting...</>
-          ) : "Connect"}
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              {ui("Connecting...")}
+            </>
+          ) : (
+            ui("Connect")
+          )}
         </Button>
       </DialogFooter>
     </div>

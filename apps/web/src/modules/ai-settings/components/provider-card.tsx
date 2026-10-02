@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import type { ProviderPreset } from "@doable/shared";
 import { ProviderIcon, PROVIDER_COLORS } from "./provider-icons";
@@ -9,6 +10,8 @@ interface ProviderCardProps {
 }
 
 export function ProviderCard({ preset, onClick }: ProviderCardProps) {
+  const ui = useUiText();
+
   const brandColor = PROVIDER_COLORS[preset.id];
 
   return (
@@ -19,7 +22,11 @@ export function ProviderCard({ preset, onClick }: ProviderCardProps) {
       {/* Provider icon */}
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
-        style={brandColor ? { backgroundColor: `${brandColor}18` } : { backgroundColor: "rgba(113,113,122,0.15)" }}
+        style={
+          brandColor
+            ? { backgroundColor: `${brandColor}18` }
+            : { backgroundColor: "rgba(113,113,122,0.15)" }
+        }
       >
         <ProviderIcon providerId={preset.id} size={24} />
       </div>
@@ -32,17 +39,19 @@ export function ProviderCard({ preset, onClick }: ProviderCardProps) {
           </span>
           {preset.freeTier && (
             <span className="shrink-0 rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-medium text-green-400">
-              Free
+              {" "}
+              {ui("Free")}{" "}
             </span>
           )}
           {preset.category === "local" && (
             <span className="shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
-              Local
+              {" "}
+              {ui("Local")}{" "}
             </span>
           )}
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-          {preset.description}
+          {ui(preset.description)}
         </p>
       </div>
     </button>

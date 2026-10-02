@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
@@ -66,6 +67,8 @@ interface ReportItem {
 }
 
 export default function ModerationPage() {
+  const ui = useUiText();
+
   const router = useRouter();
   const { isPlatformAdmin, loading: adminLoading } = usePlatformAdmin();
   const [tab, setTab] = useState<Tab>("queue");
@@ -73,14 +76,20 @@ export default function ModerationPage() {
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
+  const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>(
+    {},
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const [q, r] = await Promise.all([
-        apiFetch<{ data: QueueItem[]; total: number }>("/admin/marketplace/moderation/queue?status=pending"),
-        apiFetch<{ data: ReportItem[]; total: number }>("/admin/marketplace/reports?status=open"),
+        apiFetch<{ data: QueueItem[]; total: number }>(
+          "/admin/marketplace/moderation/queue?status=pending",
+        ),
+        apiFetch<{ data: ReportItem[]; total: number }>(
+          "/admin/marketplace/reports?status=open",
+        ),
       ]);
       setQueue(q.data);
       setReports(r.data);
@@ -132,9 +141,15 @@ export default function ModerationPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
         <ShieldCheck className="h-12 w-12" />
-        <p className="font-medium text-foreground">Platform admin access required</p>
-        <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>
-          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
+        <p className="font-medium text-foreground">
+          {ui("Platform admin access required")}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/dashboard")}
+        >
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> {ui("Back")}{" "}
         </Button>
       </div>
     );
@@ -148,23 +163,38 @@ export default function ModerationPage() {
             href="/admin"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Admin
+            <ArrowLeft className="h-3.5 w-3.5" /> {ui("Admin")}{" "}
           </Link>
         </div>
         <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2">
-          <ShieldCheck className="h-6 w-6 text-brand-400" />
-          Marketplace moderation
+          <ShieldCheck className="h-6 w-6 text-brand-400" />{" "}
+          {ui("Marketplace moderation")}{" "}
         </h1>
         <p className="text-sm text-muted-foreground mb-6">
-          Review listings flagged for moderator approval and respond to community reports.
+          {" "}
+          {ui(
+            "Review listings flagged for moderator approval and respond to community reports.",
+          )}{" "}
         </p>
 
         {/* Tabs */}
         <div className="flex gap-1 rounded-lg border border-border bg-card p-1 mb-6 w-fit">
-          {([
-            { id: "queue", label: "Review queue", Icon: Inbox, badge: queue.length },
-            { id: "reports", label: "Reports", Icon: Flag, badge: reports.length },
-          ] as const).map((t) => {
+          {(
+            [
+              {
+                id: "queue",
+                label: ui("Review queue"),
+                Icon: Inbox,
+                badge: queue.length,
+              },
+              {
+                id: "reports",
+                label: ui("Reports"),
+                Icon: Flag,
+                badge: reports.length,
+              },
+            ] as const
+          ).map((t) => {
             const active = tab === t.id;
             return (
               <button
@@ -194,11 +224,17 @@ export default function ModerationPage() {
           </div>
         ) : tab === "queue" ? (
           queue.length === 0 ? (
-            <EmptyState Icon={ListChecks} title="No listings awaiting review" />
+            <EmptyState
+              Icon={ListChecks}
+              title={ui("No listings awaiting review")}
+            />
           ) : (
             <ul className="space-y-4">
               {queue.map((item) => (
-                <li key={item.id} className="rounded-lg border border-border bg-card p-5">
+                <li
+                  key={item.id}
+                  className="rounded-lg border border-border bg-card p-5"
+                >
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
@@ -209,18 +245,21 @@ export default function ModerationPage() {
                           href={`/marketplace/${item.listing_slug}`}
                           target="_blank"
                           className="text-muted-foreground hover:text-foreground"
-                          title="Open listing in new tab"
+                          title={ui("Open listing in new tab")}
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        by {item.publisher_name} · v{item.version} · submitted{" "}
-                        {new Date(item.submitted_at).toLocaleString()}
+                        {" "}
+                        {ui("by")} {item.publisher_name} {ui("· v")}
+                        {item.version} {ui("· submitted")}{" "}
+                        {new Date(item.submitted_at).toLocaleString(ui.locale)}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400">
-                      <AlertTriangle className="h-3 w-3" /> Needs review
+                      <AlertTriangle className="h-3 w-3" />{" "}
+                      {ui("Needs review")}{" "}
                     </div>
                   </div>
 
@@ -230,32 +269,54 @@ export default function ModerationPage() {
 
                   {item.manifest_summary && (
                     <div className="mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                      <Stat label="Skills" value={item.manifest_summary.skills ?? 0} />
-                      <Stat label="Rules" value={item.manifest_summary.rules ?? 0} />
-                      <Stat label="Knowledge" value={item.manifest_summary.knowledge ?? 0} />
-                      <Stat label="Connectors" value={item.manifest_summary.connectors ?? 0} />
+                      <Stat
+                        label={ui("Skills")}
+                        value={item.manifest_summary.skills ?? 0}
+                      />
+                      <Stat
+                        label={ui("Rules")}
+                        value={item.manifest_summary.rules ?? 0}
+                      />
+                      <Stat
+                        label={ui("Knowledge")}
+                        value={item.manifest_summary.knowledge ?? 0}
+                      />
+                      <Stat
+                        label={ui("Connectors")}
+                        value={item.manifest_summary.connectors ?? 0}
+                      />
                     </div>
                   )}
 
-                  {item.manifest_summary?.permissions && item.manifest_summary.permissions.length > 0 && (
-                    <div className="mb-3">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Permissions:</p>
-                      <ul className="space-y-1 text-xs text-muted-foreground">
-                        {item.manifest_summary.permissions.map((p) => (
-                          <li key={p} className="flex items-start gap-1.5">
-                            <span className="text-amber-400">•</span>
-                            <span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  {item.manifest_summary?.permissions &&
+                    item.manifest_summary.permissions.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">
+                          {ui("Permissions:")}
+                        </p>
+                        <ul className="space-y-1 text-xs text-muted-foreground">
+                          {item.manifest_summary.permissions.map((p) => (
+                            <li key={p} className="flex items-start gap-1.5">
+                              <span className="text-amber-400">•</span>
+                              <span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                   <Textarea
                     rows={2}
-                    placeholder="Optional decision note (sent to publisher on rejection)…"
+                    placeholder={ui(
+                      "Optional decision note (sent to publisher on rejection)…",
+                    )}
                     value={decisionNotes[item.id] ?? ""}
-                    onChange={(e) => setDecisionNotes((s) => ({ ...s, [item.id]: e.target.value }))}
+                    onChange={(e) =>
+                      setDecisionNotes((s) => ({
+                        ...s,
+                        [item.id]: e.target.value,
+                      }))
+                    }
                     className="mb-3 text-xs"
                   />
 
@@ -269,8 +330,8 @@ export default function ModerationPage() {
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                      )}
-                      Approve & publish
+                      )}{" "}
+                      {ui("Approve & publish")}{" "}
                     </Button>
                     <Button
                       size="sm"
@@ -278,7 +339,8 @@ export default function ModerationPage() {
                       onClick={() => decideQueueItem(item.id, "reject")}
                       disabled={busyId === item.id}
                     >
-                      <XCircle className="mr-1 h-3.5 w-3.5" /> Reject
+                      <XCircle className="mr-1 h-3.5 w-3.5" />{" "}
+                      {ui("Reject")}{" "}
                     </Button>
                   </div>
                 </li>
@@ -286,7 +348,7 @@ export default function ModerationPage() {
             </ul>
           )
         ) : reports.length === 0 ? (
-          <EmptyState Icon={Flag} title="No open reports" />
+          <EmptyState Icon={Flag} title={ui("No open reports")} />
         ) : (
           <ul className="space-y-3">
             {reports.map((r) => (
@@ -308,9 +370,15 @@ export default function ModerationPage() {
                     </Link>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    by {r.reporter_name} · {new Date(r.created_at).toLocaleString()}
+                    {" "}
+                    {ui("by")} {r.reporter_name} ·{" "}
+                    {new Date(r.created_at).toLocaleString(ui.locale)}
                   </p>
-                  {r.detail && <p className="mt-2 text-sm text-muted-foreground">{r.detail}</p>}
+                  {r.detail && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {r.detail}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col items-end gap-1.5 shrink-0">
                   <Button
@@ -319,7 +387,8 @@ export default function ModerationPage() {
                     onClick={() => resolveReport(r.id, "actioned")}
                     disabled={busyId === r.id}
                   >
-                    Take action
+                    {" "}
+                    {ui("Take action")}{" "}
                   </Button>
                   <Button
                     size="sm"
@@ -327,7 +396,8 @@ export default function ModerationPage() {
                     onClick={() => resolveReport(r.id, "dismissed")}
                     disabled={busyId === r.id}
                   >
-                    Dismiss
+                    {" "}
+                    {ui("Dismiss")}{" "}
                   </Button>
                 </div>
               </li>
@@ -342,7 +412,9 @@ export default function ModerationPage() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border border-border bg-muted/30 p-2">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
       <p className="text-base font-semibold text-foreground">{value}</p>
     </div>
   );

@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import {
   Type,
@@ -69,22 +71,34 @@ export function TypographyEditor({
   onFontStyleChange,
   onTextAlignChange,
 }: TypographyEditorProps) {
+  const ui = useUiText();
+  const i18n_FONT_SIZE_OPTIONS = useUiData(FONT_SIZE_OPTIONS);
+  const i18n_FONT_STYLE_OPTIONS = useUiData(FONT_STYLE_OPTIONS);
+  const i18n_FONT_WEIGHT_OPTIONS = useUiData(FONT_WEIGHT_OPTIONS);
+  const i18n_ALIGNMENT_OPTIONS = useUiData(ALIGNMENT_OPTIONS);
+
   // Find closest matching font size label
-  const matchedSize = FONT_SIZE_OPTIONS.find((opt) => opt.value === fontSize);
+  const matchedSize = i18n_FONT_SIZE_OPTIONS.find(
+    (opt) => opt.value === fontSize,
+  );
 
   return (
     <div className="rounded-lg border border-border bg-card">
       {/* Section Header */}
       <div className="flex items-center gap-2 px-3 py-2">
         <Type className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium text-foreground">Typography</span>
+        <span className="text-xs font-medium text-foreground">
+          {ui("Typography")}
+        </span>
       </div>
 
       {/* Content */}
       <div className="space-y-2.5 px-3 pb-3">
         {/* Font Size */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Size</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Size")}
+          </label>
           <select
             value={matchedSize ? fontSize : ""}
             onChange={(e) => onFontSizeChange(e.target.value)}
@@ -95,7 +109,7 @@ export function TypographyEditor({
                 {fontSize}
               </option>
             )}
-            {FONT_SIZE_OPTIONS.map((opt) => (
+            {i18n_FONT_SIZE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label} ({opt.value})
               </option>
@@ -105,13 +119,15 @@ export function TypographyEditor({
 
         {/* Font Style */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Style</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Style")}
+          </label>
           <select
             value={fontStyle}
             onChange={(e) => onFontStyleChange(e.target.value)}
             className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-brand-500/50 transition-colors"
           >
-            {FONT_STYLE_OPTIONS.map((opt) => (
+            {i18n_FONT_STYLE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -121,19 +137,30 @@ export function TypographyEditor({
 
         {/* Font Weight */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Weight</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Weight")}
+          </label>
           <select
-            value={FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight) ? fontWeight : ""}
+            value={
+              i18n_FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight)
+                ? fontWeight
+                : ""
+            }
             onChange={(e) => onFontWeightChange(e.target.value)}
             className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-brand-500/50 transition-colors"
           >
-            {!FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight) && fontWeight && (
-              <option value="" disabled>
-                {fontWeight}
-              </option>
-            )}
-            {FONT_WEIGHT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value} disabled={opt.value === ""}>
+            {!i18n_FONT_WEIGHT_OPTIONS.find((o) => o.value === fontWeight) &&
+              fontWeight && (
+                <option value="" disabled>
+                  {fontWeight}
+                </option>
+              )}
+            {i18n_FONT_WEIGHT_OPTIONS.map((opt) => (
+              <option
+                key={opt.value}
+                value={opt.value}
+                disabled={opt.value === ""}
+              >
                 {opt.label}
               </option>
             ))}
@@ -142,9 +169,11 @@ export function TypographyEditor({
 
         {/* Text Alignment */}
         <div className="flex items-center gap-2">
-          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">Align</label>
+          <label className="w-20 shrink-0 text-[11px] text-muted-foreground">
+            {ui("Align")}
+          </label>
           <div className="flex gap-0.5 rounded-md border border-input bg-background p-0.5">
-            {ALIGNMENT_OPTIONS.map(({ value, icon: Icon, label }) => (
+            {i18n_ALIGNMENT_OPTIONS.map(({ value, icon: Icon, label }) => (
               <button
                 key={value}
                 onClick={() => onTextAlignChange(value)}
@@ -153,7 +182,7 @@ export function TypographyEditor({
                   "rounded p-1.5 transition-colors",
                   textAlign === value
                     ? "bg-brand-500/20 text-brand-400"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />

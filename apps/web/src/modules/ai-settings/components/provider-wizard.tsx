@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
@@ -11,10 +12,34 @@ import {
 import type { ProviderPreset } from "@doable/shared";
 import { useProviderCatalog } from "../hooks/use-provider-catalog";
 import { useTestConnection } from "../hooks/use-test-connection";
-import { Loader2, ChevronLeft, ChevronRight, X, User as UserIcon, Users as UsersIcon, Lock } from "lucide-react";
-import type { WizardStep, CategoryTab, ProviderWizardProps, WizardFormState } from "./provider-wizard-types";
-import { STEP_LABELS, STEP_ORDER, INITIAL_FORM_STATE, CUSTOM_OPENAI_PRESET, CUSTOM_OPENAI_PROVIDER_ID } from "./provider-wizard-types";
-import { StepChoose, StepConfigure, StepValidate, StepModels } from "./provider-wizard-steps";
+import {
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  User as UserIcon,
+  Users as UsersIcon,
+  Lock,
+} from "lucide-react";
+import type {
+  WizardStep,
+  CategoryTab,
+  ProviderWizardProps,
+  WizardFormState,
+} from "./provider-wizard-types";
+import {
+  STEP_LABELS,
+  STEP_ORDER,
+  INITIAL_FORM_STATE,
+  CUSTOM_OPENAI_PRESET,
+  CUSTOM_OPENAI_PROVIDER_ID,
+} from "./provider-wizard-types";
+import {
+  StepChoose,
+  StepConfigure,
+  StepValidate,
+  StepModels,
+} from "./provider-wizard-steps";
 import { useProviderWizardModels } from "./use-provider-wizard-models";
 
 // ─── Main Component ──────────────────────────────────────────
@@ -26,6 +51,8 @@ export function ProviderWizard({
   scope: initialScope,
   isWorkspaceAdmin = false,
 }: ProviderWizardProps) {
+  const ui = useUiText();
+
   // Default scope: admins almost always configure AI for the team, so when no
   // explicit scope is requested we default them to 'workspace'. Non-admins are
   // always locked to 'user'. An explicit initialScope (from the Add Personal /
@@ -37,7 +64,9 @@ export function ProviderWizard({
   const [scope, setScope] = useState<"user" | "workspace">(defaultScope);
   // Wizard state
   const [step, setStep] = useState<WizardStep>("choose");
-  const [selectedPreset, setSelectedPreset] = useState<ProviderPreset | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<ProviderPreset | null>(
+    null,
+  );
   const [categoryTab, setCategoryTab] = useState<CategoryTab>("cloud");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -51,7 +80,11 @@ export function ProviderWizard({
   });
 
   // Hooks
-  const { catalog, isLoading: catalogLoading, error: catalogError } = useProviderCatalog();
+  const {
+    catalog,
+    isLoading: catalogLoading,
+    error: catalogError,
+  } = useProviderCatalog();
   const {
     testConnection,
     result: testResult,
@@ -60,8 +93,12 @@ export function ProviderWizard({
   } = useTestConnection();
 
   const resolvedBaseUrl = useMemo(() => {
-    if (!selectedPreset?.baseUrlTemplate || !form.azureResourceName) return form.baseUrl;
-    return selectedPreset.defaultBaseUrl.replace("{resource}", form.azureResourceName);
+    if (!selectedPreset?.baseUrlTemplate || !form.azureResourceName)
+      return form.baseUrl;
+    return selectedPreset.defaultBaseUrl.replace(
+      "{resource}",
+      form.azureResourceName,
+    );
   }, [selectedPreset, form.baseUrl, form.azureResourceName]);
 
   const {
@@ -79,8 +116,13 @@ export function ProviderWizard({
     handleTestConnection,
     handleSave,
   } = useProviderWizardModels(
-    selectedPreset, form, resolvedBaseUrl, testResult,
-    testConnection, workspaceId, onProviderAdded,
+    selectedPreset,
+    form,
+    resolvedBaseUrl,
+    testResult,
+    testConnection,
+    workspaceId,
+    onProviderAdded,
     // handleOpenChange defined below — we pass a stable ref via useCallback
     (open: boolean) => handleOpenChangeRef.current(open),
     scope,
@@ -188,7 +230,8 @@ export function ProviderWizard({
 
   const canProceedToConfigure =
     form.label.trim() &&
-    (form.baseUrl.trim() || (selectedPreset?.baseUrlTemplate && form.azureResourceName.trim()));
+    (form.baseUrl.trim() ||
+      (selectedPreset?.baseUrlTemplate && form.azureResourceName.trim()));
 
   // ─── Navigation ────────────────────────────────────────────
 
@@ -222,9 +265,9 @@ export function ProviderWizard({
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
-              <DialogTitle>Add Provider</DialogTitle>
+              <DialogTitle>{ui("Add Provider")}</DialogTitle>
               <DialogDescription>
-                {STEP_LABELS[step]}
+                {ui(STEP_LABELS[step])}
                 {selectedPreset && step !== "choose" && (
                   <> — {selectedPreset.name}</>
                 )}
@@ -233,7 +276,7 @@ export function ProviderWizard({
             <button
               onClick={() => handleOpenChange(false)}
               className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-              aria-label="Close"
+              aria-label={ui("Close")}
             >
               <X className="h-5 w-5" />
             </button>
@@ -248,7 +291,7 @@ export function ProviderWizard({
               re-target an in-flight provider creation. */}
         {isWorkspaceAdmin ? (
           <div className="flex items-center gap-2 px-1 pt-1 text-xs">
-            <span className="text-muted-foreground">Add as:</span>
+            <span className="text-muted-foreground">{ui("Add as:")}</span>
             <div className="flex rounded-md border border-border overflow-hidden">
               <button
                 type="button"
@@ -259,10 +302,13 @@ export function ProviderWizard({
                     ? "bg-brand-600 text-white"
                     : "bg-background text-muted-foreground hover:bg-accent disabled:opacity-50"
                 }`}
-                title={step === "choose" ? "Visible only to you" : "Pick at the start of the wizard"}
+                title={
+                  step === "choose"
+                    ? ui("Visible only to you")
+                    : ui("Pick at the start of the wizard")
+                }
               >
-                <UserIcon className="h-3 w-3" />
-                Personal
+                <UserIcon className="h-3 w-3" /> {ui("Personal")}{" "}
               </button>
               <button
                 type="button"
@@ -273,20 +319,25 @@ export function ProviderWizard({
                     ? "bg-brand-600 text-white"
                     : "bg-background text-muted-foreground hover:bg-accent disabled:opacity-50"
                 }`}
-                title={step === "choose" ? "Shared with all workspace members" : "Pick at the start of the wizard"}
+                title={
+                  step === "choose"
+                    ? ui("Shared with all workspace members")
+                    : ui("Pick at the start of the wizard")
+                }
               >
-                <UsersIcon className="h-3 w-3" />
-                Workspace
+                <UsersIcon className="h-3 w-3" /> {ui("Workspace")}{" "}
               </button>
             </div>
             {step !== "choose" && (
-              <span className="text-[10px] text-muted-foreground">locked for this run</span>
+              <span className="text-[10px] text-muted-foreground">
+                {ui("locked for this run")}
+              </span>
             )}
           </div>
         ) : (
           <div className="flex items-center gap-1.5 px-1 pt-1 text-xs text-muted-foreground">
             <Lock className="h-3 w-3" />
-            <span>Adding as personal — visible only to you.</span>
+            <span>{ui("Adding as personal — visible only to you.")}</span>
           </div>
         )}
 
@@ -357,8 +408,7 @@ export function ProviderWizard({
               onClick={goBack}
               className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
-              <ChevronLeft className="h-4 w-4" />
-              Back
+              <ChevronLeft className="h-4 w-4" /> {ui("Back")}{" "}
             </button>
             <div className="flex items-center gap-2">
               {step === "configure" && (
@@ -367,8 +417,8 @@ export function ProviderWizard({
                   disabled={!canProceedToConfigure}
                   className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
                 >
-                  Test Connection
-                  <ChevronRight className="h-4 w-4" />
+                  {" "}
+                  {ui("Test Connection")} <ChevronRight className="h-4 w-4" />
                 </button>
               )}
               {step === "validate" && (
@@ -377,8 +427,8 @@ export function ProviderWizard({
                   disabled={!testResult?.ok}
                   className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
                 >
-                  Select Models
-                  <ChevronRight className="h-4 w-4" />
+                  {" "}
+                  {ui("Select Models")} <ChevronRight className="h-4 w-4" />
                 </button>
               )}
               {step === "models" && (
@@ -387,8 +437,8 @@ export function ProviderWizard({
                   disabled={saving || selectedModelCount === 0}
                   className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500 disabled:opacity-50 transition-colors"
                 >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Save Provider
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}{" "}
+                  {ui("Save Provider")}{" "}
                 </button>
               )}
             </div>
@@ -402,4 +452,3 @@ export function ProviderWizard({
 // ═══════════════════════════════════════════════════════════════
 // Step Sub-Components
 // ═══════════════════════════════════════════════════════════════
-

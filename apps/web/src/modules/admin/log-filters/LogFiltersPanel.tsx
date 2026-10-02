@@ -1,3 +1,4 @@
+import { useUiText } from "@/i18n/use-ui-text";
 import { useState, type ReactElement, type FormEvent } from "react";
 import { useLogFilters, type LogFilter } from "./useLogFilters";
 
@@ -15,11 +16,14 @@ function truncate(value: string, max: number): string {
 export function LogFiltersPanel({
   workspaceId,
 }: LogFiltersPanelProps): ReactElement {
+  const ui = useUiText();
+
   const { filters, loading, error, create, toggle, remove } =
     useLogFilters(workspaceId);
 
-  const [filterId, setFilterId] =
-    useState<"deny-pattern" | "drop-pattern">("deny-pattern");
+  const [filterId, setFilterId] = useState<"deny-pattern" | "drop-pattern">(
+    "deny-pattern",
+  );
   const [pattern, setPattern] = useState("");
   const [token, setToken] = useState(DEFAULT_DENY_TOKEN);
   const [submitting, setSubmitting] = useState(false);
@@ -53,7 +57,7 @@ export function LogFiltersPanel({
 
   const handleToggle = async (
     f: LogFilter,
-    nextEnabled: boolean
+    nextEnabled: boolean,
   ): Promise<void> => {
     try {
       await toggle(f.id, nextEnabled);
@@ -64,7 +68,7 @@ export function LogFiltersPanel({
 
   const handleDelete = async (f: LogFilter): Promise<void> => {
     const ok = window.confirm(
-      `Delete this ${f.filter_id} for "${truncate(f.config.pattern, 40)}"?`
+      `Delete this ${f.filter_id} for "${truncate(f.config.pattern, 40)}"?`,
     );
     if (!ok) return;
     try {
@@ -78,24 +82,28 @@ export function LogFiltersPanel({
     <div className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-4">
       <div className="flex items-baseline justify-between">
         <h2 className="text-base font-semibold text-neutral-900">
-          Log filters
+          {" "}
+          {ui("Log filters")}{" "}
         </h2>
         <span className="text-xs text-neutral-500">
-          {filters.length} active
+          {filters.length} {ui("active")}{" "}
         </span>
       </div>
 
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
+          {ui(error)}
         </div>
       ) : null}
 
       {loading ? (
-        <div className="text-sm text-neutral-500">Loading filters...</div>
+        <div className="text-sm text-neutral-500">
+          {ui("Loading filters...")}
+        </div>
       ) : filters.length === 0 ? (
         <div className="rounded border border-dashed border-neutral-200 px-3 py-6 text-center text-sm text-neutral-500">
-          No filters configured.
+          {" "}
+          {ui("No filters configured.")}{" "}
         </div>
       ) : (
         <ul className="flex flex-col divide-y divide-neutral-100 rounded border border-neutral-200">
@@ -127,15 +135,16 @@ export function LogFiltersPanel({
                   checked={f.enabled}
                   onChange={(e) => handleToggle(f, e.target.checked)}
                   className="h-4 w-4 rounded border-neutral-300"
-                />
-                enabled
+                />{" "}
+                {ui("enabled")}{" "}
               </label>
               <button
                 type="button"
                 onClick={() => handleDelete(f)}
                 className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700"
               >
-                Delete
+                {" "}
+                {ui("Delete")}{" "}
               </button>
             </li>
           ))}
@@ -146,7 +155,9 @@ export function LogFiltersPanel({
         onSubmit={handleSubmit}
         className="flex flex-col gap-3 rounded border border-neutral-200 bg-neutral-50 p-3"
       >
-        <div className="text-sm font-medium text-neutral-800">Add filter</div>
+        <div className="text-sm font-medium text-neutral-800">
+          {ui("Add filter")}
+        </div>
 
         <div className="flex gap-4 text-sm text-neutral-700">
           <label className="flex items-center gap-1.5">
@@ -156,8 +167,8 @@ export function LogFiltersPanel({
               value="deny-pattern"
               checked={filterId === "deny-pattern"}
               onChange={() => setFilterId("deny-pattern")}
-            />
-            deny-pattern
+            />{" "}
+            {ui("deny-pattern")}{" "}
           </label>
           <label className="flex items-center gap-1.5">
             <input
@@ -166,8 +177,8 @@ export function LogFiltersPanel({
               value="drop-pattern"
               checked={filterId === "drop-pattern"}
               onChange={() => setFilterId("drop-pattern")}
-            />
-            drop-pattern
+            />{" "}
+            {ui("drop-pattern")}{" "}
           </label>
         </div>
 
@@ -176,7 +187,8 @@ export function LogFiltersPanel({
             htmlFor="log-filter-pattern"
             className="text-xs font-medium text-neutral-600"
           >
-            Pattern
+            {" "}
+            {ui("Pattern")}{" "}
           </label>
           <input
             id="log-filter-pattern"
@@ -195,7 +207,8 @@ export function LogFiltersPanel({
               htmlFor="log-filter-token"
               className="text-xs font-medium text-neutral-600"
             >
-              Replacement token
+              {" "}
+              {ui("Replacement token")}{" "}
             </label>
             <input
               id="log-filter-token"
@@ -218,7 +231,7 @@ export function LogFiltersPanel({
             disabled={submitting}
             className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-400"
           >
-            {submitting ? "Adding..." : "Add filter"}
+            {submitting ? ui("Adding...") : ui("Add filter")}
           </button>
         </div>
       </form>

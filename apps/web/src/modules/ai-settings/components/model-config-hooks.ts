@@ -1,4 +1,6 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
@@ -90,10 +92,18 @@ export interface ProviderModelInfo {
 // share a single fetch, and subsequent visits within MODELS_TTL_MS are
 // served instantly from cache.
 const MODELS_TTL_MS = 5 * 60_000;
-const _modelsCache = new Map<string, { data: { id: string; label: string }[]; expires: number }>();
-const _modelsInflight = new Map<string, Promise<{ id: string; label: string }[]>>();
+const _modelsCache = new Map<
+  string,
+  { data: { id: string; label: string }[]; expires: number }
+>();
+const _modelsInflight = new Map<
+  string,
+  Promise<{ id: string; label: string }[]>
+>();
 
-async function fetchCopilotModels(copilotAccountId?: string): Promise<{ id: string; label: string }[]> {
+async function fetchCopilotModels(
+  copilotAccountId?: string,
+): Promise<{ id: string; label: string }[]> {
   const key = copilotAccountId ?? "__default__";
   const cached = _modelsCache.get(key);
   if (cached && cached.expires > Date.now()) return cached.data;
@@ -101,16 +111,24 @@ async function fetchCopilotModels(copilotAccountId?: string): Promise<{ id: stri
   let pending = _modelsInflight.get(key);
   if (!pending) {
     pending = (async () => {
-      const qs = copilotAccountId ? `?copilotAccountId=${copilotAccountId}` : "";
-      const json = await apiFetch<{ data: { id: string; name: string }[] }>(`/ai/models${qs}`);
+      const qs = copilotAccountId
+        ? `?copilotAccountId=${copilotAccountId}`
+        : "";
+      const json = await apiFetch<{ data: { id: string; name: string }[] }>(
+        `/ai/models${qs}`,
+      );
       const fetched = json.data ?? [];
-      const models = fetched.length > 0
-        ? [
-            { id: "", label: "Auto (recommended)" },
-            ...fetched.map((m) => ({ id: m.id, label: m.name })),
-          ]
-        : FALLBACK_MODELS;
-      _modelsCache.set(key, { data: models, expires: Date.now() + MODELS_TTL_MS });
+      const models =
+        fetched.length > 0
+          ? [
+              { id: "", label: "Auto (recommended)" },
+              ...fetched.map((m) => ({ id: m.id, label: m.name })),
+            ]
+          : FALLBACK_MODELS;
+      _modelsCache.set(key, {
+        data: models,
+        expires: Date.now() + MODELS_TTL_MS,
+      });
       return models;
     })().finally(() => {
       _modelsInflight.delete(key);
@@ -121,9 +139,14 @@ async function fetchCopilotModels(copilotAccountId?: string): Promise<{ id: stri
 }
 
 export function useCopilotModels(copilotAccountId?: string) {
+  const ui = useUiText();
+  const i18n_FALLBACK_MODELS = useUiData(FALLBACK_MODELS);
+
   const [models, setModels] = useState<{ id: string; label: string }[]>(() => {
     const cached = _modelsCache.get(copilotAccountId ?? "__default__");
-    return cached && cached.expires > Date.now() ? cached.data : FALLBACK_MODELS;
+    return cached && cached.expires > Date.now()
+      ? cached.data
+      : i18n_FALLBACK_MODELS;
   });
   const [loadingModels, setLoadingModels] = useState(() => {
     const cached = _modelsCache.get(copilotAccountId ?? "__default__");
@@ -140,17 +163,27 @@ export function useCopilotModels(copilotAccountId?: string) {
     }
     setLoadingModels(true);
     fetchCopilotModels(copilotAccountId)
-      .then((m) => { if (!cancelled) setModels(m); })
-      .catch(() => { if (!cancelled) setModels(FALLBACK_MODELS); })
-      .finally(() => { if (!cancelled) setLoadingModels(false); });
-    return () => { cancelled = true; };
+      .then((m) => {
+        if (!cancelled) setModels(m);
+      })
+      .catch(() => {
+        if (!cancelled) setModels(i18n_FALLBACK_MODELS);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingModels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [copilotAccountId]);
 
   return { models, loadingModels };
 }
 
 /** Maps a catalog preset's defaultModels to ProviderModelInfo rows. */
-function catalogFallbackModels(presetId: string | null | undefined): ProviderModelInfo[] {
+function catalogFallbackModels(
+  presetId: string | null | undefined,
+): ProviderModelInfo[] {
   if (!presetId) return [];
   const preset = PROVIDER_BY_ID[presetId as keyof typeof PROVIDER_BY_ID];
   if (!preset || preset.defaultModels.length === 0) return [];
@@ -192,7 +225,9 @@ export function useProviderModels(
       try {
         const res = await apiFetch<{
           data: { models: ProviderModelInfo[]; cachedAt: string | null };
-        }>(`/workspaces/${workspaceId}/ai-settings/providers/${providerId}/models`);
+        }>(
+          `/workspaces/${workspaceId}/ai-settings/providers/${providerId}/models`,
+        );
         const cached = res.data?.models ?? [];
 
         if (cached.length > 0) {
@@ -203,15 +238,21 @@ export function useProviderModels(
               `/workspaces/${workspaceId}/ai-settings/providers/${providerId}/discover-models`,
               { method: "POST" },
             );
-            const discovered = (disc.data ?? []).map((m: ProviderModelInfo) => ({
-              id: m.id,
-              name: m.name ?? null,
-              contextWindow: m.contextWindow ?? null,
-              supportsTools: m.supportsTools ?? true,
-              supportsVision: m.supportsVision ?? false,
-            }));
+            const discovered = (disc.data ?? []).map(
+              (m: ProviderModelInfo) => ({
+                id: m.id,
+                name: m.name ?? null,
+                contextWindow: m.contextWindow ?? null,
+                supportsTools: m.supportsTools ?? true,
+                supportsVision: m.supportsVision ?? false,
+              }),
+            );
             if (!cancelled) {
-              setModels(discovered.length > 0 ? discovered : catalogFallbackModels(presetId));
+              setModels(
+                discovered.length > 0
+                  ? discovered
+                  : catalogFallbackModels(presetId),
+              );
             }
           } catch {
             if (!cancelled) setModels(catalogFallbackModels(presetId));
@@ -223,7 +264,9 @@ export function useProviderModels(
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceId, providerId, presetId, refreshKey]);
 
   return { models, loading, refresh };

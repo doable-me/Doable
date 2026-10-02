@@ -1,13 +1,10 @@
 "use client";
+import { UiText } from "@/i18n/ui-text";
+import { useUiText } from "@/i18n/use-ui-text";
+import { useUiData } from "@/i18n/use-ui-data";
 
 import { useState, useCallback, useEffect } from "react";
-import {
-  Settings,
-  Users,
-  AlertTriangle,
-  Check,
-  X,
-} from "lucide-react";
+import { Settings, Users, AlertTriangle, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WORKSPACE_ROLES, type Workspace } from "@doable/shared";
 import { MembersPage } from "./members-page";
@@ -41,7 +38,7 @@ function ToastContainer({
   onDismiss: (id: string) => void;
 }) {
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+    <div className="fixed bottom-16 right-4 z-50 flex flex-col gap-2">
       {toasts.map((toast) => (
         <div
           key={toast.id}
@@ -49,7 +46,7 @@ function ToastContainer({
             "flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg transition-all animate-in slide-in-from-bottom-2",
             toast.type === "success"
               ? "border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200"
-              : "border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+              : "border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200",
           )}
         >
           {toast.type === "success" ? (
@@ -57,7 +54,9 @@ function ToastContainer({
           ) : (
             <X className="h-4 w-4 shrink-0" />
           )}
-          <span className="text-sm">{toast.message}</span>
+          <span className="text-sm">
+            <UiText>{toast.message}</UiText>
+          </span>
           <button
             onClick={() => onDismiss(toast.id)}
             className="ml-2 shrink-0 opacity-60 hover:opacity-100"
@@ -73,16 +72,13 @@ function ToastContainer({
 function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const addToast = useCallback(
-    (type: "success" | "error", message: string) => {
-      const id = Math.random().toString(36).slice(2);
-      setToasts((prev) => [...prev, { id, type, message }]);
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 4000);
-    },
-    []
-  );
+  const addToast = useCallback((type: "success" | "error", message: string) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -96,7 +92,12 @@ import { DangerTab } from "./workspace-settings-danger";
 
 // ─── Tabs ───────────────────────────────────────────────────
 
-const TABS: { id: Tab; label: string; icon: React.ElementType; minRole: string }[] = [
+const TABS: {
+  id: Tab;
+  label: string;
+  icon: React.ElementType;
+  minRole: string;
+}[] = [
   { id: "general", label: "General", icon: Settings, minRole: "admin" },
   { id: "members", label: "Members", icon: Users, minRole: "member" },
   { id: "danger", label: "Danger Zone", icon: AlertTriangle, minRole: "owner" },
@@ -105,7 +106,9 @@ const TABS: { id: Tab; label: string; icon: React.ElementType; minRole: string }
 const ROLE_HIERARCHY: readonly string[] = [...WORKSPACE_ROLES].reverse();
 
 function hasRole(userRole: string, requiredRole: string): boolean {
-  return ROLE_HIERARCHY.indexOf(userRole) <= ROLE_HIERARCHY.indexOf(requiredRole);
+  return (
+    ROLE_HIERARCHY.indexOf(userRole) <= ROLE_HIERARCHY.indexOf(requiredRole)
+  );
 }
 
 // ─── Main Component ─────────────────────────────────────────
@@ -115,11 +118,14 @@ export function WorkspaceSettings({
   currentUserId,
   onUpdate,
 }: WorkspaceSettingsProps) {
+  const ui = useUiText();
+  const i18n_TABS = useUiData(TABS);
+
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const { toasts, addToast, dismissToast } = useToasts();
 
-  const visibleTabs = TABS.filter((tab) =>
-    hasRole(workspace.userRole, tab.minRole)
+  const visibleTabs = i18n_TABS.filter((tab) =>
+    hasRole(workspace.userRole, tab.minRole),
   );
 
   // If the user doesn't have access to the current tab, fall back
@@ -145,7 +151,7 @@ export function WorkspaceSettings({
                 "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap",
                 activeTab === tab.id
                   ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Icon className="h-4 w-4" />

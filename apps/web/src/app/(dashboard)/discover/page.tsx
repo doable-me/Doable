@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -75,10 +76,17 @@ function ProjectCard({
   onRemix: () => void;
   isRemixing: boolean;
 }) {
+  const ui = useUiText();
+
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:border-border hover:-translate-y-0.5 hover:shadow-lg">
       {/* Thumbnail / gradient placeholder */}
-      <div className={cn("relative h-44 w-full overflow-hidden bg-gradient-to-br", getCategoryGradient(project.category))}>
+      <div
+        className={cn(
+          "relative h-44 w-full overflow-hidden bg-gradient-to-br",
+          getCategoryGradient(project.category),
+        )}
+      >
         {project.thumbnail_url ? (
           <img
             src={project.thumbnail_url}
@@ -97,7 +105,9 @@ function ProjectCard({
         {project.featured && (
           <div className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5">
             <Star className="h-3 w-3 text-white" />
-            <span className="text-[10px] font-semibold text-white">Featured</span>
+            <span className="text-[10px] font-semibold text-white">
+              {ui("Featured")}
+            </span>
           </div>
         )}
 
@@ -133,7 +143,7 @@ function ProjectCard({
             <span
               className={cn(
                 "rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize",
-                getCategoryColor(project.category)
+                getCategoryColor(project.category),
               )}
             >
               {project.category}
@@ -150,18 +160,17 @@ function ProjectCard({
               "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
               isRemixing
                 ? "bg-secondary text-muted-foreground cursor-wait"
-                : "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
             )}
           >
             {isRemixing ? (
               <>
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Remixing...
+                <Loader2 className="h-3 w-3 animate-spin" />{" "}
+                {ui("Remixing...")}{" "}
               </>
             ) : (
               <>
-                <GitFork className="h-3 w-3" />
-                Remix
+                <GitFork className="h-3 w-3" /> {ui("Remix")}{" "}
               </>
             )}
           </button>
@@ -174,11 +183,15 @@ function ProjectCard({
 // ─── Main Discover Page ─────────────────────────────────────
 
 export default function DiscoverPage() {
+  const ui = useUiText();
+
   const router = useRouter();
   const { toasts, addToast, dismissToast } = useToasts();
 
   const [projects, setProjects] = useState<ApiPublicProject[]>([]);
-  const [featuredProjects, setFeaturedProjects] = useState<ApiPublicProject[]>([]);
+  const [featuredProjects, setFeaturedProjects] = useState<ApiPublicProject[]>(
+    [],
+  );
   const [categories, setCategories] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -200,12 +213,15 @@ export default function DiscoverPage() {
         setFeaturedProjects(featured.data.projects);
         setCategories(cats.data.categories);
       } catch (err) {
-        console.error("Failed to load community data:", err);
-        addToast("error", "Couldn't load the Discover feed. Please try again.");
+        console.error(ui("Failed to load community data:"), err);
+        addToast(
+          "error",
+          ui("Couldn't load the Discover feed. Please try again."),
+        );
       }
     }
     loadInitial();
-  }, [addToast]);
+  }, [ui, addToast]);
 
   // ─── Load projects (paginated + filtered) ─────────────
 
@@ -221,12 +237,12 @@ export default function DiscoverPage() {
       setProjects(res.data.projects);
       setTotal(res.data.total);
     } catch (err) {
-      console.error("Failed to discover projects:", err);
-      addToast("error", "Couldn't load projects. Please try again.");
+      console.error(ui("Failed to discover projects:"), err);
+      addToast("error", ui("Couldn't load projects. Please try again."));
     } finally {
       setIsLoading(false);
     }
-  }, [activeCategory, searchQuery, page, addToast]);
+  }, [ui, activeCategory, searchQuery, page, addToast]);
 
   useEffect(() => {
     loadProjects();
@@ -240,8 +256,11 @@ export default function DiscoverPage() {
       const res = await apiRemixProject(project.project_id);
       router.push(`/editor/${res.data.projectId}`);
     } catch (err) {
-      console.error("Failed to remix:", err);
-      const message = err instanceof Error ? err.message : "Failed to remix. Please try again.";
+      console.error(ui("Failed to remix:"), err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : ui("Failed to remix. Please try again.");
       addToast("error", message);
       setRemixingId(null);
     }
@@ -256,18 +275,25 @@ export default function DiscoverPage() {
         <div className="mb-8 flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold text-foreground">Discover</h1>
+              <h1 className="text-3xl font-bold text-foreground">
+                {ui("Discover")}
+              </h1>
               <Link
                 href="/help/discover-vs-marketplace"
                 className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
-                title="What's the difference between Discover and Marketplace?"
+                title={ui(
+                  "What's the difference between Discover and Marketplace?",
+                )}
               >
-                <HelpCircle className="h-3 w-3" />
-                Discover vs Marketplace
+                <HelpCircle className="h-3 w-3" />{" "}
+                {ui("Discover vs Marketplace")}{" "}
               </Link>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Explore community projects and remix them into your own
+              {" "}
+              {ui(
+                "Explore community projects and remix them into your own",
+              )}{" "}
             </p>
           </div>
           {/* Search */}
@@ -275,7 +301,7 @@ export default function DiscoverPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search projects..."
+              placeholder={ui("Search projects...")}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -291,7 +317,9 @@ export default function DiscoverPage() {
           <div className="mb-10">
             <div className="mb-4 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-amber-400" />
-              <h2 className="text-lg font-semibold text-foreground">Featured</h2>
+              <h2 className="text-lg font-semibold text-foreground">
+                {ui("Featured")}
+              </h2>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {featuredProjects.slice(0, 3).map((project) => (
@@ -317,11 +345,10 @@ export default function DiscoverPage() {
               "flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px",
               activeCategory === null
                 ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border",
             )}
           >
-            <Sparkles className="h-3.5 w-3.5" />
-            All
+            <Sparkles className="h-3.5 w-3.5" /> {ui("All")}{" "}
           </button>
           {categories.map((cat) => (
             <button
@@ -334,7 +361,7 @@ export default function DiscoverPage() {
                 "flex shrink-0 items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px capitalize",
                 activeCategory === cat
                   ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border",
               )}
             >
               {cat}
@@ -346,14 +373,16 @@ export default function DiscoverPage() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-24">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground">Loading projects...</p>
+            <p className="text-sm text-muted-foreground">
+              {ui("Loading projects...")}
+            </p>
           </div>
         ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <p className="text-sm text-muted-foreground">
               {searchQuery
-                ? `No projects matching "${searchQuery}"`
-                : "No community projects yet. Be the first to publish!"}
+                ? ui('No projects matching "{v0}"', { v0: searchQuery })
+                : ui("No community projects yet. Be the first to publish!")}
             </p>
           </div>
         ) : (
@@ -377,17 +406,20 @@ export default function DiscoverPage() {
                   disabled={page === 1}
                   className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
-                  Previous
+                  {" "}
+                  {ui("Previous")}{" "}
                 </button>
                 <span className="text-xs text-muted-foreground">
-                  Page {page} of {totalPages}
+                  {" "}
+                  {ui("Page")} {page} {ui("of")} {totalPages}
                 </span>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
                   className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
-                  Next
+                  {" "}
+                  {ui("Next")}{" "}
                 </button>
               </div>
             )}

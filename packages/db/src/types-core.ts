@@ -14,6 +14,7 @@ import type {
 // These mirror the exact column types from PostgreSQL.
 
 export interface UserRow {
+  interface_language?: string | null;
   id: string;
   email: string;
   password_hash: string | null;

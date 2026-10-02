@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -31,7 +32,9 @@ interface IntegrationDetailSheetProps {
   onClose: () => void;
   onConnect: (item: CatalogItem) => void;
   onDisconnect: (connectionId: string) => void;
-  onTestConnection: (connectionId: string) => Promise<{ valid: boolean; error?: string }>;
+  onTestConnection: (
+    connectionId: string,
+  ) => Promise<{ valid: boolean; error?: string }>;
   onGetActions: (integrationId: string) => Promise<IntegrationAction[]>;
 }
 
@@ -45,6 +48,8 @@ export function IntegrationDetailSheet({
   onTestConnection,
   onGetActions,
 }: IntegrationDetailSheetProps) {
+  const ui = useUiText();
+
   const [actions, setActions] = useState<IntegrationAction[]>([]);
   const [loadingActions, setLoadingActions] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -53,7 +58,9 @@ export function IntegrationDetailSheet({
     valid: boolean;
     error?: string;
   } | null>(null);
-  const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(
+    null,
+  );
 
   // Load actions when the sheet opens for a specific item
   useEffect(() => {
@@ -101,7 +108,7 @@ export function IntegrationDetailSheet({
         setTestingId(null);
       }
     },
-    [onTestConnection]
+    [onTestConnection],
   );
 
   const handleDisconnect = useCallback(
@@ -113,16 +120,16 @@ export function IntegrationDetailSheet({
       onDisconnect(connectionId);
       setConfirmDisconnect(null);
     },
-    [confirmDisconnect, onDisconnect]
+    [confirmDisconnect, onDisconnect],
   );
 
   if (!item) return null;
 
   const itemConnections = connections.filter(
-    (c) => c.integrationId === item.id
+    (c) => c.integrationId === item.id,
   );
-  const categoryLabel = CATEGORY_LABELS[item.category] ?? item.category;
-  const authLabel = AUTH_LABELS[item.authType] ?? item.authType;
+  const categoryLabel = ui(CATEGORY_LABELS[item.category]) ?? item.category;
+  const authLabel = ui(AUTH_LABELS[item.authType]) ?? item.authType;
 
   return (
     <>
@@ -139,7 +146,7 @@ export function IntegrationDetailSheet({
         className={cn(
           "fixed inset-y-0 right-0 z-50 w-full max-w-md border-l bg-background shadow-xl",
           "transform transition-transform duration-200 ease-out",
-          open ? "translate-x-0" : "translate-x-full"
+          open ? "translate-x-0" : "translate-x-full",
         )}
       >
         <div className="flex flex-col h-full">
@@ -167,7 +174,9 @@ export function IntegrationDetailSheet({
                   <span
                     className={cn(
                       "h-2 w-2 rounded-full shrink-0",
-                      item.connected ? "bg-emerald-500" : "bg-muted-foreground/30"
+                      item.connected
+                        ? "bg-emerald-500"
+                        : "bg-muted-foreground/30",
                     )}
                   />
                 </div>
@@ -197,7 +206,7 @@ export function IntegrationDetailSheet({
             {/* Description */}
             <div className="p-5 border-b">
               <p className="text-sm text-muted-foreground leading-relaxed">
-                {item.description || "No description available."}
+                {item.description || ui("No description available.")}
               </p>
             </div>
 
@@ -205,14 +214,12 @@ export function IntegrationDetailSheet({
             {itemConnections.length > 0 && (
               <div className="p-5 border-b">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                  Active Connections
+                  {" "}
+                  {ui("Active Connections")}{" "}
                 </h3>
                 <div className="space-y-2">
                   {itemConnections.map((conn) => (
-                    <div
-                      key={conn.id}
-                      className="rounded-lg border p-3"
-                    >
+                    <div key={conn.id} className="rounded-lg border p-3">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
@@ -221,12 +228,12 @@ export function IntegrationDetailSheet({
                               conn.status === "active"
                                 ? "bg-emerald-500"
                                 : conn.status === "error"
-                                ? "bg-red-500"
-                                : "bg-muted-foreground/40"
+                                  ? "bg-red-500"
+                                  : "bg-muted-foreground/40",
                             )}
                           />
                           <span className="text-sm font-medium truncate">
-                            {conn.displayName || "Connection"}
+                            {conn.displayName || ui("Connection")}
                           </span>
                         </div>
                         <span className="text-[10px] text-muted-foreground uppercase">
@@ -235,12 +242,15 @@ export function IntegrationDetailSheet({
                       </div>
 
                       {/* Error message (hide if we have a fresh test result for this connection) */}
-                      {conn.errorMessage && !(testResult && testResult.id === conn.id) && (
-                        <div className="flex items-center gap-1.5 text-xs text-red-600 mb-2">
-                          <AlertCircle className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{conn.errorMessage}</span>
-                        </div>
-                      )}
+                      {conn.errorMessage &&
+                        !(testResult && testResult.id === conn.id) && (
+                          <div className="flex items-center gap-1.5 text-xs text-red-600 mb-2">
+                            <AlertCircle className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {conn.errorMessage}
+                            </span>
+                          </div>
+                        )}
 
                       {/* Test result */}
                       {testResult && testResult.id === conn.id && (
@@ -249,7 +259,7 @@ export function IntegrationDetailSheet({
                             "flex items-center gap-1.5 text-xs mb-2 rounded-md px-2 py-1",
                             testResult.valid
                               ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20"
-                              : "text-red-600 bg-red-50 dark:bg-red-950/20"
+                              : "text-red-600 bg-red-50 dark:bg-red-950/20",
                           )}
                         >
                           {testResult.valid ? (
@@ -258,8 +268,9 @@ export function IntegrationDetailSheet({
                             <AlertCircle className="h-3 w-3 shrink-0" />
                           )}
                           {testResult.valid
-                            ? (testResult as any).message || "Connection is healthy"
-                            : testResult.error || "Connection failed"}
+                            ? (testResult as any).message ||
+                              ui("Connection is healthy")
+                            : testResult.error || ui("Connection failed")}
                         </div>
                       )}
 
@@ -274,8 +285,8 @@ export function IntegrationDetailSheet({
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <RefreshCw className="h-3 w-3" />
-                          )}
-                          Test
+                          )}{" "}
+                          {ui("Test")}{" "}
                         </button>
                         <span className="text-muted-foreground/30">|</span>
                         <button
@@ -285,13 +296,13 @@ export function IntegrationDetailSheet({
                             "flex items-center gap-1 text-xs transition-colors",
                             confirmDisconnect === conn.id
                               ? "text-red-600 font-medium"
-                              : "text-muted-foreground hover:text-red-600"
+                              : "text-muted-foreground hover:text-red-600",
                           )}
                         >
                           <Unplug className="h-3 w-3" />
                           {confirmDisconnect === conn.id
-                            ? "Confirm disconnect?"
-                            : "Disconnect"}
+                            ? ui("Confirm disconnect?")
+                            : ui("Disconnect")}
                         </button>
                       </div>
                     </div>
@@ -303,7 +314,8 @@ export function IntegrationDetailSheet({
             {/* Available Actions */}
             <div className="p-5">
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Available Actions
+                {" "}
+                {ui("Available Actions")}{" "}
                 {!loadingActions && actions.length > 0 && (
                   <span className="ml-1.5 text-muted-foreground/60 normal-case font-normal">
                     ({actions.length})
@@ -313,14 +325,15 @@ export function IntegrationDetailSheet({
 
               {loadingActions && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading actions...
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
+                  {ui("Loading actions...")}{" "}
                 </div>
               )}
 
               {!loadingActions && actions.length === 0 && (
                 <p className="text-xs text-muted-foreground/70 py-2">
-                  No actions discovered for this integration yet.
+                  {" "}
+                  {ui("No actions discovered for this integration yet.")}{" "}
                 </p>
               )}
 
@@ -354,8 +367,7 @@ export function IntegrationDetailSheet({
             {item.connected ? (
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs text-emerald-600">
-                  <Check className="h-3.5 w-3.5" />
-                  Connected
+                  <Check className="h-3.5 w-3.5" /> {ui("Connected")}{" "}
                 </span>
                 <Button
                   variant="outline"
@@ -363,7 +375,8 @@ export function IntegrationDetailSheet({
                   onClick={() => onConnect(item)}
                   className="text-xs"
                 >
-                  Add Another Connection
+                  {" "}
+                  {ui("Add Another Connection")}{" "}
                 </Button>
               </div>
             ) : (
@@ -372,7 +385,8 @@ export function IntegrationDetailSheet({
                 size="sm"
                 onClick={() => onConnect(item)}
               >
-                Connect {item.displayName}
+                {" "}
+                {ui("Connect")} {item.displayName}
               </Button>
             )}
           </div>

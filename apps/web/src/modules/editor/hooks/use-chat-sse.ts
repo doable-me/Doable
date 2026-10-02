@@ -1,3 +1,4 @@
+import {acceptPlanSnapshot} from "../chat/plan/plan-state";
 import { useEditorStore, type ChatMessage } from "./use-editor-store";
 import type { SupabaseProvisionRequest, PendingIntegrationRequest } from "./use-chat-types";
 import {
@@ -301,8 +302,10 @@ export function dispatchSSEEvent(
   if (parsed.type === "plan") {
     const plan = parsed.data?.plan;
     if (plan) {
+      const accepted = acceptPlanSnapshot(store.activePlan,plan,store.projectId ?? "");
+      if(accepted !== plan)return {};
       store.setActivePlan(plan);
-      store.setPlanPhase("reviewing");
+      store.setPlanPhase(plan.status === "draft" ? "reviewing" : "building");
       store.setActiveAgentProgress({ phase: "planning", message: "Plan ready for review" });
       ctx.updateMessageFields(ctx.assistantId, {
         agentProgress: { phase: "planning", message: "Plan ready for review" },
@@ -313,7 +316,14 @@ export function dispatchSSEEvent(
 
   // ─── Plan step update ─────────────────────────────────────
   if (parsed.type === "plan_step_update") {
-    const { stepId, status, message } = parsed.data ?? {};
+    const { stepId, status, message, planId, plan } = parsed.data ?? {};
+    if(plan) {
+      const accepted=acceptPlanSnapshot(store.activePlan,plan,store.projectId ?? "");
+      if(accepted !== plan)return {};
+      store.setActivePlan(plan);
+      return {};
+    }
+    if(planId && store.activePlan?.id !== planId)return {};
     if (stepId && status) {
       store.updatePlanStep(stepId, { status });
 

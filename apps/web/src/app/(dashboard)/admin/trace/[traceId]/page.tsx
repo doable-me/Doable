@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 /**
  * /admin/trace/[traceId] — trace detail page.
@@ -16,7 +17,13 @@ import { useEffect, useState } from "react";
 import { use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Activity, Loader2, ShieldCheck, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft,
+  Activity,
+  Loader2,
+  ShieldCheck,
+  MessageSquare,
+} from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { usePlatformAdmin } from "@/hooks/use-platform-admin";
 import { Button } from "@/components/ui/button";
@@ -60,6 +67,8 @@ export default function TraceDetailPage({
 }: {
   params: Promise<{ traceId: string }>;
 }) {
+  const ui = useUiText();
+
   const { traceId } = use(params);
   const router = useRouter();
   const { isPlatformAdmin, loading: adminLoading } = usePlatformAdmin();
@@ -81,11 +90,18 @@ export default function TraceDetailPage({
           // auto-select root or first errored span
           const firstError = res.spans.find((s) => s.status_code === "ERROR");
           const root = res.spans.find((s) => !s.parent_span_id);
-          setSelectedSpanId(firstError?.span_id ?? root?.span_id ?? res.spans[0]?.span_id ?? null);
+          setSelectedSpanId(
+            firstError?.span_id ??
+              root?.span_id ??
+              res.spans[0]?.span_id ??
+              null,
+          );
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load trace");
+          setError(
+            err instanceof Error ? err.message : ui("Failed to load trace"),
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -95,7 +111,7 @@ export default function TraceDetailPage({
     return () => {
       cancelled = true;
     };
-  }, [isPlatformAdmin, traceId]);
+  }, [ui, isPlatformAdmin, traceId]);
 
   if (adminLoading) {
     return (
@@ -108,9 +124,15 @@ export default function TraceDetailPage({
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
         <ShieldCheck className="h-12 w-12" />
-        <p className="font-medium text-foreground">Platform admin access required</p>
-        <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>
-          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
+        <p className="font-medium text-foreground">
+          {ui("Platform admin access required")}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/dashboard")}
+        >
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> {ui("Back")}{" "}
         </Button>
       </div>
     );
@@ -130,10 +152,10 @@ export default function TraceDetailPage({
           href="/admin/trace"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to search
+          <ArrowLeft className="h-3.5 w-3.5" /> {ui("Back to search")}{" "}
         </Link>
         <div className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {error ?? "Trace not found"}
+          {error ?? ui("Trace not found")}
         </div>
       </div>
     );
@@ -151,30 +173,55 @@ export default function TraceDetailPage({
             href="/admin/trace"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Trace search
+            <ArrowLeft className="h-3.5 w-3.5" /> {ui("Trace search")}{" "}
           </Link>
         </div>
         <h1 className="mb-1 flex items-center gap-2 text-xl font-bold text-foreground">
           <Activity className="h-5 w-5 text-brand-400" />
           {trace.root_span_name ?? trace.trace_id}
         </h1>
-        <p className="mb-4 font-mono text-xs text-muted-foreground">trace_id: {trace.trace_id}</p>
+        <p className="mb-4 font-mono text-xs text-muted-foreground">
+          trace_id: {trace.trace_id}
+        </p>
 
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Status" value={trace.status} highlight={trace.status === "error"} />
-          <Stat label="Duration" value={trace.duration_ms != null ? `${trace.duration_ms}ms` : "—"} />
-          <Stat label="Spans" value={String(trace.span_count)} />
-          <Stat label="Errors" value={String(trace.error_count)} highlight={trace.error_count > 0} />
-          <Stat label="Started" value={new Date(trace.started_at).toLocaleString()} />
-          <Stat label="Services" value={(trace.services ?? []).join(", ") || "—"} />
-          <Stat label="User" value={trace.user_id ? short(trace.user_id) : "—"} />
-          <Stat label="Workspace" value={trace.workspace_id ? short(trace.workspace_id) : "—"} />
+          <Stat
+            label={ui("Status")}
+            value={trace.status}
+            highlight={trace.status === "error"}
+          />
+          <Stat
+            label={ui("Duration")}
+            value={trace.duration_ms != null ? `${trace.duration_ms}ms` : "—"}
+          />
+          <Stat label={ui("Spans")} value={String(trace.span_count)} />
+          <Stat
+            label={ui("Errors")}
+            value={String(trace.error_count)}
+            highlight={trace.error_count > 0}
+          />
+          <Stat
+            label={ui("Started")}
+            value={new Date(trace.started_at).toLocaleString(ui.locale)}
+          />
+          <Stat
+            label={ui("Services")}
+            value={(trace.services ?? []).join(", ") || "—"}
+          />
+          <Stat
+            label={ui("User")}
+            value={trace.user_id ? short(trace.user_id) : "—"}
+          />
+          <Stat
+            label={ui("Workspace")}
+            value={trace.workspace_id ? short(trace.workspace_id) : "—"}
+          />
         </div>
 
         {chatTrace && (
           <div className="mb-6 flex items-center gap-2 rounded-lg border border-brand-500/40 bg-brand-500/10 px-4 py-2 text-sm text-brand-200">
             <MessageSquare className="h-4 w-4" />
-            <span>Linked chat trace:</span>
+            <span>{ui("Linked chat trace:")}</span>
             <Link
               href={`/admin/chat-trace/${chatTrace.id}`}
               className="font-mono text-xs underline hover:text-brand-100"
@@ -183,14 +230,17 @@ export default function TraceDetailPage({
             </Link>
             {chatTrace.session_id && (
               <span className="font-mono text-[11px] text-brand-300/80">
-                session: {short(chatTrace.session_id)}
+                {" "}
+                {ui("session:")} {short(chatTrace.session_id)}
               </span>
             )}
           </div>
         )}
 
         <div className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Flame graph</h2>
+          <h2 className="mb-2 text-sm font-semibold text-foreground">
+            {ui("Flame graph")}
+          </h2>
           <FlameGraph
             spans={spans}
             traceStartedAt={trace.started_at}
@@ -202,16 +252,21 @@ export default function TraceDetailPage({
 
         <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
           <div>
-            <h2 className="mb-2 text-sm font-semibold text-foreground">All logs</h2>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">
+              {ui("All logs")}
+            </h2>
             <LogsPanel logs={logs} />
           </div>
           <div>
-            <h2 className="mb-2 text-sm font-semibold text-foreground">Span detail</h2>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">
+              {ui("Span detail")}
+            </h2>
             {selectedSpan ? (
               <SpanDetail span={selectedSpan} logs={logs} />
             ) : (
               <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                Click a span in the flame graph to inspect.
+                {" "}
+                {ui("Click a span in the flame graph to inspect.")}{" "}
               </p>
             )}
           </div>
@@ -221,20 +276,37 @@ export default function TraceDetailPage({
   );
 }
 
-function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function Stat({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
   return (
     <div className="rounded-md border border-border bg-card p-3">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`text-sm font-medium ${highlight ? "text-red-400" : "text-foreground"}`}>{value}</p>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={`text-sm font-medium ${highlight ? "text-red-400" : "text-foreground"}`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
 
 function LogsPanel({ logs }: { logs: TraceLog[] }) {
+  const ui = useUiText();
+
   if (logs.length === 0) {
     return (
       <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-        No correlated logs.
+        {" "}
+        {ui("No correlated logs.")}{" "}
       </p>
     );
   }
@@ -246,12 +318,18 @@ function LogsPanel({ logs }: { logs: TraceLog[] }) {
             <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide">
               <span className={levelColor(l.level)}>{l.level}</span>
               <span className="text-muted-foreground">{l.service}</span>
-              <span className="text-muted-foreground">{new Date(l.ts).toISOString().slice(11, 23)}</span>
+              <span className="text-muted-foreground">
+                {new Date(l.ts).toISOString().slice(11, 23)}
+              </span>
               {l.span_id && (
-                <span className="font-mono text-muted-foreground">{short(l.span_id)}</span>
+                <span className="font-mono text-muted-foreground">
+                  {short(l.span_id)}
+                </span>
               )}
             </div>
-            <p className="mt-0.5 break-words font-mono text-xs text-foreground">{l.message}</p>
+            <p className="mt-0.5 break-words font-mono text-xs text-foreground">
+              {l.message}
+            </p>
           </li>
         ))}
       </ul>

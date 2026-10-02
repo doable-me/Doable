@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { Badge } from "@/components/ui/badge";
 import { Shield } from "lucide-react";
@@ -38,6 +39,8 @@ function getCategoryBadgeClasses(category: string): string {
 // --- Main component ---
 
 export function TemplateCard({ template, onClick }: TemplateCardProps) {
+  const ui = useUiText();
+
   return (
     <button
       type="button"
@@ -49,7 +52,7 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
         {template.previewImageUrl ? (
           <img
             src={template.previewImageUrl}
-            alt={`${template.name} preview`}
+            alt={ui("{v0} preview", { v0: template.name })}
             className="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
           />
         ) : (
@@ -61,7 +64,8 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
           <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-foreground/45 backdrop-blur-sm border border-brand-500/30 px-2 py-0.5">
             <Shield className="h-3 w-3 text-brand-400" />
             <span className="text-[10px] font-medium text-brand-300">
-              Official
+              {" "}
+              {ui("Official")}{" "}
             </span>
           </div>
         )}
@@ -74,7 +78,8 @@ export function TemplateCard({ template, onClick }: TemplateCardProps) {
             {template.name}
           </h3>
           <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-            {template.fileCount} {template.fileCount === 1 ? "file" : "files"}
+            {template.fileCount}{" "}
+            {template.fileCount === 1 ? ui("file") : ui("files")}
           </span>
         </div>
 

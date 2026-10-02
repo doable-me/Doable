@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { memo, useState, useCallback } from "react";
 import { Check, Sparkles, ChevronRight, SkipForward } from "lucide-react";
@@ -24,6 +25,8 @@ export const InlineClarificationCard = memo(function InlineClarificationCard({
   onAnswer,
   onSkip,
 }: InlineClarificationCardProps) {
+  const ui = useUiText();
+
   const [selected, setSelected] = useState<string | null>(answer ?? null);
   const [freeText, setFreeText] = useState("");
   const [submitted, setSubmitted] = useState(answered);
@@ -39,7 +42,7 @@ export const InlineClarificationCard = memo(function InlineClarificationCard({
         onAnswer(questionId, opt);
       }, 280);
     },
-    [submitted, questionId, onAnswer]
+    [submitted, questionId, onAnswer],
   );
 
   const handleFreeSubmit = useCallback(() => {
@@ -64,10 +67,12 @@ export const InlineClarificationCard = memo(function InlineClarificationCard({
           <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-500/15 border border-green-500/25">
             <Check className="h-2.5 w-2.5 text-green-400" />
           </div>
-          <p className="flex-1 truncate text-xs text-muted-foreground">{question}</p>
+          <p className="flex-1 truncate text-xs text-muted-foreground">
+            {question}
+          </p>
           {selected && (
             <span className="shrink-0 rounded-full bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 text-[10px] font-medium text-brand-300">
-              {selected === "__skipped__" ? "AI decides" : selected}
+              {selected === "__skipped__" ? ui("AI decides") : selected}
             </span>
           )}
         </div>
@@ -85,9 +90,13 @@ export const InlineClarificationCard = memo(function InlineClarificationCard({
           <span className="clarify-glow-dot absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-brand-400 border border-background" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-foreground leading-snug">{question}</p>
+          <p className="text-xs font-semibold text-foreground leading-snug">
+            {question}
+          </p>
           {context && (
-            <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">{context}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+              {context}
+            </p>
           )}
         </div>
       </div>
@@ -101,9 +110,10 @@ export const InlineClarificationCard = memo(function InlineClarificationCard({
               onClick={() => handleSelect(opt)}
               disabled={submitted}
               className={`option-btn text-left rounded-lg border px-2.5 py-2 text-xs transition-all duration-200 disabled:pointer-events-none
-                ${selected === opt
-                  ? "selected border-brand-500/60 bg-brand-500/15 text-brand-300 font-medium"
-                  : "border-white/8 bg-white/[0.02] text-muted-foreground hover:border-brand-500/35 hover:bg-brand-500/8 hover:text-foreground"
+                ${
+                  selected === opt
+                    ? "selected border-brand-500/60 bg-brand-500/15 text-brand-300 font-medium"
+                    : "border-white/8 bg-white/[0.02] text-muted-foreground hover:border-brand-500/35 hover:bg-brand-500/8 hover:text-foreground"
                 }
               `}
             >
@@ -124,7 +134,11 @@ export const InlineClarificationCard = memo(function InlineClarificationCard({
           onChange={(e) => setFreeText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleFreeSubmit()}
           disabled={submitted}
-          placeholder={options.length > 0 ? "Or type a custom answer…" : "Type your answer…"}
+          placeholder={
+            options.length > 0
+              ? ui("Or type a custom answer…")
+              : ui("Type your answer…")
+          }
           className="flex-1 min-w-0 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-brand-500/40 focus:outline-none focus:ring-1 focus:ring-brand-500/20 transition-all disabled:opacity-40"
         />
         {freeText.trim() && (
@@ -144,8 +158,8 @@ export const InlineClarificationCard = memo(function InlineClarificationCard({
         disabled={submitted}
         className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors disabled:pointer-events-none"
       >
-        <SkipForward className="h-2.5 w-2.5" />
-        Skip — let AI decide
+        <SkipForward className="h-2.5 w-2.5" />{" "}
+        {ui("Skip — let AI decide")}{" "}
       </button>
     </div>
   );

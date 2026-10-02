@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 /**
  * /admin/audit/[sessionId] — Full conversation transcript.
@@ -9,7 +10,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, ShieldCheck, User as UserIcon, Bot, Wrench, Brain } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  ShieldCheck,
+  User as UserIcon,
+  Bot,
+  Wrench,
+  Brain,
+} from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { usePlatformAdmin } from "@/hooks/use-platform-admin";
 import { Button } from "@/components/ui/button";
@@ -44,6 +53,8 @@ type Message = {
 };
 
 export default function AdminAuditConversationPage() {
+  const ui = useUiText();
+
   const router = useRouter();
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId;
@@ -61,16 +72,19 @@ export default function AdminAuditConversationPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await apiFetch<{ session: SessionInfo; messages: Message[] }>(
-          `/admin/audit/conversations/${sessionId}`,
-        );
+        const res = await apiFetch<{
+          session: SessionInfo;
+          messages: Message[];
+        }>(`/admin/audit/conversations/${sessionId}`);
         if (!cancelled) {
           setSession(res.session);
           setMessages(res.messages);
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load conversation");
+          setError(
+            e instanceof Error ? e.message : ui("Failed to load conversation"),
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -80,7 +94,7 @@ export default function AdminAuditConversationPage() {
     return () => {
       cancelled = true;
     };
-  }, [isPlatformAdmin, sessionId]);
+  }, [ui, isPlatformAdmin, sessionId]);
 
   if (adminLoading || loading) {
     return (
@@ -93,9 +107,15 @@ export default function AdminAuditConversationPage() {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
         <ShieldCheck className="h-12 w-12" />
-        <p className="font-medium text-foreground">Platform admin access required</p>
-        <Button variant="outline" size="sm" onClick={() => router.push("/dashboard")}>
-          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
+        <p className="font-medium text-foreground">
+          {ui("Platform admin access required")}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/dashboard")}
+        >
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> {ui("Back")}{" "}
         </Button>
       </div>
     );
@@ -109,31 +129,45 @@ export default function AdminAuditConversationPage() {
             href="/admin/audit"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Audit search
+            <ArrowLeft className="h-3.5 w-3.5" /> {ui("Audit search")}{" "}
           </Link>
         </div>
 
         {error && (
           <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">
-            {error}
+            {ui(error)}
           </div>
         )}
 
         {session && (
           <div className="mb-6 rounded-lg border border-border bg-card p-4">
             <h1 className="mb-2 text-xl font-semibold text-foreground">
-              Conversation transcript
+              {" "}
+              {ui("Conversation transcript")}{" "}
             </h1>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-              <Info label="User" value={session.user_display_name || session.user_email || session.user_id} />
-              <Info label="Email" value={session.user_email ?? "—"} />
-              <Info label="Mode" value={session.mode} />
-              <Info label="Workspace" value={session.workspace_name ?? "—"} />
-              <Info label="Project" value={session.project_name ?? "—"} />
-              <Info label="Updated" value={new Date(session.updated_at).toLocaleString()} />
-              <Info label="Session ID" value={session.session_id} mono />
-              <Info label="User ID" value={session.user_id} mono />
-              <Info label="Project ID" value={session.project_id} mono />
+              <Info
+                label={ui("User")}
+                value={
+                  session.user_display_name ||
+                  session.user_email ||
+                  session.user_id
+                }
+              />
+              <Info label={ui("Email")} value={session.user_email ?? "—"} />
+              <Info label={ui("Mode")} value={session.mode} />
+              <Info
+                label={ui("Workspace")}
+                value={session.workspace_name ?? "—"}
+              />
+              <Info label={ui("Project")} value={session.project_name ?? "—"} />
+              <Info
+                label={ui("Updated")}
+                value={new Date(session.updated_at).toLocaleString(ui.locale)}
+              />
+              <Info label={ui("Session ID")} value={session.session_id} mono />
+              <Info label={ui("User ID")} value={session.user_id} mono />
+              <Info label={ui("Project ID")} value={session.project_id} mono />
             </dl>
           </div>
         )}
@@ -141,7 +175,8 @@ export default function AdminAuditConversationPage() {
         <div className="space-y-3">
           {messages.length === 0 && (
             <div className="rounded-lg border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
-              This session has no recorded messages.
+              {" "}
+              {ui("This session has no recorded messages.")}{" "}
             </div>
           )}
           {messages.map((m) => (
@@ -153,27 +188,44 @@ export default function AdminAuditConversationPage() {
   );
 }
 
-function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Info({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={`text-foreground ${mono ? "font-mono text-xs break-all" : ""}`}>{value}</dd>
+      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd
+        className={`text-foreground ${mono ? "font-mono text-xs break-all" : ""}`}
+      >
+        {value}
+      </dd>
     </div>
   );
 }
 
 function MessageBubble({ message }: { message: Message }) {
+  const ui = useUiText();
+
   const role = message.role;
   const Icon = role === "user" ? UserIcon : role === "assistant" ? Bot : Wrench;
   const tone =
     role === "user"
       ? "border-brand-500/40 bg-brand-500/5"
       : role === "assistant"
-      ? "border-border bg-card"
-      : "border-amber-500/40 bg-amber-500/5";
+        ? "border-border bg-card"
+        : "border-amber-500/40 bg-amber-500/5";
 
   const hasToolCalls =
-    Array.isArray(message.tool_calls) && (message.tool_calls as unknown[]).length > 0;
+    Array.isArray(message.tool_calls) &&
+    (message.tool_calls as unknown[]).length > 0;
 
   return (
     <div className={`rounded-lg border ${tone} p-4`}>
@@ -186,27 +238,31 @@ function MessageBubble({ message }: { message: Message }) {
           )}
         </div>
         <div className="text-[11px] text-muted-foreground">
-          {new Date(message.created_at).toLocaleString()}
+          {new Date(message.created_at).toLocaleString(ui.locale)}
         </div>
       </div>
 
       {message.thinking_content && (
         <details className="mb-2 rounded border border-border bg-background/40 p-2 text-xs">
           <summary className="cursor-pointer font-medium text-muted-foreground">
-            <Brain className="mr-1 inline h-3 w-3" /> Thinking
+            <Brain className="mr-1 inline h-3 w-3" /> {ui("Thinking")}{" "}
           </summary>
-          <pre className="mt-2 whitespace-pre-wrap text-muted-foreground">{message.thinking_content}</pre>
+          <pre className="mt-2 whitespace-pre-wrap text-muted-foreground">
+            {message.thinking_content}
+          </pre>
         </details>
       )}
 
       {message.content && (
-        <pre className="whitespace-pre-wrap break-words text-sm text-foreground">{message.content}</pre>
+        <pre className="whitespace-pre-wrap break-words text-sm text-foreground">
+          {message.content}
+        </pre>
       )}
 
       {hasToolCalls && (
         <details className="mt-2 rounded border border-border bg-background/40 p-2 text-xs">
           <summary className="cursor-pointer font-medium text-muted-foreground">
-            <Wrench className="mr-1 inline h-3 w-3" /> Tool calls
+            <Wrench className="mr-1 inline h-3 w-3" /> {ui("Tool calls")}{" "}
           </summary>
           <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-muted-foreground">
             {JSON.stringify(message.tool_calls, null, 2)}

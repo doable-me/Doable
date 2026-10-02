@@ -12,11 +12,11 @@ export type SortDir = "asc" | "desc";
 export const VIEW_MODE_KEY = "doable_dashboard_view";
 
 export const GREETINGS = [
-  "Let's make it Doable",
-  "What's Doable today",
-  "Ready to get it done",
-  "Dream it. Do it",
-  "What will you ship",
+  "Let's make it Doable, {name}",
+  "What's Doable today, {name}?",
+  "Ready to get it done, {name}?",
+  "Dream it. Do it, {name}",
+  "What will you ship, {name}?",
 ];
 
 export const PROJECT_GRADIENTS = [
@@ -41,17 +41,47 @@ export const PROJECT_ACCENT_COLORS = [
   "bg-cyan-500/30",
 ];
 
-export const TEMPLATE_CATEGORY_COLORS: Record<string, { bg: string; accent: string; highlight: string }> = {
-  dashboard: { bg: "bg-blue-50", accent: "bg-blue-100", highlight: "bg-blue-200" },
-  marketing: { bg: "bg-amber-50", accent: "bg-amber-100", highlight: "bg-amber-200" },
-  ecommerce: { bg: "bg-emerald-50", accent: "bg-emerald-100", highlight: "bg-emerald-200" },
+export const TEMPLATE_CATEGORY_COLORS: Record<
+  string,
+  { bg: string; accent: string; highlight: string }
+> = {
+  dashboard: {
+    bg: "bg-blue-50",
+    accent: "bg-blue-100",
+    highlight: "bg-blue-200",
+  },
+  marketing: {
+    bg: "bg-amber-50",
+    accent: "bg-amber-100",
+    highlight: "bg-amber-200",
+  },
+  ecommerce: {
+    bg: "bg-emerald-50",
+    accent: "bg-emerald-100",
+    highlight: "bg-emerald-200",
+  },
   blog: { bg: "bg-rose-50", accent: "bg-rose-100", highlight: "bg-rose-200" },
-  social: { bg: "bg-brand-50", accent: "bg-brand-100", highlight: "bg-brand-200" },
-  productivity: { bg: "bg-cyan-50", accent: "bg-cyan-100", highlight: "bg-cyan-200" },
-  portfolio: { bg: "bg-indigo-50", accent: "bg-indigo-100", highlight: "bg-indigo-200" },
+  social: {
+    bg: "bg-brand-50",
+    accent: "bg-brand-100",
+    highlight: "bg-brand-200",
+  },
+  productivity: {
+    bg: "bg-cyan-50",
+    accent: "bg-cyan-100",
+    highlight: "bg-cyan-200",
+  },
+  portfolio: {
+    bg: "bg-indigo-50",
+    accent: "bg-indigo-100",
+    highlight: "bg-indigo-200",
+  },
 };
 
-export const STATUS_STYLES: Record<string, { label: string; className: string }> = {
+export const STATUS_STYLES: Record<
+  string,
+  { label: string; className: string }
+> = {
   published: {
     label: "Published",
     className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -94,29 +124,31 @@ export function getProjectColorIndex(name: string): number {
 }
 
 export function getTemplateCategoryColors(category: string) {
-  return TEMPLATE_CATEGORY_COLORS[category] ?? { bg: "bg-gray-50", accent: "bg-gray-100", highlight: "bg-gray-200" };
+  return (
+    TEMPLATE_CATEGORY_COLORS[category] ?? {
+      bg: "bg-gray-50",
+      accent: "bg-gray-100",
+      highlight: "bg-gray-200",
+    }
+  );
 }
 
-export function formatRelativeTime(dateStr: string): string {
+export function formatRelativeTime(dateStr: string, locale = "zh-CN"): string {
   const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHours = Math.floor(diffMin / 60);
-  const diffDays = Math.floor(diffHours / 24);
-  const diffWeeks = Math.floor(diffDays / 7);
-
-  if (diffSec < 60) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  if (diffWeeks < 5) return `${diffWeeks}w ago`;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const seconds = Math.floor((date.getTime() - Date.now()) / 1000);
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (Math.abs(seconds) < 60) return format.format(0, "second");
+  if (Math.abs(seconds) < 3600)
+    return format.format(Math.trunc(seconds / 60), "minute");
+  if (Math.abs(seconds) < 86400)
+    return format.format(Math.trunc(seconds / 3600), "hour");
+  if (Math.abs(seconds) < 604800)
+    return format.format(Math.trunc(seconds / 86400), "day");
+  return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
-export function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
+export function formatDate(dateStr: string, locale = "zh-CN"): string {
+  return new Date(dateStr).toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",

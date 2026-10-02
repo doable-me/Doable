@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -41,9 +42,13 @@ function broadcastConnected(accountId: string, githubLogin: string): void {
 }
 
 function CopilotOAuthCallbackInner() {
+  const ui = useUiText();
+
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [status, setStatus] = useState<"processing" | "success" | "error">("processing");
+  const [status, setStatus] = useState<"processing" | "success" | "error">(
+    "processing",
+  );
   const [error, setError] = useState("");
   // Wizard mode: the setup wizard initiates the OAuth flow with
   // `?fromWizard=1`, which the api preserves through OAuth state and
@@ -89,7 +94,11 @@ function CopilotOAuthCallbackInner() {
       setStatus("error");
       setError(msg);
       if (popup) {
-        const errMsg: CopilotErrorMessage = { type: "doable:copilot-error", ok: false, error: msg };
+        const errMsg: CopilotErrorMessage = {
+          type: "doable:copilot-error",
+          ok: false,
+          error: msg,
+        };
         window.opener?.postMessage(errMsg, window.location.origin);
       }
       return;
@@ -120,7 +129,9 @@ function CopilotOAuthCallbackInner() {
           (a) => a.github_login === githubLogin && a.scope === scope,
         );
         if (!existing) throw err; // shouldn't happen — 409 implies a row exists
-        await apiUpdateCopilotAccount(workspaceId, existing.id, { githubToken });
+        await apiUpdateCopilotAccount(workspaceId, existing.id, {
+          githubToken,
+        });
         return { accountId: existing.id };
       }
     })()
@@ -155,22 +166,31 @@ function CopilotOAuthCallbackInner() {
         }
       })
       .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : "Failed to save GitHub account";
+        const msg =
+          err instanceof Error
+            ? err.message
+            : ui("Failed to save GitHub account");
         setStatus("error");
         setError(msg);
         if (popup) {
-          const errMsg: CopilotErrorMessage = { type: "doable:copilot-error", ok: false, error: msg };
+          const errMsg: CopilotErrorMessage = {
+            type: "doable:copilot-error",
+            ok: false,
+            error: msg,
+          };
           window.opener?.postMessage(errMsg, window.location.origin);
         }
       });
-  }, [searchParams, router]);
+  }, [ui, searchParams, router]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
       {status === "processing" && (
         <>
           <Loader2 className="h-8 w-8 animate-spin text-brand-400" />
-          <p className="text-zinc-300">Connecting your GitHub account...</p>
+          <p className="text-zinc-300">
+            {ui("Connecting your GitHub account...")}
+          </p>
         </>
       )}
       {status === "success" && (
@@ -178,23 +198,26 @@ function CopilotOAuthCallbackInner() {
           <CheckCircle className="h-8 w-8 text-green-400" />
           <p className="text-zinc-300">
             {isWizard
-              ? "GitHub Copilot connected! Switch back to the setup wizard tab — it will pick this up automatically."
+              ? ui(
+                  "GitHub Copilot connected! Switch back to the setup wizard tab — it will pick this up automatically.",
+                )
               : isPopup
-              ? "GitHub account connected! You can close this window."
-              : "GitHub account connected! Redirecting..."}
+                ? ui("GitHub account connected! You can close this window.")
+                : ui("GitHub account connected! Redirecting...")}
           </p>
         </>
       )}
       {status === "error" && (
         <>
           <XCircle className="h-8 w-8 text-red-400" />
-          <p className="text-red-400">{error}</p>
+          <p className="text-red-400">{ui(error)}</p>
           {!isPopup && (
             <button
               onClick={() => router.push("/ai-settings")}
               className="mt-2 rounded-lg bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 transition-colors"
             >
-              Back to AI Settings
+              {" "}
+              {ui("Back to AI Settings")}{" "}
             </button>
           )}
         </>

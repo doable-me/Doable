@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -30,9 +31,10 @@ const LOOP_WINDOW_MS = 10_000;
 
 function bumpHopCount(): number {
   try {
-    const prev = JSON.parse(sessionStorage.getItem(LOOP_KEY) ?? "null") as
-      | { n: number; t: number }
-      | null;
+    const prev = JSON.parse(sessionStorage.getItem(LOOP_KEY) ?? "null") as {
+      n: number;
+      t: number;
+    } | null;
     const n = prev && Date.now() - prev.t < LOOP_WINDOW_MS ? prev.n + 1 : 1;
     sessionStorage.setItem(LOOP_KEY, JSON.stringify({ n, t: Date.now() }));
     return n;
@@ -52,12 +54,15 @@ function clearHopCount(): void {
 }
 
 function RefreshAndReturn() {
+  const ui = useUiText();
+
   const router = useRouter();
   const params = useSearchParams();
 
   useEffect(() => {
     const next = safeNextPath(params.get("next"));
-    const toLogin = () => router.replace(`/login?next=${encodeURIComponent(next)}`);
+    const toLogin = () =>
+      router.replace(`/login?next=${encodeURIComponent(next)}`);
 
     if (bumpHopCount() > LOOP_MAX) {
       clearHopCount();
@@ -85,7 +90,7 @@ function RefreshAndReturn() {
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
         <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-brand-600" />
-        <p className="text-sm text-gray-500">Signing you back in…</p>
+        <p className="text-sm text-gray-500">{ui("Signing you back in…")}</p>
       </div>
     </div>
   );

@@ -22,6 +22,8 @@ const KNOWN_TOOLS = [
   { name: "deploy_preview", category: "doable", description: "Deploy to preview URL" },
   { name: "ask_clarification", category: "doable", description: "Ask user clarifying questions" },
   { name: "create_plan", category: "doable", description: "Create step-by-step plan" },
+  { name: "get_plan", category: "doable", description: "Read current project plan and stable step IDs" },
+  { name: "update_plan", category: "doable", description: "Revise plan order and scope preserving step IDs" },
   { name: "mark_step_complete", category: "doable", description: "Mark a plan step as completed" },
   { name: "provision_supabase", category: "doable", description: "Provision Supabase project" },
   { name: "request_integration", category: "doable", description: "Request third-party integration" },
@@ -43,10 +45,10 @@ const KNOWN_TOOLS = [
 // override)" instead of acting like the admin has to wire tools from scratch
 // before chat works. The `agent` mode allows every known tool except the
 // three plan-only ones; `plan` mirrors PLAN_MODE_ALLOWED_DEFAULT.
-const PLAN_ONLY_TOOL_NAMES = ["ask_clarification", "create_plan", "mark_step_complete"];
+const PLAN_ONLY_TOOL_NAMES = ["ask_clarification", "create_plan"];
 const PLAN_DEFAULT_ALLOWED = [
   "read_file", "list_files", "search_files",
-  "ask_clarification", "create_plan", "mark_step_complete",
+  "ask_clarification", "create_plan", "get_plan",
 ];
 const DEFAULT_MODES = [
   {

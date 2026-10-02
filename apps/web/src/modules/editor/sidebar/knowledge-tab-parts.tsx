@@ -1,13 +1,8 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import {
-  Save,
-  RotateCcw,
-  AlertCircle,
-  ChevronLeft,
-  Check,
-} from "lucide-react";
+import { Save, RotateCcw, AlertCircle, ChevronLeft, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getStoredTokens } from "@/lib/api";
 
@@ -53,6 +48,8 @@ export function AddFileDialog({
   onCancel: () => void;
   existingFiles: string[];
 }) {
+  const ui = useUiText();
+
   const [name, setName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -60,7 +57,10 @@ export function AddFileDialog({
     inputRef.current?.focus();
   }, []);
 
-  const filename = name.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+  const filename = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "-");
   const fullFilename = filename.endsWith(".md") ? filename : `${filename}.md`;
   const isValid = filename.length > 0 && !existingFiles.includes(fullFilename);
   const isDuplicate = existingFiles.includes(fullFilename);
@@ -71,20 +71,26 @@ export function AddFileDialog({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="px-4 py-3 border-b border-border bg-muted/30">
+    <form
+      onSubmit={handleSubmit}
+      className="px-4 py-3 border-b border-border bg-muted/30"
+    >
       <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-        New Knowledge File
+        {" "}
+        {ui("New Knowledge File")}{" "}
       </label>
       <input
         ref={inputRef}
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="e.g. style-guide, api-docs"
+        placeholder={ui("e.g. style-guide, api-docs")}
         className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         spellCheck={false}
       />
       {isDuplicate && (
-        <p className="mt-1 text-xs text-destructive">File already exists.</p>
+        <p className="mt-1 text-xs text-destructive">
+          {ui("File already exists.")}
+        </p>
       )}
       {filename && !isDuplicate && (
         <p className="mt-1 text-xs text-muted-foreground font-mono">
@@ -97,14 +103,16 @@ export function AddFileDialog({
           disabled={!isValid}
           className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Create
+          {" "}
+          {ui("Create")}{" "}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
-          Cancel
+          {" "}
+          {ui("Cancel")}{" "}
         </button>
       </div>
     </form>
@@ -124,6 +132,8 @@ export function FileEditorView({
   apiBaseUrl: string;
   onBack: () => void;
 }) {
+  const ui = useUiText();
+
   const [content, setContent] = useState(file.content);
   const [originalContent, setOriginalContent] = useState(file.content);
   const [saving, setSaving] = useState(false);
@@ -144,18 +154,18 @@ export function FileEditorView({
             method: "PUT",
             headers: getAuthHeaders(),
             body: JSON.stringify({ content: contentToSave }),
-          }
+          },
         );
-        if (!res.ok) throw new Error("Failed to save");
+        if (!res.ok) throw new Error(ui("Failed to save"));
         setOriginalContent(contentToSave);
-        setLastSaved(new Date().toLocaleTimeString());
+        setLastSaved(new Date().toLocaleTimeString(ui.locale));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Save failed");
       } finally {
         setSaving(false);
       }
     },
-    [projectId, apiBaseUrl, file.filename]
+    [ui, projectId, apiBaseUrl, file.filename],
   );
 
   // Auto-save
@@ -198,7 +208,7 @@ export function FileEditorView({
         <button
           onClick={onBack}
           className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          title="Back to file list"
+          title={ui("Back to file list")}
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -207,12 +217,14 @@ export function FileEditorView({
             {file.filename}
           </h3>
           <p className="text-[10px] text-muted-foreground">
-            {FILE_DESCRIPTIONS[file.filename] ?? "Custom context file"}
+            {ui(FILE_DESCRIPTIONS[file.filename]) ?? ui("Custom context file")}
           </p>
         </div>
         <div className="flex items-center gap-1">
           {dirty && (
-            <span className="text-[10px] text-amber-500 mr-1">unsaved</span>
+            <span className="text-[10px] text-amber-500 mr-1">
+              {ui("unsaved")}
+            </span>
           )}
           <button
             onClick={handleReset}
@@ -221,9 +233,9 @@ export function FileEditorView({
               "p-1.5 rounded-md transition-colors",
               dirty
                 ? "hover:bg-muted text-foreground"
-                : "text-muted-foreground/30 cursor-not-allowed"
+                : "text-muted-foreground/30 cursor-not-allowed",
             )}
-            title="Revert changes"
+            title={ui("Revert changes")}
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
@@ -234,9 +246,9 @@ export function FileEditorView({
               "p-1.5 rounded-md transition-colors",
               dirty
                 ? "hover:bg-muted text-foreground"
-                : "text-muted-foreground/30 cursor-not-allowed"
+                : "text-muted-foreground/30 cursor-not-allowed",
             )}
-            title="Save (Ctrl+S)"
+            title={ui("Save (Ctrl+S)")}
           >
             <Save className={cn("h-3.5 w-3.5", saving && "animate-pulse")} />
           </button>
@@ -247,7 +259,7 @@ export function FileEditorView({
       {error && (
         <div className="flex items-center gap-2 px-4 py-2 text-xs text-red-400 bg-red-950/20 border-b border-border">
           <AlertCircle className="h-3 w-3 shrink-0" />
-          {error}
+          {ui(error)}
         </div>
       )}
 
@@ -257,20 +269,24 @@ export function FileEditorView({
           value={content}
           onChange={(e) => handleChange(e.target.value)}
           className="w-full h-full p-4 bg-background text-sm font-mono leading-relaxed resize-none focus:outline-none"
-          placeholder={`# ${file.filename.replace(".md", "")}\n\nStart typing...`}
+          placeholder={ui("# {v0}\n\nStart typing...", {
+            v0: file.filename.replace(".md", ""),
+          })}
           spellCheck={false}
         />
       </div>
 
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-1.5 border-t border-border text-[11px] text-muted-foreground">
-        <span>{content.length.toLocaleString()} chars</span>
+        <span>
+          {content.length.toLocaleString(ui.locale)} {ui("chars")}
+        </span>
         <div className="flex items-center gap-2">
-          {saving && <span className="text-primary">Saving...</span>}
+          {saving && <span className="text-primary">{ui("Saving...")}</span>}
           {lastSaved && !saving && (
             <span className="flex items-center gap-1">
-              <Check className="h-2.5 w-2.5 text-green-500" />
-              Saved {lastSaved}
+              <Check className="h-2.5 w-2.5 text-green-500" /> {ui("Saved")}{" "}
+              {lastSaved}
             </span>
           )}
         </div>

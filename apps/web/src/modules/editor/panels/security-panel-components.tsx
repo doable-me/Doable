@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import {
   ShieldCheck,
@@ -15,30 +16,39 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Severity, Finding, ScanCategory, ScanPhase } from "./security-panel-types";
+import type {
+  Severity,
+  Finding,
+  ScanCategory,
+  ScanPhase,
+} from "./security-panel-types";
 import { SEVERITY_CONFIG, SCAN_PHASES } from "./security-panel-types";
 
 // ─── EmptyState ─────────────────────────────────────────────
 
 export function EmptyState({ onRunScan }: { onRunScan: () => void }) {
+  const ui = useUiText();
+
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/10 to-cyan-500/10">
         <ShieldCheck className="h-7 w-7 text-blue-500" />
       </div>
       <h3 className="mt-4 text-sm font-semibold text-foreground">
-        Security Scanner
+        {" "}
+        {ui("Security Scanner")}{" "}
       </h3>
       <p className="mt-1.5 max-w-[260px] text-xs leading-relaxed text-muted-foreground">
-        Scan your project for dependency vulnerabilities, hardcoded secrets, code
-        quality issues, and HTTPS configuration.
+        {" "}
+        {ui(
+          "Scan your project for dependency vulnerabilities, hardcoded secrets, code quality issues, and HTTPS configuration.",
+        )}{" "}
       </p>
       <button
         onClick={onRunScan}
         className="mt-5 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
       >
-        <Play className="h-3.5 w-3.5" />
-        Run Security Scan
+        <Play className="h-3.5 w-3.5" /> {ui("Run Security Scan")}{" "}
       </button>
     </div>
   );
@@ -94,7 +104,7 @@ export function ScanAnimation({
                   ? "text-emerald-400"
                   : isActive
                     ? "text-foreground"
-                    : "text-muted-foreground/40"
+                    : "text-muted-foreground/40",
               )}
             >
               {isDone ? (
@@ -124,6 +134,8 @@ export function SecurityScore({
   scoreColor: string;
   trackColor: string;
 }) {
+  const ui = useUiText();
+
   const circumference = 2 * Math.PI * 54;
   const strokeDashoffset = circumference - (score / 100) * circumference;
 
@@ -132,12 +144,21 @@ export function SecurityScore({
       <div className="relative h-32 w-32">
         <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
           <circle
-            cx="60" cy="60" r="54" fill="none"
-            stroke="currentColor" strokeWidth="6" className="text-muted/50"
+            cx="60"
+            cy="60"
+            r="54"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="6"
+            className="text-muted/50"
           />
           <circle
-            cx="60" cy="60" r="54" fill="none"
-            strokeWidth="6" strokeLinecap="round"
+            cx="60"
+            cy="60"
+            r="54"
+            fill="none"
+            strokeWidth="6"
+            strokeLinecap="round"
             className={trackColor}
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
@@ -152,7 +173,8 @@ export function SecurityScore({
         </div>
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Your project security score
+        {" "}
+        {ui("Your project security score")}{" "}
       </p>
     </div>
   );
@@ -187,14 +209,26 @@ export function CategoryCard({ category }: { category: ScanCategory }) {
   const StatusIcon = config.icon;
 
   return (
-    <div className={cn("rounded-lg border p-3 transition-colors", config.border, config.bg)}>
+    <div
+      className={cn(
+        "rounded-lg border p-3 transition-colors",
+        config.border,
+        config.bg,
+      )}
+    >
       <div className="flex items-start justify-between">
         <Icon className={cn("h-4 w-4", config.color)} />
         <StatusIcon className={cn("h-3.5 w-3.5", config.color)} />
       </div>
-      <p className="mt-2 text-xs font-medium text-foreground">{category.label}</p>
-      <p className={cn("mt-0.5 text-[11px]", config.color)}>{category.summary}</p>
-      <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{category.details}</p>
+      <p className="mt-2 text-xs font-medium text-foreground">
+        {category.label}
+      </p>
+      <p className={cn("mt-0.5 text-[11px]", config.color)}>
+        {category.summary}
+      </p>
+      <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+        {category.details}
+      </p>
     </div>
   );
 }
@@ -211,7 +245,13 @@ export function SeverityPill({
   if (count === 0) return null;
   const config = SEVERITY_CONFIG[severity];
   return (
-    <span className={cn("inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold", config.bg, config.color)}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+        config.bg,
+        config.color,
+      )}
+    >
       {count} {config.label}
     </span>
   );
@@ -232,31 +272,55 @@ export function FindingRow({
   onFix: () => void;
   onDismiss: () => void;
 }) {
+  const ui = useUiText();
+
   const config = SEVERITY_CONFIG[finding.severity];
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
   return (
-    <div className={cn("rounded-lg border transition-colors", config.border, "bg-muted/20")}>
-      <button onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
+    <div
+      className={cn(
+        "rounded-lg border transition-colors",
+        config.border,
+        "bg-muted/20",
+      )}
+    >
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+      >
         <Chevron className="h-3 w-3 flex-none text-muted-foreground" />
-        <span className={cn("inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", config.bg, config.color)}>
+        <span
+          className={cn(
+            "inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+            config.bg,
+            config.color,
+          )}
+        >
           {config.label}
         </span>
-        <span className="flex-1 truncate text-xs font-medium text-foreground">{finding.title}</span>
+        <span className="flex-1 truncate text-xs font-medium text-foreground">
+          {finding.title}
+        </span>
         <div className="flex shrink-0 items-center gap-1">
           {finding.fixSuggestion && (
             <button
-              onClick={(e: React.MouseEvent) => { e.stopPropagation(); onFix(); }}
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                onFix();
+              }}
               className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
             >
-              <Sparkles className="h-2.5 w-2.5" />
-              Fix
+              <Sparkles className="h-2.5 w-2.5" /> {ui("Fix")}{" "}
             </button>
           )}
           <button
-            onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDismiss(); }}
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              onDismiss();
+            }}
             className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted transition-colors"
-            title="Dismiss"
+            title={ui("Dismiss")}
           >
             <EyeOff className="h-2.5 w-2.5" />
           </button>
@@ -266,25 +330,32 @@ export function FindingRow({
       {expanded && (
         <div className="border-t border-border/50 px-3 py-2.5">
           {finding.description && (
-            <p className="text-[11px] leading-relaxed text-muted-foreground">{finding.description}</p>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {finding.description}
+            </p>
           )}
           {finding.filePath && (
             <div className="mt-2 flex items-center gap-1.5 text-[11px]">
               <FileSearch className="h-3 w-3 text-muted-foreground" />
               <span className="font-mono text-muted-foreground">
-                {finding.filePath}{finding.lineNumber ? `:${finding.lineNumber}` : ""}
+                {finding.filePath}
+                {finding.lineNumber ? `:${finding.lineNumber}` : ""}
               </span>
             </div>
           )}
           {finding.codeSnippet && (
             <div className="mt-1.5 rounded bg-muted/50 px-2 py-1.5">
-              <code className="text-[10px] text-foreground/80">{finding.codeSnippet}</code>
+              <code className="text-[10px] text-foreground/80">
+                {finding.codeSnippet}
+              </code>
             </div>
           )}
           {finding.fixSuggestion && (
             <div className="mt-2 flex items-center gap-1.5 text-[11px]">
               <ArrowUpRight className="h-3 w-3 text-emerald-400" />
-              <span className="text-muted-foreground">{finding.fixSuggestion}</span>
+              <span className="text-muted-foreground">
+                {finding.fixSuggestion}
+              </span>
             </div>
           )}
         </div>
@@ -304,13 +375,17 @@ export function SecretFindingRow({
   onMoveToEnv: () => void;
   onDismiss: () => void;
 }) {
+  const ui = useUiText();
+
   return (
     <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <KeyRound className="h-3.5 w-3.5 flex-none text-red-400" />
           <div>
-            <span className="text-xs font-medium text-foreground">{finding.title}</span>
+            <span className="text-xs font-medium text-foreground">
+              {finding.title}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -318,13 +393,12 @@ export function SecretFindingRow({
             onClick={onMoveToEnv}
             className="flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
           >
-            <ExternalLink className="h-2.5 w-2.5" />
-            Move to .env
+            <ExternalLink className="h-2.5 w-2.5" /> {ui("Move to .env")}{" "}
           </button>
           <button
             onClick={onDismiss}
             className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted transition-colors"
-            title="Dismiss"
+            title={ui("Dismiss")}
           >
             <EyeOff className="h-2.5 w-2.5" />
           </button>
@@ -334,13 +408,16 @@ export function SecretFindingRow({
         <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <FileSearch className="h-3 w-3" />
           <span className="font-mono">
-            {finding.filePath}{finding.lineNumber ? `:${finding.lineNumber}` : ""}
+            {finding.filePath}
+            {finding.lineNumber ? `:${finding.lineNumber}` : ""}
           </span>
         </div>
       )}
       {finding.codeSnippet && (
         <div className="mt-1.5 rounded bg-muted/50 px-2 py-1.5">
-          <code className="text-[10px] text-red-400/80">{finding.codeSnippet}</code>
+          <code className="text-[10px] text-red-400/80">
+            {finding.codeSnippet}
+          </code>
         </div>
       )}
     </div>

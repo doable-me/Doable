@@ -5,7 +5,7 @@ export type AiMode = "agent" | "plan" | "chat";
 // ─── Plan Mode V2 ─────────────────────────────────────────
 
 export type PlanStatus = "draft" | "approved" | "in_progress" | "completed" | "abandoned";
-export type PlanStepStatus = "pending" | "in_progress" | "completed" | "skipped";
+export type PlanStepStatus = "pending" | "in_progress" | "completed" | "skipped" | "failed";
 export type PlanComplexity = "simple" | "moderate" | "complex";
 export type PlanPhase = "idle" | "clarifying" | "planning" | "reviewing" | "building";
 
@@ -40,6 +40,7 @@ export interface Plan {
   originalPrompt?: string;
   clarificationAnswers?: Record<string, string>;
   createdAt: string;
+  revision?: number;
   approvedAt?: string;
   completedAt?: string;
 }

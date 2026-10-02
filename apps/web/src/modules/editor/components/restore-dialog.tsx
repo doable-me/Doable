@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useCallback, useEffect } from "react";
 import {
@@ -37,6 +38,8 @@ export function RestoreDialog({
   onConfirm,
   version,
 }: RestoreDialogProps) {
+  const ui = useUiText();
+
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +55,7 @@ export function RestoreDialog({
     (e: React.MouseEvent) => {
       if (e.target === e.currentTarget && !restoring) onClose();
     },
-    [onClose, restoring]
+    [onClose, restoring],
   );
 
   // Close on Escape
@@ -74,31 +77,31 @@ export function RestoreDialog({
       onClose();
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to restore version";
+        err instanceof Error ? err.message : ui("Failed to restore version");
       setError(message);
     } finally {
       setRestoring(false);
     }
-  }, [onConfirm, onClose]);
+  }, [ui, onConfirm, onClose]);
 
   if (!open || !version) return null;
 
   const formattedDate = new Date(version.createdAt).toLocaleDateString(
-    "en-US",
+    ui.locale,
     {
       weekday: "short",
       month: "short",
       day: "numeric",
       year: "numeric",
-    }
+    },
   );
   const formattedTime = new Date(version.createdAt).toLocaleTimeString(
-    "en-US",
+    ui.locale,
     {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
-    }
+    },
   );
 
   return (
@@ -114,9 +117,12 @@ export function RestoreDialog({
               <RotateCcw className="h-4 w-4 text-amber-600" />
             </div>
             <div>
-              <h2 className="text-base font-semibold">Restore Version</h2>
+              <h2 className="text-base font-semibold">
+                {ui("Restore Version")}
+              </h2>
               <p className="text-xs text-muted-foreground">
-                Roll back to a previous state
+                {" "}
+                {ui("Roll back to a previous state")}{" "}
               </p>
             </div>
           </div>
@@ -124,7 +130,7 @@ export function RestoreDialog({
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             onClick={onClose}
             disabled={restoring}
-            aria-label="Close"
+            aria-label={ui("Close")}
           >
             <X className="h-4 w-4" />
           </button>
@@ -136,12 +142,13 @@ export function RestoreDialog({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-semibold font-mono">
-                  v{version.versionNumber}
+                  {" "}
+                  {ui("v")}
+                  {version.versionNumber}
                 </span>
                 {version.bookmarked && (
                   <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                    <BookmarkCheck className="h-2.5 w-2.5" />
-                    Saved
+                    <BookmarkCheck className="h-2.5 w-2.5" /> {ui("Saved")}{" "}
                   </span>
                 )}
               </div>
@@ -158,7 +165,7 @@ export function RestoreDialog({
 
             <div className="mt-2.5 flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="h-3 w-3" />
-              {formattedDate} at {formattedTime}
+              {formattedDate} {ui("at")} {formattedTime}
             </div>
           </div>
 
@@ -166,11 +173,16 @@ export function RestoreDialog({
           <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50/70 p-3">
             <Shield className="h-4 w-4 text-blue-600 flex-none mt-0.5" />
             <div className="text-xs leading-relaxed text-blue-800">
-              <p className="font-medium mb-0.5">Non-destructive restore</p>
+              <p className="font-medium mb-0.5">
+                {ui("Non-destructive restore")}
+              </p>
               <p className="text-blue-700">
-                A new version will be created from v{version.versionNumber}.
-                Your current work and all previous versions will remain
-                accessible.
+                {" "}
+                {ui("A new version will be created from v")}
+                {version.versionNumber}
+                {ui(
+                  ". Your current work and all previous versions will remain accessible.",
+                )}{" "}
               </p>
             </div>
           </div>
@@ -179,7 +191,7 @@ export function RestoreDialog({
           {error && (
             <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50/70 p-3">
               <AlertTriangle className="h-4 w-4 text-red-500 flex-none mt-0.5" />
-              <p className="text-xs text-red-700">{error}</p>
+              <p className="text-xs text-red-700">{ui(error)}</p>
             </div>
           )}
         </div>
@@ -191,7 +203,8 @@ export function RestoreDialog({
             onClick={onClose}
             disabled={restoring}
           >
-            Cancel
+            {" "}
+            {ui("Cancel")}{" "}
           </button>
           <button
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
@@ -200,13 +213,13 @@ export function RestoreDialog({
           >
             {restoring ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Restoring...
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
+                {ui("Restoring...")}{" "}
               </>
             ) : (
               <>
-                <RotateCcw className="h-3.5 w-3.5" />
-                Restore to v{version.versionNumber}
+                <RotateCcw className="h-3.5 w-3.5" /> {ui("Restore to v")}
+                {version.versionNumber}
               </>
             )}
           </button>

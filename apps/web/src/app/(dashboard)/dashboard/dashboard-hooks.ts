@@ -1,4 +1,5 @@
 "use client";
+import { useUiText } from "@/i18n/use-ui-text";
 
 import { useState, useEffect, useCallback } from "react";
 import { GREETINGS, DASHBOARD_SUGGESTIONS } from "./dashboard-constants";
@@ -6,6 +7,7 @@ import { GREETINGS, DASHBOARD_SUGGESTIONS } from "./dashboard-constants";
 // ─── Rotating Greeting Hook ─────────────────────────────────
 
 export function useRotatingGreeting(name: string) {
+  const ui = useUiText();
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -15,25 +17,35 @@ export function useRotatingGreeting(name: string) {
     return () => clearInterval(interval);
   }, []);
 
-  return `${GREETINGS[index]}, ${name}?`;
+  return ui(GREETINGS[index]!, { name });
 }
 
 // ─── Typing Placeholder Hook ────────────────────────────────
 
 export function useTypingPlaceholder(): string {
+  const ui = useUiText();
   const [index, setIndex] = useState(0);
   const [displayText, setDisplayText] = useState("");
-  const [phase, setPhase] = useState<"typing" | "holding" | "erasing">("typing");
+  useEffect(() => {
+    setDisplayText("");
+    setPhase("typing");
+  }, [ui]);
+  const [phase, setPhase] = useState<"typing" | "holding" | "erasing">(
+    "typing",
+  );
 
   useEffect(() => {
-    const target = DASHBOARD_SUGGESTIONS[index]!;
+    const target = ui(DASHBOARD_SUGGESTIONS[index]!);
     let timeout: ReturnType<typeof setTimeout>;
 
     if (phase === "typing") {
       if (displayText.length < target.length) {
-        timeout = setTimeout(() => {
-          setDisplayText(target.slice(0, displayText.length + 1));
-        }, 35 + Math.random() * 25);
+        timeout = setTimeout(
+          () => {
+            setDisplayText(target.slice(0, displayText.length + 1));
+          },
+          35 + Math.random() * 25,
+        );
       } else {
         timeout = setTimeout(() => setPhase("holding"), 100);
       }
@@ -51,9 +63,11 @@ export function useTypingPlaceholder(): string {
     }
 
     return () => clearTimeout(timeout);
-  }, [displayText, phase, index]);
+  }, [ui, displayText, phase, index]);
 
-  return displayText || "Ask Doable to create...";
+  return (
+    displayText || ui("Describe the business workflow you want to build...")
+  );
 }
 
 // ─── Context Menu Hook ──────────────────────────────────────
