@@ -27,13 +27,17 @@ export const projectSessionModes = new Map<string, string>();
 // or trace events. (BUG-R9-CHAT-SESSION-STICKY-ON-OLD-PROVIDER.)
 export const projectSessionProviders = new Map<string, string>();
 
+// Effective prompt applied to the SDK session, including scoped instructions.
+// Store only its hash, never the potentially sensitive prompt itself.
+export const projectSessionPrompts = new Map<string, string>();
+
 // Track active streaming requests per project so /ai-status can report
 // whether the AI is still working (survives page refresh).
-export const activeRequests = new Map<string, { mode: string; startedAt: number }>();
+export const activeRequests = new Map<string, { mode: string; startedAt: number; cancel?: () => void }>();
 
 /**
  * Evict all cached chat sessions for a project so the next chat message
- * creates a fresh session that picks up updated context (identity.md,
+ * resumes with updated context (identity.md,
  * soul.md, instructions.md, knowledge.md etc.). Without this, edits to
  * `.doable/*.md` only take effect after the user manually starts a new
  * session — the AI keeps using the old system prompt.
@@ -45,6 +49,7 @@ export function evictProjectSessions(projectId: string): number {
       projectSessions.delete(key);
       projectSessionModes.delete(key);
       projectSessionProviders.delete(key);
+      projectSessionPrompts.delete(key);
       count++;
     }
   }

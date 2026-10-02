@@ -1,3 +1,4 @@
+import {classifyProviderError} from "./provider-error.js";
 // ─── Trace Collector Types ─────────────────────────────────
 
 export interface TraceCollectorContext {
@@ -34,6 +35,8 @@ export interface TraceUsageSummary {
 // ─── Error categorization ──────────────────────────────────
 
 export function categorizeError(message: string): string {
+  const classified=classifyProviderError(message);
+  if(classified!=="UNKNOWN") return classified;
   const m = message.toLowerCase();
   if (m.includes("auth") || m.includes("unauthorized") || m.includes("forbidden") || m.includes("401") || m.includes("403")) return "AUTH";
   if (m.includes("timeout") || m.includes("timed out") || m.includes("deadline")) return "TIMEOUT";

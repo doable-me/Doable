@@ -58,7 +58,7 @@ export function buildSystemPrompt(
     context.contextFiles["plan.md"]
   ) {
     sections.push(
-      wrapSection("ACTIVE PLAN", "There is an active development plan at `.doable/plan.md`. Read it with read_file before starting work. Follow the plan step by step."),
+      wrapSection("ACTIVE PLAN", "There is an active development plan at `.doable/plan.md`. Read it with read_file before starting work. Read current IDs with get_plan before continuing. Report checked results with mark_step_complete, and revise scope/order with update_plan while retaining existing IDs. Never infer step completion from the end of a chat turn."),
     );
   }
 

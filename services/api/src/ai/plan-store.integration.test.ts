@@ -1,0 +1,34 @@
+/** Run only against a disposable PostgreSQL database (never production). */
+import assert from 'node:assert/strict';
+import {test,after} from 'node:test';
+import {randomUUID} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
+import {sql,closeDb} from '../db/index.js';
+import {savePlan,getPlan,setPlanStep,revisePlan,approvePlan} from './plan-store.js';
+import type {Plan} from '@doable/shared/types/ai.js';
+if(!process.env.DOABLE_PLAN_TEST_DB)throw new Error('A disposable DOABLE_PLAN_TEST_DB is required');
+after(closeDb);
+test('PostgreSQL transactions preserve progress, revision, scope and concurrent reports',async()=>{
+ await sql.unsafe(await readFile(new URL('../db/migrations/025_plans.sql',import.meta.url),'utf8'));
+ await sql`CREATE TABLE mode_tool_config (mode text,allowed_tools text[],updated_at timestamptz)`;
+ await sql.unsafe(await readFile(new URL('../db/migrations/103_plan_revision.sql',import.meta.url),'utf8'));
+ const plan:Plan={id:randomUUID(),projectId:randomUUID(),summary:'Disposable test',status:'draft',complexity:'simple',createdAt:new Date().toISOString(),steps:[1,2,3].map(order=>({id:randomUUID(),order,title:`Step ${order}`,description:'Check a result',status:'pending'}))};
+ await savePlan(plan);assert.equal((await getPlan(plan.projectId))?.revision,0);
+ await assert.rejects(setPlanStep(plan.projectId,plan.id,plan.steps[0]!.id,'completed'),/Approved/);
+ const approved=await approvePlan(plan.projectId,plan.id);assert.equal(approved.revision,1);assert.equal((await approvePlan(plan.projectId,plan.id)).revision,1);
+ await assert.rejects(setPlanStep('other-project',plan.id,plan.steps[0]!.id,'completed'),/not found/);
+ await assert.rejects(setPlanStep(plan.projectId,plan.id,'foreign-step','completed'),/not found/);
+ await Promise.all([setPlanStep(plan.projectId,plan.id,plan.steps[2]!.id,'completed'),setPlanStep(plan.projectId,plan.id,plan.steps[0]!.id,'completed')]);
+ const partial=(await getPlan(plan.projectId))!;assert.equal(partial.revision,3);assert.equal(partial.steps.filter(s=>s.status==='completed').length,2);assert.equal(partial.status,'in_progress');
+ assert.equal((await setPlanStep(plan.projectId,plan.id,plan.steps[0]!.id,'completed')).revision,3);
+ await assert.rejects(setPlanStep(plan.projectId,plan.id,plan.steps[0]!.id,'pending'),/Reopen/);
+ const reordered=await revisePlan(plan.projectId,plan.id,[partial.steps[2]!,partial.steps[1]!,partial.steps[0]!]);assert.deepEqual(reordered.steps.map(s=>s.status),['completed','pending','completed']);assert.equal(reordered.revision,4);
+ await assert.rejects(revisePlan(plan.projectId,plan.id,[partial.steps[0]!,partial.steps[0]!]),/Duplicate/);assert.equal((await getPlan(plan.projectId))?.revision,4);
+ const failed=await setPlanStep(plan.projectId,plan.id,plan.steps[1]!.id,'failed');assert.equal(failed.status,'in_progress');
+ const complete=await setPlanStep(plan.projectId,plan.id,plan.steps[1]!.id,'completed');assert.equal(complete.status,'completed');assert.equal(complete.revision,6);
+ const reopened=await setPlanStep(plan.projectId,plan.id,plan.steps[1]!.id,'in_progress');assert.equal(reopened.status,'in_progress');assert.equal(reopened.completedAt,undefined);
+ const mirror=await readFile(`${process.env.DOABLE_PROJECTS_DIR}/${plan.projectId}/.doable/plan.md`,'utf8');assert.match(mirror,/Revision: 7/);
+ const later={...plan,id:randomUUID(),createdAt:new Date().toISOString(),steps:plan.steps.map(s=>({...s,id:randomUUID()}))};await savePlan(later);
+ await sql`UPDATE plans SET status='abandoned',revision=revision+1 WHERE id=${later.id}`;
+ assert.equal(await getPlan(plan.projectId),null,'abandoning the latest plan must not resurrect an older plan');
+});

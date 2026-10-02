@@ -1,3 +1,4 @@
+import {selectModeTools} from "../../ai/plan-tool-policy.js";
 /**
  * Session management: eviction, resume, creation, DB persistence,
  * and session recreation on engine loss during sendMessage.
@@ -8,7 +9,8 @@ import { createAllTools, type ByokProviderConfig } from "../../ai/providers/copi
 import type { TraceCollector } from "../../ai/trace-collector.js";
 import { createPermissionHandler } from "../../ai/docore-bridge.js";
 import { createHash } from "node:crypto";
-import { projectSessions, projectSessionModes, projectSessionProviders } from "./session-state.js";
+import { projectSessions, projectSessionModes, projectSessionProviders, projectSessionPrompts } from "./session-state.js";
+import { fingerprintSystemPrompt, reuseSessionWithPrompt } from "../../ai/session-prompt.js";
 import { modeToolQueries } from "@doable/db";
 
 /**
@@ -67,6 +69,7 @@ export async function checkAndEvictOnProviderChange(
   console.log(`[Chat] provider/model fingerprint changed ${prev} → ${next} for ${sessionKey} — evicting cached session`);
   projectSessions.delete(sessionKey);
   projectSessionModes.delete(sessionKey);
+  projectSessionPrompts.delete(sessionKey);
   projectSessionProviders.set(sessionKey, next);
   if (evictedSid) {
     traceCollector?.onSessionEvict(evictedSid, `provider_change:${prev}->${next}`);
@@ -86,15 +89,6 @@ export async function checkAndEvictOnProviderChange(
 }
 
 const modeTools = modeToolQueries(sql);
-
-// Hardcoded fallbacks (used when no DB config exists)
-const PLAN_MODE_ALLOWED_DEFAULT = new Set([
-  "read_file", "list_files", "search_files",
-  "ask_clarification", "create_plan", "mark_step_complete",
-]);
-const PLAN_ONLY_TOOLS = new Set([
-  "ask_clarification", "create_plan", "mark_step_complete",
-]);
 
 // In-memory cache for DB tool configs (refreshed every 60s)
 let _toolConfigCache: Map<string, Set<string>> | null = null;
@@ -123,13 +117,7 @@ async function getToolConfigForMode(mode: string): Promise<Set<string> | null> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function filterToolsForMode(allTools: any[], mode: string) {
   const dbAllowed = await getToolConfigForMode(mode);
-  if (dbAllowed) {
-    return allTools.filter((t: { name?: string }) => dbAllowed.has(t.name ?? ""));
-  }
-  // Fallback to hardcoded defaults
-  return mode === "plan"
-    ? allTools.filter((t: { name?: string }) => PLAN_MODE_ALLOWED_DEFAULT.has(t.name ?? ""))
-    : allTools.filter((t: { name?: string }) => !PLAN_ONLY_TOOLS.has(t.name ?? ""));
+  return selectModeTools(allTools,mode,dbAllowed);
 }
 
 /** Check if session mode changed and evict if needed. Returns true if mode changed. */
@@ -145,6 +133,7 @@ export function checkAndEvictOnModeChange(
     console.log(`[Chat] mode changed ${cachedMode} → ${mode} for ${sessionKey} — evicting cached session`);
     projectSessions.delete(sessionKey);
     projectSessionModes.delete(sessionKey);
+    projectSessionPrompts.delete(sessionKey);
     if (evictedSid) {
       traceCollector?.onSessionEvict(evictedSid, `mode_change:${cachedMode}->${mode}`);
     }
@@ -172,8 +161,37 @@ export async function resolveSession(
   stream: import("hono/streaming").SSEStreamingApi,
   skillDirectories: string[] | undefined,
 ): Promise<string> {
+  const promptFingerprint = fingerprintSystemPrompt(systemPrompt);
+  const resumeConfig = {
+    model: resolvedModel,
+    provider: resolvedProvider,
+    systemPrompt,
+    tools: sessionTools,
+    toolProgress,
+    workingDirectory: projectPath,
+    onPermissionRequest: createPermissionHandler(userId, projectPath),
+    skillDirectories,
+  };
   let sessionId = projectSessions.get(sessionKey);
-  if (sessionId) return sessionId;
+  if (sessionId) {
+    const engine = await getCopilotManager().getEngine(projectId, resolvedGithubToken);
+    const cachedId = sessionId;
+    const reused = await reuseSessionWithPrompt({
+      sessionId: cachedId,
+      previousFingerprint: projectSessionPrompts.get(sessionKey),
+      nextFingerprint: promptFingerprint,
+      bindCurrentTurn: () => engine.bindToolProgress(cachedId, toolProgress),
+      resumeCurrentPrompt: (id) => engine.resumeSession(id, resumeConfig),
+    });
+    if (reused) {
+      projectSessions.set(sessionKey, reused);
+      projectSessionPrompts.set(sessionKey, promptFingerprint);
+      return reused;
+    }
+    projectSessions.delete(sessionKey);
+    projectSessionPrompts.delete(sessionKey);
+    sessionId = undefined;
+  }
 
   await stream.writeSSE({
     data: JSON.stringify({ type: "status", data: { phase: "connecting", message: "Connecting to AI..." } }),
@@ -197,18 +215,13 @@ export async function resolveSession(
             // BUG-RESUME-PROVIDER: resume must pass the SAME provider+model as
             // the create path, otherwise the resumed CLI session has no model
             // to call and the turn hangs until the thinking_loop watchdog fires.
-            model: resolvedModel,
-            provider: resolvedProvider,
-            tools: sessionTools,
-            toolProgress,
-            workingDirectory: projectPath,
-            onPermissionRequest: createPermissionHandler(userId, projectPath),
-            skillDirectories,
+            ...resumeConfig,
           });
         });
         projectSessions.set(sessionKey, sessionId!);
         projectSessionModes.set(sessionKey, mode);
         projectSessionProviders.set(sessionKey, computeProviderFingerprint(resolvedProvider, resolvedModel));
+        projectSessionPrompts.set(sessionKey, promptFingerprint);
         resumed = true;
         console.log(`[Chat] Resumed SDK session ${dbRow.copilot_session_id.slice(0, 8)}… for ${projectId.slice(0, 8)}… (mode=${mode}, tools=${sessionTools.length})`);
       }
@@ -237,6 +250,7 @@ export async function resolveSession(
     projectSessions.set(sessionKey, sessionId!);
     projectSessionModes.set(sessionKey, mode);
     projectSessionProviders.set(sessionKey, computeProviderFingerprint(resolvedProvider, resolvedModel));
+    projectSessionPrompts.set(sessionKey, promptFingerprint);
   }
 
   return sessionId!;
@@ -327,6 +341,7 @@ export async function recreateSession(
   projectSessions.set(sessionKey, sessionId);
   projectSessionModes.set(sessionKey, mode);
   projectSessionProviders.set(sessionKey, computeProviderFingerprint(resolvedProvider, resolvedModel));
+  projectSessionPrompts.set(sessionKey, fingerprintSystemPrompt(systemPrompt));
   if (mode === "plan" && sessionId) {
     try {
       await currentEngine.setSessionMode(sessionId, "plan");

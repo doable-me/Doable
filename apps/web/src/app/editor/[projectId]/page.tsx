@@ -1,5 +1,6 @@
 "use client";
-
+import {usePlanSync} from "@/modules/editor/hooks/use-plan-sync";
+import {acceptPlanSnapshot} from "@/modules/editor/chat/plan/plan-state";
 import { useState, useRef, useCallback, useEffect, memo, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -185,12 +186,13 @@ type DeviceMode = "desktop" | "tablet" | "mobile";
 
 interface ToolAction {
   id: string;
+  callId?: string;
   toolName: string;
   description: string;
   isExpanded: boolean;
   isBookmarked?: boolean;
   filePath?: string;
-  status?: "running" | "completed" | "failed";
+  status?: "running" | "completed" | "failed" | "unknown";
 }
 
 interface ChatMsg {
@@ -200,6 +202,8 @@ interface ChatMsg {
   timestamp: string;
   isStreaming?: boolean;
   isError?: boolean;
+  runFailed?: boolean;
+  runError?: string;
   toolActions?: ToolAction[];
   feedbackGiven?: "up" | "down" | null;
   suggestions?: string[];  // AI-generated next-step suggestions
@@ -430,8 +434,8 @@ async function streamChat(
   onChunk: (text: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
-  onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void,
-  onToolStarted?: (toolName: string, args: Record<string, unknown>) => void,
+  onToolCompleted?: (toolName: string, args: Record<string, unknown>, success?: boolean, callId?: string) => void,
+  onToolStarted?: (toolName: string, args: Record<string, unknown>, callId?: string) => void,
   signal?: AbortSignal,
   onThinking?: (text: string) => void,
   onStatusChange?: (status: string, phase?: string) => void,
@@ -576,7 +580,7 @@ async function streamChat(
           // Handle tool_call events — show "in progress" card immediately
           if (parsed.type === "tool_call" && onToolStarted) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? parsed.name ?? "";
             let toolArgs: Record<string, unknown> = {};
             const rawArgs = d?.arguments ?? d?.args;
             if (typeof rawArgs === "string" && rawArgs.trim()) {
@@ -590,14 +594,14 @@ async function streamChat(
             }
             if (toolName) {
               pendingToolNames.push(toolName);
-              onToolStarted(toolName, toolArgs);
+              onToolStarted(toolName, toolArgs, d?.toolCallId as string | undefined);
             }
           }
           
           // Handle tool_executing events — tool arguments are fully available before completing
           if (parsed.type === "tool_executing" && onToolStarted) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            const toolName = (d?.name as string) ?? (d?.toolName as string) ?? parsed.name ?? "";
             let toolArgs: Record<string, unknown> = {};
             const rawArgs = d?.arguments ?? d?.args;
             if (typeof rawArgs === "string" && rawArgs.trim()) {
@@ -606,25 +610,21 @@ async function streamChat(
               toolArgs = rawArgs as Record<string, unknown>;
             }
             if (toolName) {
-              onToolStarted(toolName, toolArgs);
+              onToolStarted(toolName, toolArgs, d?.toolCallId as string | undefined);
             }
           }
 
           // Handle tool completion events — triggers file tree / content refresh
-          if (parsed.type === "tool.completed" && onToolCompleted) {
-            const toolName = parsed.name ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).name as string : "");
-            const toolArgs = parsed.args ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).args as Record<string, unknown> : {});
-            onToolCompleted(toolName ?? "", toolArgs ?? {});
-          }
+
 
           // Handle tool_result events — tool finished executing, update card to completed
           if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && onToolCompleted) {
             const d = parsed.data as Record<string, unknown> | undefined;
-            let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+            let toolName = (d?.name as string) ?? (d?.toolName as string) ?? parsed.name ?? "";
             let toolArgs: Record<string, unknown> = {};
             // Prefer the request args (so file-name extraction works) and fall
             // back to the result payload only if args are missing.
-            const rawArgs = d?.arguments ?? d?.args ?? d?.result;
+            const rawArgs = d?.arguments ?? d?.args ?? parsed.args ?? d?.result;
             if (typeof rawArgs === "string" && rawArgs.trim()) {
               try {
                 toolArgs = JSON.parse(rawArgs);
@@ -647,7 +647,7 @@ async function streamChat(
               pendingToolNames.shift();
             }
             if (toolName) {
-              onToolCompleted(toolName, toolArgs);
+              onToolCompleted(toolName, toolArgs, typeof d?.success === "boolean" ? d.success : undefined, d?.toolCallId as string | undefined);
             }
             // Inline artifacts attached to tool_result (resilient
             // alternative to standalone artifact_ready / mcp_ui_resource
@@ -673,7 +673,7 @@ async function streamChat(
             const filePath = (d?.filePath as string) ?? "";
             const action = (d?.action as string) ?? "edit";
             if (filePath) {
-              onToolCompleted(`${action}_file`, { path: filePath });
+              onToolCompleted(`${action}_file`, { path: filePath }, true);
             }
           }
 
@@ -696,9 +696,10 @@ async function streamChat(
 
           if (parsed.type === "plan_step_update" && onPlanStepUpdate) {
             const d = parsed.data as Record<string, unknown> | undefined;
+            if (d?.plan && onPlan) onPlan(d.plan as Plan);
             const stepId = d?.stepId as string | undefined;
             const status = d?.status as string | undefined;
-            if (stepId && status) {
+            if (!d?.plan && stepId && status) {
               onPlanStepUpdate(stepId, status);
             }
           }
@@ -900,8 +901,8 @@ interface BridgeCallbacks {
   onDone: () => void;
   onError: (error: string) => void;
   onUserInputRequest?: (req: UserInputRequestPayload) => void;
-  onToolCompleted?: (toolName: string, args: Record<string, unknown>) => void;
-  onToolStarted?: (toolName: string, args: Record<string, unknown>) => void;
+  onToolCompleted?: (toolName: string, args: Record<string, unknown>, success?: boolean, callId?: string) => void;
+  onToolStarted?: (toolName: string, args: Record<string, unknown>, callId?: string) => void;
   onThinking?: (text: string) => void;
   onStatusChange?: (status: string, phase?: string) => void;
   onClarification?: (questions: ClarificationQuestion[]) => void;
@@ -935,23 +936,19 @@ function processOneSSEPayload(
 
     if (parsed.type === "tool_call" && cb.onToolStarted) {
       const d = parsed.data as Record<string, unknown> | undefined;
-      const toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+      const toolName = (d?.name as string) ?? (d?.toolName as string) ?? parsed.name ?? "";
       const toolArgs = (d?.arguments as Record<string, unknown>) ?? {};
       if (toolName) {
         pendingToolNames.push(toolName);
-        cb.onToolStarted(toolName, toolArgs);
+        cb.onToolStarted(toolName, toolArgs, d?.toolCallId as string | undefined);
       }
     }
 
-    if (parsed.type === "tool.completed" && cb.onToolCompleted) {
-      const toolName = parsed.name ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).name as string : "");
-      const toolArgs = parsed.args ?? (typeof parsed.data === "object" && parsed.data !== null ? (parsed.data as Record<string, unknown>).args as Record<string, unknown> : {});
-      cb.onToolCompleted(toolName ?? "", toolArgs ?? {});
-    }
+
 
     if ((parsed.type === "tool_result" || parsed.type === "tool.completed") && cb.onToolCompleted) {
       const d = parsed.data as Record<string, unknown> | undefined;
-      let toolName = (d?.name as string) ?? (d?.toolName as string) ?? "";
+      let toolName = (d?.name as string) ?? (d?.toolName as string) ?? parsed.name ?? "";
       // Prefer request args so the file name is visible on the card.
       let toolArgs = ((d?.arguments as Record<string, unknown>) ?? (d?.args as Record<string, unknown>) ?? (d?.result as Record<string, unknown>)) ?? {};
       if (typeof d?.path === "string" && !(toolArgs as Record<string, unknown>).path) {
@@ -962,7 +959,7 @@ function processOneSSEPayload(
       } else if (toolName && pendingToolNames.length > 0 && pendingToolNames[0] === toolName) {
         pendingToolNames.shift();
       }
-      if (toolName) cb.onToolCompleted(toolName, toolArgs);
+      if (toolName) cb.onToolCompleted(toolName, toolArgs, typeof d?.success === "boolean" ? d.success : undefined, d?.toolCallId as string | undefined);
       if (Array.isArray(d?.artifacts) && cb.onArtifactReady) {
         for (const a of d!.artifacts as Array<Record<string, unknown>>) {
           if (typeof a?.url === "string" && typeof a?.fileName === "string" && typeof a?.mimeType === "string") {
@@ -982,7 +979,7 @@ function processOneSSEPayload(
       const d = parsed.data as Record<string, unknown> | undefined;
       const filePath = (d?.filePath as string) ?? "";
       const action = (d?.action as string) ?? "edit";
-      if (filePath) cb.onToolCompleted(`${action}_file`, { path: filePath });
+      if (filePath) cb.onToolCompleted(`${action}_file`, { path: filePath }, true);
     }
 
     if (parsed.type === "clarification" && cb.onClarification) {
@@ -1014,9 +1011,10 @@ function processOneSSEPayload(
 
     if (parsed.type === "plan_step_update" && cb.onPlanStepUpdate) {
       const d = parsed.data as Record<string, unknown> | undefined;
+      if(d?.plan && cb.onPlan) cb.onPlan(d.plan as Plan);
       const stepId = d?.stepId as string | undefined;
       const status = d?.status as string | undefined;
-      if (stepId && status) cb.onPlanStepUpdate(stepId, status);
+      if (!d?.plan && stepId && status) cb.onPlanStepUpdate(stepId, status);
     }
 
     if (parsed.type === "provision_supabase_required" && cb.onProvisionSupabase) {
@@ -1975,6 +1973,15 @@ function EditorPageInner() {
   });
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const receivePlanSnapshot = useCallback((plan:Plan|null)=>{
+    setActivePlan(prev=>acceptPlanSnapshot(prev,plan,resolvedProjectId));
+  },[resolvedProjectId]);
+  useEffect(() => {
+    if (activePlan) setPlanPhase(activePlan.status === "draft" && chatMode === "plan" ? "reviewing" : activePlan.status !== "draft" ? "building" : "idle");
+  }, [activePlan, chatMode]);
+  usePlanSync(resolvedProjectId,isStreaming,receivePlanSnapshot);
+
   const [keystrokeSignal, setKeystrokeSignal] = useState(0);
 
   // Skill manifest for / picker button
@@ -3024,6 +3031,8 @@ function EditorPageInner() {
                 id: m.id,
                 role: m.role as "user" | "assistant",
                 content: displayContent,
+                runFailed: m.run_status === "error" || m.run_status === "stalled",
+                runError: typeof m.run_error === "string" ? m.run_error : undefined,
                 timestamp: new Date(m.created_at).toLocaleTimeString([], {
                   hour: "numeric",
                   minute: "2-digit",
@@ -3033,7 +3042,7 @@ function EditorPageInner() {
                 ...(persistedAttachments ? { attachments: persistedAttachments } : {}),
                 thinkingContent,
                 toolActions: m.tool_actions || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0
-                  ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown> }, i: number) => {
+                  ? m.tool_calls.map((tc: { name?: string; arguments?: Record<string, unknown>; status?: string }, i: number) => {
                       // Some legacy rows store args double-wrapped under .arguments.arguments.
                       const rawArgs = tc.arguments ?? {};
                       const args = (rawArgs.arguments && typeof rawArgs.arguments === "object"
@@ -3046,7 +3055,7 @@ function EditorPageInner() {
                         isExpanded: false,
                         isBookmarked: false,
                         filePath: (args.path ?? args.filePath ?? args.file) as string | undefined,
-                        status: "completed" as const,
+                        status: tc.status === "completed" ? "completed" as const : tc.status === "failed" ? "failed" as const : "unknown" as const,
                       };
                     })
                   : undefined),
@@ -3158,31 +3167,6 @@ function EditorPageInner() {
   // Load chat history + restore plan + detect active generation on mount
   useEffect(() => {
     loadFromApi();
-
-    // Restore active plan state on mount (e.g., after refresh). Only
-    // restore DRAFT plans when the user's current chat mode is "plan"
-    // — otherwise a stale draft from a previous plan-mode session
-    // hijacks the chat UI into PlanCard review state and blocks the
-    // user who has since switched to build mode. `approved` /
-    // `in_progress` plans (the AI is actively executing them) always
-    // restore regardless of mode so a refresh doesn't drop the build
-    // in flight.
-    (async () => {
-      try {
-        const planRes = await apiFetch<{ data: any }>(`/projects/${resolvedProjectId}/plan`);
-        if (
-          planRes.data &&
-          planRes.data.status === "draft" &&
-          chatMode === "plan"
-        ) {
-          setActivePlan(planRes.data);
-          setPlanPhase("reviewing");
-        } else if (planRes.data && (planRes.data.status === "approved" || planRes.data.status === "in_progress")) {
-          setActivePlan(planRes.data);
-          setPlanPhase("building");
-        }
-      } catch { /* no active plan */ }
-    })();
 
     // Check if AI is still actively working (e.g., user refreshed mid-build).
     // Strategy:
@@ -3365,8 +3349,7 @@ function EditorPageInner() {
             setPlanPhase("clarifying");
           },
           onPlan: (plan) => {
-            setActivePlan(plan);
-            setPlanPhase("reviewing");
+            receivePlanSnapshot(plan);
           },
           onPlanStepUpdate: (stepId, status) => {
             setActivePlan((prev) => {
@@ -3636,8 +3619,7 @@ function EditorPageInner() {
               setPlanPhase("clarifying");
             },
             onPlan: (plan) => {
-              setActivePlan(plan);
-              setPlanPhase("reviewing");
+              receivePlanSnapshot(plan);
             },
             onPlanStepUpdate: (stepId, status) => {
               setActivePlan((prev) => {
@@ -3785,7 +3767,7 @@ function EditorPageInner() {
 
   // ─── Handle tool started — add "running" card + update live status ──
   const handleToolStarted = useCallback(
-    (toolName: string, _args: Record<string, unknown>) => {
+    (toolName: string, _args: Record<string, unknown>, callId?: string) => {
       // Update live status with human-friendly description
       const description = describeToolAction(toolName, _args);
       setLiveStatus(description);
@@ -3802,13 +3784,13 @@ function EditorPageInner() {
         const existing = lastAssistant.toolActions ?? [];
         
         // Find existing running action for this tool
-        const runningIdx = existing.findIndex((a) => a.status === "running" && a.toolName === toolName && (!a.filePath || a.filePath === filePath));
+        const runningIdx = existing.findIndex((a) => callId && a.callId === callId || a.status === "running" && (!callId || !a.callId || a.callId.startsWith("hook-")) && a.toolName === toolName && (!a.filePath || a.filePath === filePath));
         
         if (runningIdx !== -1) {
           // If we got a new filePath or better description, update it!
-          if ((filePath && !existing[runningIdx]!.filePath) || description !== existing[runningIdx]!.description) {
+          if ((callId && existing[runningIdx]!.callId !== callId) || (filePath && !existing[runningIdx]!.filePath) || description !== existing[runningIdx]!.description) {
             const updated = [...existing];
-            updated[runningIdx] = { ...updated[runningIdx]!, filePath: filePath ?? updated[runningIdx]!.filePath, description };
+            updated[runningIdx] = { ...updated[runningIdx]!, callId: callId ?? updated[runningIdx]!.callId, filePath: filePath ?? updated[runningIdx]!.filePath, description };
             return prev.map((m) => m.id === lastAssistant.id ? { ...m, toolActions: updated } : m);
           }
           return prev;
@@ -3816,6 +3798,7 @@ function EditorPageInner() {
         
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          callId,
           toolName,
           description,
           isExpanded: false,
@@ -3835,7 +3818,8 @@ function EditorPageInner() {
 
   // ─── Handle tool completion — refresh files + update card ─
   const handleToolCompleted = useCallback(
-    (toolName: string, _args: Record<string, unknown>) => {
+    (toolName: string, _args: Record<string, unknown>, success?: boolean, callId?: string) => {
+      const status = success === true ? "completed" as const : success === false ? "failed" as const : "unknown" as const;
       // Update the running tool action card to "completed", or add a new completed card
       setMessages((prev) => {
         const lastAssistant = [...prev].reverse().find((m) => m.role === "assistant");
@@ -3843,7 +3827,7 @@ function EditorPageInner() {
 
         // Try to find a running action with this tool name to mark as completed
         const runningAction = lastAssistant.toolActions?.find(
-          (a) => a.toolName === toolName && a.status === "running"
+          (a) => callId ? a.callId === callId : a.toolName === toolName && a.status === "running"
         );
 
         const filePath = typeof (_args?.path ?? _args?.filePath ?? _args?.file) === "string"
@@ -3863,7 +3847,7 @@ function EditorPageInner() {
                   ...m,
                   toolActions: m.toolActions?.map((a) =>
                     a.id === runningAction.id
-                      ? { ...a, status: "completed" as const, description: keepExistingDesc ? a.description : finalDescription, filePath: filePath ?? a.filePath }
+                      ? { ...a, status: a.status === "failed" ? "failed" : status === "unknown" && a.status === "completed" ? "completed" : status, description: keepExistingDesc ? a.description : finalDescription, filePath: filePath ?? a.filePath }
                       : a
                   ),
                 }
@@ -3874,12 +3858,13 @@ function EditorPageInner() {
         // No running card found — add a new completed card (fallback)
         const action: ToolAction = {
           id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          callId,
           toolName,
           description: finalDescription,
           isExpanded: false,
           isBookmarked: false,
           filePath,
-          status: "completed",
+          status,
         };
         return prev.map((m) =>
           m.id === lastAssistant.id
@@ -4054,7 +4039,7 @@ function EditorPageInner() {
                     isStreaming: false,
                     // Mark any remaining "running" tool actions as completed
                     toolActions: m.toolActions?.map((a) =>
-                      a.status === "running" ? { ...a, status: "completed" as const } : a
+                      a.status === "running" ? { ...a, status: "unknown" as const } : a
                     ),
                   }
                 : m
@@ -4218,8 +4203,7 @@ function EditorPageInner() {
           setPlanPhase("clarifying");
         },
         (plan) => {
-          setActivePlan(plan);
-          setPlanPhase("reviewing");
+          receivePlanSnapshot(plan);
         },
         (stepId, status) => {
           setActivePlan(prev => {
@@ -5621,7 +5605,7 @@ function EditorPageInner() {
               {/* Plan progress tracker during build */}
               {planPhase === "building" && activePlan && (
                 <div className="px-3 py-2">
-                  <PlanProgress plan={activePlan} />
+                  <PlanProgress plan={activePlan} running={isStreaming} />
                 </div>
               )}
 
@@ -5802,6 +5786,12 @@ function EditorPageInner() {
                           </details>
                         )}
 
+                        {msg.runFailed && (
+                          <div role="alert" data-testid="chat-run-failure" className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                            Task stopped before completion
+                            {msg.runError && <details className="mt-2 text-xs"><summary>Show raw SDK error (for debugging)</summary><p className="mt-1 whitespace-pre-wrap">{msg.runError}</p></details>}
+                          </div>
+                        )}
                         <div
                           className={`text-[14px] leading-relaxed ${
                             msg.isError
@@ -5898,14 +5888,14 @@ function EditorPageInner() {
                                         <Sparkles className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-pulse" />
                                         <div className="absolute inset-0 rounded-full border border-dashed border-border animate-[spin_10s_linear_infinite]" />
                                       </>
-                                    ) : (
+                                    ) : allActions.every(a => a.status === "completed") ? (
                                       <Check className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
-                                    )}
+                                    ) : <Clock className="h-7 w-7 text-muted-foreground" />}
                                   </div>
                                   <h3 className="mt-4 mb-3 text-sm font-semibold text-foreground tracking-wide">
                                     {msg.isStreaming
                                       ? (liveStatus || "Building...")
-                                      : `${allActions.length} ${(allActions.length === 1) ? "change" : "changes"} applied`}
+                                      : `${allActions.every(a => a.status === "completed") ? "Completed" : "Recorded"} ${allActions.length} actions`}
                                   </h3>
                                   
                                   {allActions.length > 0 && (() => {
@@ -5950,9 +5940,9 @@ function EditorPageInner() {
                                                <Loader2 className="h-3 w-3 text-brand-400 animate-spin" />
                                              ) : action.status === "failed" ? (
                                                <XCircle className="h-3 w-3 text-red-400" />
-                                             ) : (
+                                             ) : action.status === "completed" ? (
                                                <Check className="h-3 w-3 text-brand-400" />
-                                             )}
+                                             ) : <span title="Result not confirmed" className="text-muted-foreground">?</span>}
                                           </div>
                                           <span className="text-[11px] font-medium truncate text-foreground flex-1">
                                             {formatDescription(action)}
@@ -6231,42 +6221,23 @@ function EditorPageInner() {
                 </div>
               )}
 
+              {planError && <p role="alert" className="px-3 py-2 text-xs text-red-500">{planError}</p>}
               {/* Plan Mode V2: Plan card for review */}
               {planPhase === "reviewing" && activePlan && (
                 <div className="px-3 py-2">
                   <PlanCard
                     plan={activePlan}
                     isEditable
-                    onApprove={() => {
-                      // Capture plan data before state changes
+                    onApprove={async () => {
+                      setPlanError(null);
                       const plan = activePlan;
-                      const summary = plan.summary;
-                      const stepList = plan.steps.map((s) => `${s.order}. ${s.title}`).join("\n");
-
-                      // Switch mode IMMEDIATELY — don't wait for API
-                      setActivePlan(prev => prev ? { ...prev, status: "approved", approvedAt: new Date().toISOString() } : prev);
-                      setPlanPhase("building");
-                      setChatMode("agent");
-
-                      // Approve in DB (fire and forget — UI already switched)
-                      const token = getStoredTokens().accessToken;
-                      fetch(`${API_URL}/projects/${resolvedProjectId}/plan/approve`, {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                        body: JSON.stringify({ planId: plan.id }),
-                      }).catch(() => {});
-
-                      // Trigger the AI to start building — pass "agent" mode explicitly
-                      setTimeout(() => {
-                        sendMessage(
-                          `Start building! Here's the approved plan:\n\n**${summary}**\n\n${stepList}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`,
-                          undefined,
-                          "agent"
-                        );
-                      }, 150);
+                      const stepList = plan.steps.map(s=>`${s.order}. ${s.title} (Step ID: ${s.id})`).join("\n");
+                      try {
+                        await apiFetch(`/projects/${resolvedProjectId}/plan/approve`,{method:"POST",body:JSON.stringify({planId:plan.id})});
+                        setActivePlan(prev=>prev?{...prev,status:"approved",revision:(prev.revision??0)+1}:prev);
+                        setPlanPhase("building");setChatMode("agent");
+                        sendMessage(`Start building! Here's the approved plan:\n\n**${plan.summary}**\n\n${stepList}\n\nBuild each step in order. The full plan details are in .doable/plan.md.`,undefined,"agent");
+                      } catch(err) {setPlanError(err instanceof Error?err.message:"Could not approve plan. Please try again.");}
                     }}
                     onRefine={() => {
                       sendMessage("Please refine the plan based on my feedback.");

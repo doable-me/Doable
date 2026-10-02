@@ -6,6 +6,8 @@ import { useChat } from "../hooks/use-chat";
 import { useEditorStore } from "../hooks/use-editor-store";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
+import {usePlanSync} from "../hooks/use-plan-sync";
+import {acceptPlanSnapshot} from "./plan/plan-state";
 import { ClarificationFlow, PlanCard, PlanProgress } from "./plan";
 import { SupabaseProvisionDialog } from "@/modules/integrations/supabase-provision-dialog";
 import { IntegrationConnectDialog } from "@/modules/integrations/integration-connect-dialog";
@@ -58,6 +60,12 @@ export function ChatPanel() {
     dismissSupabaseProvision,
   } = useChat(projectId);
 
+  const receivePlan = useCallback((plan:import("@doable/shared/types/ai").Plan|null)=> {
+    if(!projectId)return;const store=useEditorStore.getState();
+    const next=acceptPlanSnapshot(store.activePlan,plan,projectId);store.setActivePlan(next);
+    if(next && next.status!=="draft")store.setPlanPhase("building");
+  },[projectId]);
+  usePlanSync(projectId,isStreaming,receivePlan);
   const activePlan       = useEditorStore((s) => s.activePlan);
   const planPhase        = useEditorStore((s) => s.planPhase);
   const pendingQuestions = useEditorStore((s) => s.pendingQuestions);
@@ -206,7 +214,7 @@ export function ChatPanel() {
           {/* Sticky plan progress during build */}
           {planPhase === "building" && activePlan && (
             <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-sm shrink-0">
-              <PlanProgress plan={activePlan} />
+              <PlanProgress plan={activePlan} running={isStreaming} />
             </div>
           )}
 

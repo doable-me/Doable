@@ -9,10 +9,12 @@ import {
   SkipForward,
   XCircle,
 } from "lucide-react";
+import {planProgressState} from "./plan-state";
 import type { Plan } from "@doable/shared/types/ai";
 
 interface PlanProgressProps {
   plan: Plan;
+  running?: boolean;
   onPause?: () => void;
   onSkipStep?: (stepId: string) => void;
   /** When true, renders the compact horizontal pill strip for the sticky header */
@@ -20,8 +22,9 @@ interface PlanProgressProps {
 }
 
 // ─── Step icon ────────────────────────────────────────────────
-function StepIcon({ status }: { status: string }) {
+function StepIcon({ status, running }: { status: string; running: boolean }) {
   if (status === "completed")  return <CheckCircle2 className="h-3 w-3 flex-none text-green-500" />;
+  if (status === "in_progress" && !running) return <Pause className="h-3 w-3 flex-none text-muted-foreground" />;
   if (status === "in_progress") return <Loader2 className="h-3 w-3 flex-none text-brand-500 animate-spin" />;
   if (status === "skipped")    return <SkipForward className="h-3 w-3 flex-none text-muted-foreground" />;
   if (status === "failed")     return <XCircle className="h-3 w-3 flex-none text-red-400" />;
@@ -33,10 +36,12 @@ function StepPill({
   status,
   title,
   isLast,
+  running,
 }: {
   status: string;
   title: string;
   isLast: boolean;
+  running: boolean;
 }) {
   const [justCompleted, setJustCompleted] = useState(false);
   const prevStatus = useRef(status);
@@ -67,7 +72,7 @@ function StepPill({
             : "ring-border bg-transparent"
         }`}
       >
-        <StepIcon status={status} />
+        <StepIcon status={status} running={running} />
       </div>
       {!isLast && (
         <div
@@ -81,7 +86,8 @@ function StepPill({
 }
 
 // ─── Compact mode (sticky header) ─────────────────────────────
-function CompactPlanProgress({ plan }: { plan: Plan }) {
+function CompactPlanProgress({ plan, running }: { plan: Plan; running:boolean }) {
+
   const sortedSteps = useMemo(
     () => [...plan.steps].sort((a, b) => a.order - b.order),
     [plan.steps]
@@ -99,14 +105,15 @@ function CompactPlanProgress({ plan }: { plan: Plan }) {
     };
   }, [plan.steps]);
 
+  const display = planProgressState(plan,running);
   const activeStep = sortedSteps.find((s) => s.status === "in_progress");
 
   return (
     <div className="flex items-center gap-3 px-3 py-2">
       {/* Spinner + label */}
       <div className="flex items-center gap-1.5 shrink-0">
-        <Loader2 className="h-3 w-3 text-brand-500 animate-spin" />
-        <span className="text-xs font-medium text-foreground">Building</span>
+        {display.spinning ? <Loader2 className="h-3 w-3 text-brand-500 animate-spin" /> : display.finished ? <CheckCircle2 className="h-3 w-3 text-green-500" /> : <Pause className="h-3 w-3 text-muted-foreground" />}
+        <span className="text-xs font-medium text-foreground">{display.label}</span>
       </div>
 
       {/* Step pills */}
@@ -117,6 +124,7 @@ function CompactPlanProgress({ plan }: { plan: Plan }) {
             status={step.status}
             title={step.title}
             isLast={idx === sortedSteps.length - 1}
+            running={running}
           />
         ))}
       </div>
@@ -142,6 +150,7 @@ export const PlanProgress = memo(function PlanProgress({
   onPause,
   onSkipStep,
   compact = false,
+  running = false,
 }: PlanProgressProps) {
   const sortedSteps = useMemo(
     () => [...plan.steps].sort((a, b) => a.order - b.order),
@@ -157,19 +166,20 @@ export const PlanProgress = memo(function PlanProgress({
     return { completedCount: done, percentage: pct };
   }, [plan.steps]);
 
+  const display = planProgressState(plan,running);
+
   // Early return AFTER hooks to keep hook order stable across renders.
-  if (compact) return <CompactPlanProgress plan={plan} />;
+  if (compact) return <CompactPlanProgress plan={plan} running={running} />;
 
   return (
     <div className="rounded-lg border border-border bg-muted/30">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50">
-        <Loader2 className="h-3.5 w-3.5 text-brand-500 animate-spin" />
-        <span className="text-xs font-semibold text-foreground">Building</span>
+        {display.spinning ? <Loader2 className="h-3.5 w-3.5 text-brand-500 animate-spin" /> : display.finished ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <Pause className="h-3.5 w-3.5 text-muted-foreground" />}
+        <span className="text-xs font-semibold text-foreground">{display.label}</span>
         <span className="ml-auto text-xs text-muted-foreground">
-          {completedCount}/{plan.steps.length} steps
-        </span>
-        {onPause && (
+          {completedCount}/{plan.steps.length} {"steps"} </span>
+        {onPause && running && (
           <button
             onClick={onPause}
             className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
@@ -185,6 +195,7 @@ export const PlanProgress = memo(function PlanProgress({
         <p className="text-xs text-muted-foreground leading-relaxed">{plan.summary}</p>
       </div>
 
+      <p className="px-3 pt-1 text-[11px] text-muted-foreground">{"Steps show reported results, not elapsed build time."}{!running && !display.finished && " " + "No active run. Unreported steps remain unconfirmed."}</p>
       {/* Progress bar */}
       <div className="px-3 py-2">
         <div className="flex items-center gap-2">
@@ -211,7 +222,7 @@ export const PlanProgress = memo(function PlanProgress({
                 isActive ? "bg-brand-500/5" : ""
               }`}
             >
-              <StepIcon status={step.status} />
+              <StepIcon status={step.status} running={running} />
               <span
                 className={`flex-1 truncate ${
                   step.status === "completed" || step.status === "skipped"

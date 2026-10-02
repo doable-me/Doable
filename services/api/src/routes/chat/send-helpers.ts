@@ -182,27 +182,19 @@ export function handleToolEndEvent(stream: SSEStreamingApi, toolName: string, ar
   if (toolName === "create_plan" && args.output) {
     try {
       const plan = JSON.parse(args.output as string);
-      (async () => {
-        try {
-          const planId = plan.id as string;
-          await sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at) VALUES (${planId}, ${projectId}, ${plan.summary}, ${plan.complexity}, 'draft', ${plan.createdAt}) ON CONFLICT (id) DO NOTHING`;
-          if (Array.isArray(plan.steps)) {
-            for (const step of plan.steps) {
-              await sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths) VALUES (${step.id}, ${planId}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null}) ON CONFLICT (id) DO NOTHING`;
-            }
-          }
-        } catch (dbErr) { console.warn("[Chat] Failed to save plan to DB:", dbErr); }
-      })();
       stream.writeSSE({ data: JSON.stringify({ type: "plan", data: { plan } }) }).catch(() => {});
     } catch { /* parse error */ }
   }
+  if (toolName === "update_plan" && args.plan) {
+    stream.writeSSE({ data: JSON.stringify({ type: "plan", data: { plan: args.plan } }) }).catch(() => {});
+  }
   if (toolName === "mark_step_complete") {
-    const { stepId, planId, status } = args as { stepId?: string; planId?: string; status?: string };
+    const { stepId, planId, status, plan } = args as { stepId?: string; planId?: string; status?: string; plan?: unknown };
     if (stepId && planId) {
       stream.writeSSE({
         data: JSON.stringify({
           type: "plan_step_update",
-          data: { stepId, planId, status: status ?? "completed" },
+          data: { stepId, planId, status: status ?? "completed", plan },
         }),
       }).catch(() => {});
     }

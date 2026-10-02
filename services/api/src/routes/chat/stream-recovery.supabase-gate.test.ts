@@ -116,8 +116,8 @@ test("control: auto-continue DOES fire for the same state when no provision is p
   );
   assert.match(
     calls[0] ?? "",
-    /continue building/i,
-    "the nudge prompt should be the build-continue nudge",
+    /report_task_status/,
+    "recovery must request structured task reconciliation, not force file writes",
   );
 });
 

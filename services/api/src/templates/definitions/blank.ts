@@ -265,7 +265,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
+    <div data-doable-scaffold="true" className="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-50 via-stone-100 to-white dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
       <div className="text-center space-y-6">
         <div className="flex justify-center">
           <DoableLogo className="w-16 h-16 drop-shadow-lg" />

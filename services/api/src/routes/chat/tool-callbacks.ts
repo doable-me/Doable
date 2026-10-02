@@ -1,3 +1,6 @@
+import {extractToolArguments} from "../../ai/sse-mapper.js";
+import {classifyProviderError} from "../../ai/provider-error.js";
+import {startTool} from "./execution-state.js";
 /**
  * Tool callback factories: deduplicating recorder and
  * shared tool-progress hooks created per-request.
@@ -271,35 +274,11 @@ function dlog(msg: string) {
   if (!process.env.MCP_DEBUG) return;
   console.error(`[${new Date().toISOString()}] [tool-callbacks] ${msg}`);
 }
-import {
-  friendlyToolMessage,
-  friendlyToolResult,
-} from "../../ai/tool-messages.js";
 import { extractSseHintPayload } from "../../ai/plan-parser.js";
 
-/** Deduplicating recorder for assistant tool calls. */
+/** Record invocations, preserving repetitions across cycles. */
 export function createRecordAssistantToolCall(state: ChatStreamState) {
-  return (name?: string, args?: unknown) => {
-    if (!name) return;
-    const normalizedArgs = args && typeof args === "object"
-      ? (args as Record<string, unknown>)
-      : undefined;
-    const argsKey = JSON.stringify(normalizedArgs ?? null);
-
-    for (let i = 0; i < state.assistantToolCalls.length; i++) {
-      const e = state.assistantToolCalls[i] as { name?: string; arguments?: unknown };
-      if (e.name !== name) continue;
-      const existingKey = JSON.stringify(e.arguments ?? null);
-      if (existingKey === argsKey) return;
-      if (normalizedArgs && !e.arguments) {
-        state.assistantToolCalls[i] = { name, arguments: normalizedArgs };
-        return;
-      }
-      if (!normalizedArgs && e.arguments) return;
-    }
-    state.assistantToolCalls.push({ name, arguments: normalizedArgs });
-    state.hadToolCalls = true;
-  };
+  return (name?: string, args?: unknown) => { if(name) startTool(state,name,args); };
 }
 
 /** Create shared tool-progress callbacks for session create/resume. */
@@ -315,35 +294,9 @@ export function createToolProgressCallbacks(
       // Some SDK channels wrap the real tool args under .arguments
       // ({ toolName, arguments: {...real args...}, toolCallId }); unwrap so
       // path/command extraction below finds the user-facing fields.
-      const argsObj = (rawArgs && typeof rawArgs === "object" ? rawArgs : {}) as Record<string, unknown>;
-      const args = (argsObj as { arguments?: Record<string, unknown> }).arguments ?? argsObj;
-      recordAssistantToolCall(toolName, args);
-      traceCollector?.onToolStart(toolName, args);
-      const friendly = friendlyToolMessage(toolName, args);
-      const a = args;
-      const path =
-        (a.path as string | undefined) ??
-        (a.filePath as string | undefined) ??
-        (a.file as string | undefined) ??
-        (a.target as string | undefined);
-      const rawCmd = a.command ?? a.cmd ?? a.input;
-      const command = typeof rawCmd === "string" ? rawCmd : undefined;
-      const packages = Array.isArray(a.packages)
-        ? (a.packages as unknown[]).filter((p) => typeof p === "string").join(" ")
-        : typeof a.packages === "string" ? (a.packages as string)
-        : typeof a.name === "string" && (toolName.toLowerCase().includes("install") || toolName.toLowerCase().includes("package"))
-          ? (a.name as string) : undefined;
-      stream.writeSSE({ data: JSON.stringify({
-        type: "tool_call",
-        data: {
-          name: toolName,
-          friendlyMessage: friendly,
-          arguments: args,
-          ...(path ? { path } : {}),
-          ...(command ? { command } : {}),
-          ...(packages ? { packages } : {}),
-        },
-      }) }).catch(() => {});
+      const args = extractToolArguments({arguments: rawArgs}) ?? {};
+      // SDK execution events exclusively own the invocation ledger and cards.
+      // Hooks carry supplemental UI/resources, including pre-execution dialogs.
       if (toolName === "request_integration") {
         const a = (args as Record<string, unknown>) ?? {};
         const integrationId = typeof a.integrationId === "string" ? a.integrationId : "";
@@ -386,19 +339,8 @@ export function createToolProgressCallbacks(
         }) }).catch(() => {});
       }
     },
-    onToolEnd: async (toolName: string, rawEndArgs: unknown, result: unknown) => {
+    onToolEnd: async (toolName: string, _rawEndArgs: unknown, result: unknown) => {
       dlog(`onToolEnd ${toolName} pendingUiResources=${pendingUiResources.length}`);
-      const _argsObj = (rawEndArgs && typeof rawEndArgs === "object" ? rawEndArgs : {}) as Record<string, unknown>;
-      const _args = (_argsObj as { arguments?: Record<string, unknown> }).arguments ?? _argsObj;
-      state.hadToolCalls = true;
-      traceCollector?.onToolEnd(toolName, _args, result);
-      const friendly = friendlyToolResult(toolName, result, true);
-      const ea = _args;
-      const endPath =
-        (ea.path as string | undefined) ??
-        (ea.filePath as string | undefined) ??
-        (ea.file as string | undefined) ??
-        (ea.target as string | undefined);
       // Pre-rewrite any pendingUiResources NOW so we can attach the
       // resulting artifact refs to the (always-delivered) tool_result
       // event below. We mutate items in place; the drain loop later just
@@ -429,20 +371,6 @@ export function createToolProgressCallbacks(
           (item as unknown as Record<string, unknown>)._persisted = true;
         }
       }
-      // If any artifact was persisted to a project file, surface that path
-      // on the tool_result so the editor's standard "file changed" refresh
-      // path picks it up — same UX as create_file.
-      const persistedPath = collectedArtifacts.find((a) => a.projectPath)?.projectPath;
-      stream.writeSSE({ data: JSON.stringify({
-        type: "tool_result",
-        data: {
-          name: toolName,
-          success: true,
-          friendlyMessage: friendly,
-          ...(persistedPath ? { path: persistedPath } : endPath ? { path: endPath } : {}),
-          ...(collectedArtifacts.length > 0 ? { artifacts: collectedArtifacts } : {}),
-        },
-      }) }).catch(() => {});
       if (collectedArtifacts.length > 0) {
         // Stash for event-processor to merge into the canonical tool_result
         // emit. Use a process-global stash because the Copilot SDK caches
@@ -524,16 +452,7 @@ export function createToolProgressCallbacks(
               stream.writeSSE({ data: JSON.stringify({
                 type: "plan", data: { plan },
               }) }).catch(() => {});
-              sql`INSERT INTO plans (id, project_id, summary, complexity, status, created_at)
-                  VALUES (${plan.id}, ${plan.projectId ?? ""}, ${plan.summary}, ${plan.complexity}, 'draft', now())
-                  ON CONFLICT (id) DO NOTHING`.catch(() => {});
-              if (Array.isArray(plan.steps)) {
-                for (const step of plan.steps) {
-                  sql`INSERT INTO plan_steps (id, plan_id, "order", title, description, details, status, file_paths)
-                      VALUES (${step.id}, ${plan.id}, ${step.order}, ${step.title}, ${step.description}, ${step.details ?? null}, 'pending', ${step.filePaths ?? null})
-                      ON CONFLICT (id) DO NOTHING`.catch(() => {});
-                }
-              }
+
             }
           }
         } catch { /* non-critical */ }
@@ -624,14 +543,15 @@ export function createToolProgressCallbacks(
       const errorStr = typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error);
       console.error(`[Chat] Hook error (${context}):`, errorStr);
       if (!errorStr || errorStr === '{}' || errorStr === 'undefined') return;
+      const category=classifyProviderError(error);
       let userMessage: string;
-      if (errorStr.includes("404") || errorStr.includes("not found")) {
+      if (category === "NOT_FOUND") {
         userMessage = "The AI model returned an error (404). The model may be unavailable or the model ID is incorrect. Check your AI settings.";
-      } else if (errorStr.includes("401") || errorStr.includes("unauthorized") || errorStr.includes("not authorized")) {
+      } else if (category === "AUTH") {
         userMessage = "Authentication failed with the AI provider. Please check your API key in AI settings.";
-      } else if (errorStr.includes("429") || errorStr.includes("rate limit")) {
+      } else if (category === "RATE_LIMIT" || category === "QUOTA") {
         userMessage = "Rate limit reached. Please wait a moment and try again.";
-      } else if (errorStr.includes("500") || errorStr.includes("internal server")) {
+      } else if (category === "SERVER") {
         userMessage = "The AI provider returned a server error. Please try again.";
       } else {
         userMessage = "An error occurred while communicating with the AI model. Please try again.";

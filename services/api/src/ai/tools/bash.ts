@@ -1,3 +1,5 @@
+import {runContainerCommand,usesContainerIsolation} from "./container-command.js";
+import {getProjectPath} from "../project-files.js";
 /**
  * Doable-owned `bash` tool — overrides the Copilot SDK's built-in bash.
  *
@@ -41,7 +43,7 @@ export interface BashToolCtx {
 export function createBashTool(ctx: BashToolCtx): Tool {
   return defineTool("bash", {
     description:
-      "Execute a shell command in the project sandbox. All commands run inside the configured isolation backend (psroot / bubblewrap / systemd / sandbox-exec / dovault); the host filesystem and network are not directly accessible.",
+      "Execute a shell command in the project sandbox. Execution follows the operator isolation settings. With explicit off/off settings the API container is the isolation boundary; otherwise the configured process jail is required. This tool waits for the command to finish and returns exitCode/output; it does not create an interactive session for read_bash/write_bash.",
     overridesBuiltInTool: true,
     parameters: {
       type: "object" as const,
@@ -83,7 +85,9 @@ export function createBashTool(ctx: BashToolCtx): Tool {
       };
 
       try {
-        const result = await jailedSpawn(
+        const result = usesContainerIsolation(spawnCtx.hardening, process.env.DOABLE_HARDENING)
+          ? await runContainerCommand(command, getProjectPath(ctx.projectId))
+          : await jailedSpawn(
           "/bin/sh",
           ["-c", command],
           spawnCtx,
@@ -92,7 +96,7 @@ export function createBashTool(ctx: BashToolCtx): Tool {
 
         const stdout = truncateOutput(result.stdout);
         const stderr = truncateOutput(result.stderr);
-        const success = result.exitCode === 0 && !result.oomKilled;
+        const success = result.exitCode === 0 && !result.oomKilled && !result.timedOut;
 
         const output = [
           stdout,
@@ -105,10 +109,13 @@ export function createBashTool(ctx: BashToolCtx): Tool {
           exitCode: result.exitCode,
           durationMs: result.durationMs,
           oomKilled: result.oomKilled,
+          timedOut: result.timedOut,
           backendId: result.backendId,
           profileId: result.profileId,
           message: success
             ? `Command exited 0 in ${result.durationMs}ms (backend=${result.backendId})`
+            : result.timedOut
+              ? `Command timed out after ${result.durationMs}ms`
             : result.oomKilled
               ? `Command killed (OOM) after ${result.durationMs}ms`
               : `Command exited ${result.exitCode} in ${result.durationMs}ms`,

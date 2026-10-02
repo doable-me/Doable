@@ -1,3 +1,5 @@
+import { getPlan, savePlan, setPlanStep, revisePlan } from "../plan-store.js";
+import { isStepStatus } from "../plan-state.js";
 import { randomUUID } from "node:crypto";
 import type {
   ClarificationQuestion,
@@ -193,6 +195,7 @@ export const createPlanTool: Tool = {
       createdAt: now,
     };
 
+    await savePlan(plan);
     return {
       success: true,
       output: JSON.stringify(plan),
@@ -209,19 +212,20 @@ export const createPlanTool: Tool = {
 export const markStepCompleteTool: Tool = {
   name: "mark_step_complete",
   description:
-    "Mark a plan step as completed during build execution. Call this after you finish implementing a step from the active plan.",
+    "Report a plan step as in_progress, completed, failed or skipped using stable IDs from get_plan. completed means its result was checked.",
   parameters: {
     type: "object",
     required: ["stepId", "planId"],
     properties: {
       stepId: { type: "string" },
       planId: { type: "string" },
+      status: { type: "string", enum: ["pending", "in_progress", "completed", "skipped", "failed"] },
     },
   },
 
   async execute(
     params: Record<string, unknown>,
-    _ctx: ToolContext,
+    ctx: ToolContext,
   ): Promise<ToolResult> {
     const stepId = params.stepId as string;
     const planId = params.planId as string;
@@ -242,14 +246,22 @@ export const markStepCompleteTool: Tool = {
       };
     }
 
-    return {
-      success: true,
-      output: JSON.stringify({ planId, stepId, status: "completed" }),
-      metadata: {
-        type: "plan_step_update",
-        planId,
-        stepId,
-      },
-    };
+    const status = params.status ?? "completed";
+    if (!isStepStatus(status)) return {success:false,output:"",error:"Invalid step status"};
+    const plan = await setPlanStep(ctx.projectId,planId,stepId,status);
+    return {success:true,output:JSON.stringify({planId,stepId,status,plan}),metadata:{type:"plan_step_update",planId,stepId,status,plan}};
+  },
+};
+export const getPlanTool: Tool = {
+  name:"get_plan",description:"Read current project plan, step IDs and reported progress before continuing.",parameters:{type:"object",properties:{}},
+  async execute(_params,ctx) {return {success:true,output:JSON.stringify(await getPlan(ctx.projectId))};},
+};
+export const updatePlanTool: Tool = {
+  name:"update_plan",description:"Revise plan order/scope retaining IDs and progress on surviving steps.",parameters:{type:"object",properties:{planId:{type:"string"},steps:{type:"array",items:{type:"object",properties:{id:{type:"string"},title:{type:"string"},description:{type:"string"}},required:["title","description"]}}},required:["planId","steps"]},
+  async execute(params,ctx) {
+    if(typeof params.planId !== "string" || !Array.isArray(params.steps)) return {success:false,output:"",error:"planId and steps required"};
+    const steps=(params.steps as Array<{id?:string;title:string;description:string}>).map((step,i)=>({...step,id:step.id??randomUUID(),order:i+1}));
+    const plan=await revisePlan(ctx.projectId,params.planId,steps);
+    return {success:true,output:JSON.stringify(plan),metadata:{type:"plan",plan}};
   },
 };

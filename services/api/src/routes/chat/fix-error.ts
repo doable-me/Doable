@@ -28,7 +28,7 @@ const fixErrorSchema = z.object({
   context: z.string().max(4000).optional(),
 });
 
-const PLAN_ONLY_TOOLS = new Set(["ask_clarification", "create_plan", "mark_step_complete"]);
+const PLAN_ONLY_TOOLS = new Set(["ask_clarification", "create_plan"]);
 
 export function registerFixErrorRoute(app: Hono<AuthEnv>) {
   app.post(

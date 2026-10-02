@@ -91,6 +91,7 @@ import { searchFilesTool } from "./search-files.js";
 import { installPackageTool } from "./install-package.js";
 import { askClarificationTool } from "./plan-tools.js";
 import { createPlanTool } from "./plan-tools.js";
+import {getPlanTool, updatePlanTool} from "./plan-tools.js";
 import { markStepCompleteTool } from "./plan-tools.js";
 
 toolRegistry.register(createFileTool);
@@ -104,3 +105,5 @@ toolRegistry.register(installPackageTool);
 toolRegistry.register(askClarificationTool);
 toolRegistry.register(createPlanTool);
 toolRegistry.register(markStepCompleteTool);
+toolRegistry.register(getPlanTool);
+toolRegistry.register(updatePlanTool);

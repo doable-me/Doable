@@ -462,7 +462,7 @@ export function useChat(
       try {
         const { getStoredTokens } = await import("@/lib/api");
         const { accessToken } = getStoredTokens();
-        await fetch(`${API_BASE}/projects/${projectId}/plan/approve`, {
+        const response = await fetch(`${API_BASE}/projects/${projectId}/plan/approve`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -470,6 +470,7 @@ export function useChat(
           },
           body: JSON.stringify({ planId }),
         });
+        if(!response.ok)throw new Error("Could not approve plan. Please try again.");
         useEditorStore.getState().approvePlan();
         setTimeout(() => {
           sendMessage(

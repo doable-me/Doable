@@ -1,3 +1,6 @@
+import {withDependencyLock} from "../../projects/dependency-lock.js";
+import {validateWriteArguments} from "../file-tool-validation.js";
+import {parseTaskReport} from "../../routes/chat/execution-state.js";
 /**
  * Doable-specific tools for Copilot agent sessions.
  *
@@ -8,6 +11,7 @@
 
 import { defineTool, type Tool } from "@github/copilot-sdk";
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   readFile,
@@ -23,6 +27,8 @@ import {
   tanStackHijackViolation,
 } from "../../projects/detect-tanstack-start.js";
 import { sql } from "../../db/index.js";
+import { getPlan, savePlan, setPlanStep, revisePlan } from "../plan-store.js";
+import { isStepStatus } from "../plan-state.js";
 import { createBashTool } from "../tools/bash.js";
 import { validateFileSyntax } from "../tools/validate-syntax.js";
 
@@ -144,6 +150,14 @@ export interface DoableToolOptions {
 export function createDoableTools(projectId: string, userId?: string, workspaceId?: string, options?: DoableToolOptions): Tool[] {
   const hasSupabase = options?.hasSupabase ?? false;
   return ([
+    defineTool("report_task_status", {
+      description: "Report the ORIGINAL request intent and lifecycle before acting and before ending. read_only means questions/reviews; change means explicitly requested changes. in_progress means requested work remains; completed means the request is addressed; waiting_for_input means a user decision is needed. Does not mark plan steps complete or authorize actions.",
+      parameters: {type:"object" as const, properties:{intent:{type:"string" as const,enum:["read_only","change"]},status:{type:"string" as const,enum:["in_progress","completed","waiting_for_input"]}},required:["intent","status"]},
+      handler: async (args: Record<string, unknown>) => {
+        const report=parseTaskReport(args);
+        return report ? {success:true,...report} : {success:false,error:"Invalid task report"};
+      },
+    }),
     defineTool("create_file", {
       description: "Create or overwrite a file in the project. Required fields are `path` (RELATIVE, e.g. 'index.html', 'src/App.tsx') and `content` (the full file body as a string). Do NOT use `file_text` — this tool uses `content`. Do NOT pass `command`. Do NOT use absolute paths or `/app/...` prefixes.",
       overridesBuiltInTool: true,
@@ -156,6 +170,8 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         required: ["path", "content"] as const,
       },
       handler: async (args: { path: string; content: string }) => {
+        const invalid = validateWriteArguments(args);
+        if (invalid) return invalid;
         const frameworkId = await getProjectFramework(projectId);
         const filePath = normalizePath(projectId, args.path, frameworkId);
         const { content } = args;
@@ -210,6 +226,8 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         required: ["path", "content"] as const,
       },
       handler: async (args: { path: string; content: string }) => {
+        const invalid = validateWriteArguments(args);
+        if (invalid) return invalid;
         const frameworkId = await getProjectFramework(projectId);
         const filePath = normalizePath(projectId, args.path, frameworkId);
         const { content } = args;
@@ -308,30 +326,36 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         // force --include=dev AND NODE_ENV=development on the install spawn.
         const npmArgs = ["install", "--ignore-scripts", "--include=dev", ...(dev ? ["--save-dev"] : []), ...pkgList, "--legacy-peer-deps"];
 
-        return new Promise((resolve) => {
-          const child = spawnCmd("npm", npmArgs, { cwd: projectPath, shell: true, stdio: "pipe", env: { ...process.env, FORCE_COLOR: "0", NODE_ENV: "development" } });
+        const result = await withDependencyLock(projectId, () => new Promise<{success:boolean;message:string;output?:string;error?:string}>((resolve) => {
+          const child = spawnCmd("npm", npmArgs, { cwd: projectPath, shell: process.platform === "win32", stdio: "pipe", env: { ...process.env, FORCE_COLOR: "0", NODE_ENV: "development" } });
           let output = "";
-          child.stdout?.on("data", (d: Buffer) => { output += d.toString(); });
-          child.stderr?.on("data", (d: Buffer) => { output += d.toString(); });
-
-          child.on("close", async (code) => {
-            emitToolEvent(projectId, "install_package", "end", { packages });
-            let restarted = false;
-            if (code === 0 && isRunning(projectId)) {
-              try { await restartDevServer(projectId, userId ? { userId } : undefined); restarted = true; } catch {}
-            }
-            resolve({
-              success: code === 0, packages: pkgList, dev: dev ?? false,
-              message: code === 0 ? `Installed ${pkgList.join(", ")}${restarted ? " (dev server restarted)" : ""}` : `Install failed with code ${code}`,
-              output: output.slice(-500),
-            });
+          let timedOut = false;
+          let killTimer: ReturnType<typeof setTimeout> | undefined;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGTERM");
+            killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+          }, 120_000);
+          const cleanup = () => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); };
+          child.stdout?.on("data", (d: Buffer) => { output = (output + d.toString()).slice(-8_000); });
+          child.stderr?.on("data", (d: Buffer) => { output = (output + d.toString()).slice(-8_000); });
+          // Do not release the dependency lock at timeout: wait for process exit.
+          child.on("close", (code) => {
+            cleanup();
+            const success = code === 0 && !timedOut;
+            resolve({success, message: timedOut ? "npm install timed out" : success ? `Installed ${pkgList.join(", ")}` : `Install failed with code ${code}`, output: output.slice(-500)});
           });
           child.on("error", (err) => {
-            emitToolEvent(projectId, "install_package", "end", { packages });
-            resolve({ success: false, error: err.message, message: `Failed to run npm install: ${err.message}` });
+            cleanup();
+            resolve({success:false,error:err.message,message:`Failed to run npm install: ${err.message}`});
           });
-          setTimeout(() => { child.kill("SIGTERM"); resolve({ success: false, message: "npm install timed out" }); }, 120_000);
-        });
+        }));
+        emitToolEvent(projectId, "install_package", "end", { packages });
+        // Restart may itself ensure dependencies. It must run outside the lock.
+        if (result.success && isRunning(projectId)) {
+          try { await restartDevServer(projectId, userId ? { userId } : undefined); result.message += " (dev server restarted)"; } catch {}
+        }
+        return {...result, packages:pkgList, dev:dev ?? false};
       },
     }),
 
@@ -431,20 +455,7 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
         }));
         const plan = { id: planId, projectId, summary: args.summary, complexity: args.complexity, steps, status: "draft" as const, createdAt: new Date().toISOString() };
 
-        try {
-          const { writeFile: fsWrite, mkdir } = await import("node:fs/promises");
-          const { join } = await import("node:path");
-          const projectPath = getProjectPath(projectId);
-          await mkdir(join(projectPath, ".doable"), { recursive: true });
-          let md = `# Plan\n\nPlan ID: ${planId}\n\n${args.summary}\n\n**Complexity:** ${args.complexity}\n\n`;
-          for (const step of steps) {
-            md += `## ${step.order}. ${step.title}\n\n${step.description}\n\n`;
-            if (step.details) md += `**Details:** ${step.details}\n\n`;
-            if (step.filePaths?.length) md += `**Files:** ${step.filePaths.join(", ")}\n\n`;
-          }
-          md += `\n---\nAfter each step, call mark_step_complete(stepId, planId).\n`;
-          await fsWrite(join(projectPath, ".doable", "plan.md"), md, "utf-8");
-        } catch { /* non-fatal */ }
+        await savePlan(plan as import("@doable/shared/types/ai.js").Plan);
 
         emitToolEvent(projectId, "create_plan", "start", {});
         emitToolEvent(projectId, "create_plan", "end", { output: JSON.stringify(plan) });
@@ -550,19 +561,46 @@ export function createDoableTools(projectId: string, userId?: string, workspaceI
       },
     }),
 
+    defineTool("get_plan", {
+      description: "Read the current project plan, stable step IDs, revision and reported progress. Use before executing or resuming an approved plan.",
+      parameters: { type: "object" as const, properties: {} },
+      handler: async () => ({ success: true, plan: await getPlan(projectId) }),
+    }),
     defineTool("mark_step_complete", {
-      description: "Mark a plan step as completed during build execution.",
+      description: "Report progress on an approved plan step. Set in_progress when starting, completed after checking the result, failed on failure, or skipped when explicitly omitted. Never infer completion from chat ending. IDs come from get_plan.",
       parameters: {
         type: "object" as const,
         properties: {
-          stepId: { type: "string" as const, description: "The step ID to mark complete" },
-          planId: { type: "string" as const, description: "The plan ID" },
+          stepId: { type: "string" as const }, planId: { type: "string" as const },
+          status: { type: "string" as const, enum: ["pending", "in_progress", "completed", "skipped", "failed"] as const },
         },
         required: ["stepId", "planId"] as const,
       },
-      handler: async (args: { stepId: string; planId: string }) => {
-        emitToolEvent(projectId, "mark_step_complete", "end", { stepId: args.stepId, planId: args.planId, status: "completed" });
-        return { success: true, stepId: args.stepId, planId: args.planId, status: "completed" };
+      handler: async (args: { stepId: string; planId: string; status?: string }) => {
+        const status = args.status ?? "completed";
+        if (!isStepStatus(status)) return { success: false, error: "Invalid step status" };
+        try {
+          const plan = await setPlanStep(projectId, args.planId, args.stepId, status);
+          emitToolEvent(projectId, "mark_step_complete", "end", { stepId: args.stepId, planId: args.planId, status, plan });
+          return { success: true, plan, stepId: args.stepId, status };
+        } catch (err) { return { success:false, error: err instanceof Error ? err.message : String(err) }; }
+      },
+    }),
+    defineTool("update_plan", {
+      description: "Revise the current approved plan when the work changes or needs a different order. Keep IDs of existing steps so their progress survives; omit an ID only for a new step. Do not claim completion by rewriting the list.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          planId: {type:"string" as const},
+          steps: {type:"array" as const, items:{type:"object" as const, properties:{id:{type:"string" as const},title:{type:"string" as const},description:{type:"string" as const}},required:["title","description"] as const}},
+        }, required:["planId","steps"] as const,
+      },
+      handler: async (args: {planId:string;steps:Array<{id?:string;title:string;description:string}>}) => {
+        try {
+          const plan = await revisePlan(projectId,args.planId,args.steps.map((step,i)=>({...step,id:step.id ?? randomUUID(),order:i+1})));
+          emitToolEvent(projectId,"update_plan","end",{plan});
+          return {success:true,plan};
+        } catch(err) { return {success:false,error:err instanceof Error ? err.message : String(err)}; }
       },
     }),
 

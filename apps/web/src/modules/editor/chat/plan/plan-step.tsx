@@ -8,6 +8,7 @@ import {
   SkipForward,
   ChevronDown,
   X,
+  XCircle,
   GripVertical,
 } from "lucide-react";
 import type { PlanStep as PlanStepType } from "@doable/shared/types/ai";
@@ -48,6 +49,13 @@ const STATUS_CONFIG = {
     leftBorder: "bg-gradient-to-b from-green-500 to-green-400",
     iconColor: "text-green-500",
     badge: null,
+  },
+  failed: {
+    icon: <XCircle className="h-3.5 w-3.5" />,
+    borderColor: "border-red-500/40",
+    leftBorder: "bg-red-500",
+    iconColor: "text-red-500",
+    badge: "Failed",
   },
   skipped: {
     icon: <SkipForward className="h-3.5 w-3.5" />,
